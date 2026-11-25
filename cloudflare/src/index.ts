@@ -10,7 +10,7 @@ export class CsAiDevContainer extends Container {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const container = env.CS_AI_APP.getByName("dev-singleton");
+    const container = env.CS_AI_APP.getByName("dev-singleton-oauth-v2");
     const envVars: Record<string, string> = {
       APP_URL: new URL(request.url).origin,
       SHARED_TEST_MODE: "1",
@@ -19,7 +19,7 @@ export default {
     for (const key of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "OPERATOR_OWNERS", "OPENAI_API_KEY"] as const) {
       if (env[key]) envVars[key] = env[key];
     }
-    await container.startAndWaitForPorts({ envVars });
+    await container.startAndWaitForPorts({ startOptions: { envVars } });
     return container.fetch(request);
   },
 };
