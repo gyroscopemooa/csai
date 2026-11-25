@@ -1,0 +1,21 @@
+/* Landing only; never changes dashboard, chat or login hero. */
+.landing-benefits{background:#fff;color:#191f28;padding:100px 24px 88px;text-align:left}
+.landing-benefits-inner{max-width:1060px;margin:0 auto}
+.landing-benefits-kicker{color:#3182f6;font-size:13px;font-weight:750;letter-spacing:1.5px;margin:0 0 18px}
+.landing-benefits h2{font-size:clamp(32px,5.5vw,56px);line-height:1.18;letter-spacing:-.055em;font-weight:800;margin:0 0 24px;word-break:keep-all}
+.landing-benefits .landing-lead{font-size:clamp(15px,2vw,19px);line-height:1.85;color:#6b7684;max-width:760px;margin-bottom:48px;word-break:keep-all}
+.landing-benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;counter-reset:benefit}
+.landing-benefit{background:#f5f7fa;border:1px solid #edf0f4;border-radius:24px;padding:30px;min-width:0}
+.landing-benefit:nth-child(1){background:#edf5ff;border-color:#e2edff}
+.landing-benefit-number{display:block;font-size:14px;letter-spacing:.04em;color:#3182f6;font-weight:750;margin-bottom:22px}
+.landing-benefit h3{font-size:24px;line-height:1.35;font-weight:760;letter-spacing:-.04em;word-break:keep-all;margin:0 0 12px}
+.landing-benefit p{font-size:14px;color:#4e5968;line-height:1.75;margin:0 0 12px;word-break:keep-all}
+.landing-benefit ul{list-style:none;padding:0;margin:0}
+.landing-benefit li{position:relative;padding:7px 0 7px 15px;color:#394150;font-size:14px;line-height:1.65;word-break:keep-all}
+.landing-benefit li:before{content:'';position:absolute;top:17px;left:0;width:4px;height:4px;border-radius:50%;background:#3182f6}
+.landing-benefits-cta{background:#182235;color:#fff;border-radius:28px;padding:42px 32px;margin-top:32px;display:flex;gap:24px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.landing-benefits-cta h3{font-size:27px;letter-spacing:-.04em;line-height:1.4;margin:0 0 8px;word-break:keep-all}
+.landing-benefits-cta p{color:#cbd5e1;line-height:1.7;margin:0}
+.landing-benefits-cta button{padding:12px 24px;min-height:48px}
+.landing-benefits-note{font-size:12px;color:#6b7684;line-height:1.8;margin:24px 0 0;word-break:keep-all}
+@media(max-width:640px){.landing-benefits{padding:60px 18px 52px}.landing-benefit-grid{grid-template-columns:1fr;gap:12px}.landing-benefit{padding:24px;border-radius:20px}.landing-benefit h3{font-size:22px}.landing-benefits .landing-lead{margin-bottom:28px}.landing-benefits-cta{padding:26px 22px;border-radius:20px}.landing-benefits-cta h3{font-size:23px}.landing-benefits-cta button{width:100%}}
