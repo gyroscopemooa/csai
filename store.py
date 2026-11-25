@@ -50,6 +50,8 @@ def init():
         CREATE TABLE IF NOT EXISTS visitor(token TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),expires INTEGER NOT NULL,kind TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS thread(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),visitor TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',manual INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL, UNIQUE(ws,visitor));
         CREATE TABLE IF NOT EXISTS message(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),thread TEXT NOT NULL REFERENCES thread(id),role TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS message_history ON message(ws,thread,created);
+        CREATE INDEX IF NOT EXISTS thread_history ON thread(ws,created);
         CREATE TABLE IF NOT EXISTS usage(ws TEXT NOT NULL REFERENCES workspace(id),period TEXT NOT NULL,n INTEGER NOT NULL DEFAULT 0 CHECK(n>=0),PRIMARY KEY(ws,period));
         CREATE TABLE IF NOT EXISTS request(ws TEXT NOT NULL,thread TEXT NOT NULL,client TEXT NOT NULL,state TEXT NOT NULL,result TEXT,period TEXT,charge TEXT,created INTEGER,PRIMARY KEY(ws,thread,client));
         CREATE TABLE IF NOT EXISTS faq(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),q TEXT NOT NULL,a TEXT NOT NULL);
@@ -115,6 +117,16 @@ def entitlements(w):
         if i in PACK:a.update(PACK[i]['includes'])
     if 'channels' in a:a.update(['naver','kakao'])
     return a if w['plan']!='free' else set()
+# Provisional access windows only. No automatic deletion before the retention policy is approved.
+BASE_HISTORY_DAYS=max(1,int(os.getenv('BASE_HISTORY_DAYS','90')))
+EXTENDED_HISTORY_DAYS=max(BASE_HISTORY_DAYS,int(os.getenv('EXTENDED_HISTORY_DAYS','1825')))
+def history_days(w):
+    return EXTENDED_HISTORY_DAYS if 'retention' in entitlements(w) else BASE_HISTORY_DAYS
+def history_cutoff(w):
+    return now()-history_days(w)*86400
+def thread_accessible(c,w,i):
+    cutoff=history_cutoff(w)
+    return bool(one(c,'SELECT t.id FROM thread t WHERE t.ws=? AND t.id=? AND (t.created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=t.ws AND m.thread=t.id AND m.created>=?))',(w['id'],i,cutoff,cutoff)))
 def remaining(c,w):
     if is_operator(w):
         return max(0,10000-operator_wallet(c,w)['chat_used'])
