@@ -482,10 +482,29 @@ def stats(ws=Depends(ident)):
 @app.get('/api/export')
 def export(ws=Depends(ident)):
     from openpyxl import Workbook
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    def safe(v):
+        if not isinstance(v,str):return v
+        v=ILLEGAL_CHARACTERS_RE.sub('',v)[:32760]
+        return "'"+v if v.lstrip().startswith(('=','+','-','@')) else v
+    def add_sheet(book,name,headers,records):
+        sheet=book.create_sheet(name);sheet.append(headers)
+        for row in records:sheet.append([safe(x) for x in row])
+        sheet.freeze_panes='A2';sheet.auto_filter.ref=sheet.dimensions
+    b=Workbook();b.remove(b.active)
     with db() as c:
-        w=getw(c,ws);require('export' in entitlements(w));rr=rows(c,'SELECT thread,role,body,created FROM message WHERE ws=? ORDER BY created',(ws,))
-    b=Workbook();s=b.active;s.append(['상담 ID','역할','본문','일시 UTC'])
-    for r in rr:s.append([r['thread'],r['role'],"'"+r['body'] if r['body'].startswith(('=','+','-','@')) else r['body'],datetime.fromtimestamp(r['created'],timezone.utc).isoformat()])
+        w=getw(c,ws);a=entitlements(w);require('export' in a)
+        rr=rows(c,'SELECT m.thread,m.role,m.body,m.created FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND t.kind<>? ORDER BY m.created',(ws,'test'))
+        require(len(rr)<=50000,'상담 기록이 너무 많습니다. 관리자에게 문의하세요.',422)
+        add_sheet(b,'상담 기록',['상담 ID','역할','본문','일시 UTC'],[(r['thread'],r['role'],r['body'],datetime.fromtimestamp(r['created'],timezone.utc).isoformat()) for r in rr])
+        if 'crm' in a:
+            contacts=rows(c,'SELECT id,name,email,phone,notes FROM crm_contact WHERE ws=? ORDER BY updated DESC',(ws,))
+            add_sheet(b,'고객',['고객 ID','이름','이메일','전화번호','메모'],[tuple(r[k] for k in ('id','name','email','phone','notes')) for r in contacts])
+        if 'calendar' in a:
+            reservations=rows(c,"SELECT id,start,end,status FROM booking WHERE ws=? AND status NOT IN ('draft','superseded') ORDER BY start",(ws,))
+            add_sheet(b,'예약',['예약 ID','시작 UTC','종료 UTC','상태'],[tuple(r[k] for k in ('id','start','end','status')) for r in reservations])
+        work=rows(c,'SELECT kind,title,details,status FROM work WHERE ws=? ORDER BY created',(ws,))
+        add_sheet(b,'업무',['구분','제목','내용','상태'],[tuple(r[k] for k in ('kind','title','details','status')) for r in work if r['kind'] in a])
     o=io.BytesIO();b.save(o);return Response(o.getvalue(),media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':'attachment; filename=consultations.xlsx'})
 @app.get('/widget/{slug}')
 def widget(slug:str):
@@ -509,6 +528,7 @@ import recovery
 import developer_api
 import education_url
 import customer_ops
+import reporting
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
