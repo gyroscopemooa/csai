@@ -30,7 +30,7 @@ def resolve(c,slug):
     return None,None
 
 def appearance(w,s):
-    a=entitlements(w);return {'logo':s.get('logo',''),'color':s.get('color','#3182F6') if 'design' in a else '#3182F6','unbrand':bool(s.get('unbrand') and 'unbrand' in a)}
+    a=entitlements(w);return {'logo':s.get('logo',''),'color':s.get('color','#3182F6') if 'design' in a else '#3182F6','unbrand':bool(s.get('unbrand') and 'unbrand' in a),'theme':s.get('theme','dark') if 'design' in a else 'dark','density':s.get('density','normal') if 'design' in a else 'normal','bubble_radius':s.get('bubble_radius','rounded') if 'design' in a else 'rounded'}
 def merged(c,w,v):
     s=loads(w['settings']);agent=None
     if v.get('agent'):
@@ -56,6 +56,8 @@ def set_appearance(body:dict,ws=Depends(ident)):
                 except Exception:raise HTTPException(422,'유효한 이미지 파일을 선택하세요.')
             else:s['logo']=''
         if 'color' in body:require('design' in a);require(isinstance(body['color'],str) and bool(re.fullmatch(r'#[0-9a-fA-F]{6}',body['color'])),'색상 형식 오류',422);s['color']=body['color']
+        for key,choices in {'theme':{'dark','toss','messenger','premium'},'density':{'normal','compact','roomy'},'bubble_radius':{'rounded','square'}}.items():
+            if key in body:require('design' in a);require(isinstance(body[key],str) and body[key] in choices,'디자인 옵션 오류',422);s[key]=body[key]
         if 'unbrand' in body:require('unbrand' in a);s['unbrand']=body['unbrand'] is True
         if 'alias' in body:
             require('custom_url' in a);alias=bounded(body['alias'],48).lower();old=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,))
