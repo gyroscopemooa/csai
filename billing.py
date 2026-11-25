@@ -73,7 +73,9 @@ def checkout_confirm(i:str,ws=Depends(ident)):
                 u=one(c,'SELECT n FROM usage WHERE ws=? AND period=?',(ws,month()))
                 if not sub and u:c.execute('INSERT OR IGNORE INTO usage VALUES(?,?,?)',(ws,'sub:'+str(start),u['n']))
             c.execute('INSERT INTO subscription VALUES(?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_end=0,order_id=excluded.order_id',(ws,start,end,0,i));c.execute('UPDATE workspace SET plan=?,addons=? WHERE id=?',(x['plan'],dump(x['addons']),ws))
-        elif r['kind']=='education':charge_credit(c,w,-x['quantity'],i)
+        elif r['kind']=='education':
+            # Purchased packs credit the ordinary wallet; operator/trial safety caps are separate.
+            c.execute('UPDATE workspace SET credits=credits+? WHERE id=?',(x['quantity'],ws));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education',x['quantity'],i,now()))
         else:c.execute('INSERT INTO message_balance VALUES(?,?,?) ON CONFLICT(ws,kind) DO UPDATE SET n=n+excluded.n',(ws,x['name'],x['quantity']))
         c.execute("UPDATE checkout_order SET status='paid',paid_at=? WHERE id=?",(now(),i));return order_view(one(c,'SELECT * FROM checkout_order WHERE id=?',(i,)))
 @app.post('/api/billing/orders/{i}/cancel')
@@ -90,3 +92,39 @@ def subscription_cancel(ws=Depends(ident)):
 @app.get('/api/billing/history')
 def history(ws=Depends(ident)):
     with db() as c:return {'orders':[order_view(x) for x in rows(c,'SELECT * FROM checkout_order WHERE ws=? ORDER BY rowid DESC LIMIT 100',(ws,))],'subscription':one(c,'SELECT * FROM subscription WHERE ws=?',(ws,)),'messages':rows(c,'SELECT kind,n FROM message_balance WHERE ws=?',(ws,))}
+
+@app.post('/api/billing/orders/{i}/sandbox-fail')
+def sandbox_fail(i:str,ws=Depends(ident)):
+    require(DEMO,'테스트 전용',403)
+    with db(True) as c:
+        require(sandbox_allowed(c,getw(c,ws)),'테스트 권한 필요',403)
+        row=one(c,'SELECT * FROM checkout_order WHERE ws=? AND id=?',(ws,i));require(row,'주문 없음',404)
+        if row['status']=='failed':return order_view(row)
+        require(row['status']=='pending','대기 주문만 실패 처리 가능',409)
+        c.execute("UPDATE checkout_order SET status='failed' WHERE ws=? AND id=?",(ws,i))
+        return order_view(one(c,'SELECT * FROM checkout_order WHERE ws=? AND id=?',(ws,i)))
+
+@app.post('/api/billing/orders/{i}/sandbox-refund')
+def sandbox_refund(i:str,body:dict,ws=Depends(ident)):
+    require(DEMO and body.get('confirmed') is True,'테스트 환불 확인 필요',403)
+    with db(True) as c:
+        w=getw(c,ws);require(sandbox_allowed(c,w),'테스트 권한 필요',403)
+        row=one(c,'SELECT * FROM checkout_order WHERE ws=? AND id=?',(ws,i));require(row,'주문 없음',404)
+        if row['status']=='refunded':return order_view(row)
+        require(row['status']=='paid','승인된 테스트 주문만 환불 가능',409)
+        items=loads(row['items'])
+        if row['kind']=='subscription':
+            sub=one(c,'SELECT * FROM subscription WHERE ws=?',(ws,))
+            require(sub and sub['order_id']==i,'현재 구독의 최신 주문만 자동 테스트 환불할 수 있습니다.',409)
+            c.execute('UPDATE subscription SET period_end=?,cancel_at_end=1 WHERE ws=?',(now(),ws))
+            c.execute("UPDATE workspace SET plan='free',addons='[]',enabled=0,free_used=1 WHERE id=?",(ws,))
+        elif row['kind']=='education':
+            n=items['quantity']
+            require(w['credits']>=n,'잔여 크레딧이 부족하여 자동 전액 환불 불가',409)
+            c.execute('UPDATE workspace SET credits=credits-? WHERE id=?',(n,ws));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education_refund',-n,i,now()))
+        else:
+            n=items['quantity'];kind=items['name'];balance=one(c,'SELECT n FROM message_balance WHERE ws=? AND kind=?',(ws,kind))
+            require(balance and balance['n']>=n,'잔여 메시지 잔액 부족',409)
+            c.execute('UPDATE message_balance SET n=n-? WHERE ws=? AND kind=?',(n,ws,kind))
+        c.execute("UPDATE checkout_order SET status='refunded' WHERE ws=? AND id=?",(ws,i))
+        return order_view(one(c,'SELECT * FROM checkout_order WHERE ws=? AND id=?',(ws,i)))
