@@ -58,6 +58,7 @@ def init():
         CREATE TABLE IF NOT EXISTS unknown(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),thread TEXT NOT NULL,q TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS file(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),name TEXT NOT NULL,sha TEXT NOT NULL,content TEXT NOT NULL,images TEXT NOT NULL,created INTEGER NOT NULL,UNIQUE(ws,sha));
         CREATE TABLE IF NOT EXISTS training(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),state TEXT NOT NULL,estimate INTEGER NOT NULL,cost INTEGER NOT NULL DEFAULT 0,source TEXT NOT NULL,result TEXT,created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS education_reservation(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),wallet TEXT NOT NULL,wallet_ref TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0),state TEXT NOT NULL,cost INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS ledger(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),kind TEXT NOT NULL,delta INTEGER NOT NULL,ref TEXT,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS booking(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),visitor TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,resource TEXT NOT NULL,payload TEXT NOT NULL,version INTEGER NOT NULL,fields TEXT NOT NULL,status TEXT NOT NULL,customer_ok INTEGER NOT NULL DEFAULT 0,paid INTEGER NOT NULL DEFAULT 0,token TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS booking_range ON booking(ws,resource,status,start,end);
@@ -145,6 +146,34 @@ def charge_credit(c,w,n,ref):
         c.execute('UPDATE trial_access SET credit_used=credit_used+? WHERE ws=?',(n,w['id']));return
     if n>0 and w['credits']<n:raise ValueError('교육 크레딧 부족')
     c.execute('UPDATE workspace SET credits=credits-? WHERE id=?',(n,w['id']));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),w['id'],'education',-n,ref,now()))
+def reserve_education(c,w,n,ref):
+    """Reserve against the original wallet; later entitlement changes cannot redirect a refund."""
+    if type(n)!=int or n<0:raise ValueError('교육 비용 오류')
+    if one(c,'SELECT id FROM education_reservation WHERE id=?',(ref,)):raise ValueError('이미 예약된 교육 비용')
+    t=trial(c,w)
+    wallet,wallet_ref=('operator',month()) if is_operator(w) else ('trial',t['invite_id']) if t else ('ordinary','')
+    charge_credit(c,w,n,ref)
+    c.execute('INSERT INTO education_reservation VALUES(?,?,?,?,?,?,?,?)',(ref,w['id'],wallet,wallet_ref,n,'reserved',0,now()))
+
+def settle_education(c,ws,ref,cost):
+    r=one(c,'SELECT * FROM education_reservation WHERE ws=? AND id=?',(ws,ref))
+    if not r or type(cost)!=int or not 0<=cost<=r['amount']:raise ValueError('교육 정산 오류')
+    if r['state']=='settled':
+        if r['cost']!=cost:raise ValueError('이미 다른 비용으로 정산됨')
+        return
+    if r['state']!='reserved':raise ValueError('교육 정산 상태 오류')
+    refund=r['amount']-cost
+    if refund:
+        if r['wallet']=='operator':
+            c.execute('UPDATE operator_wallet SET credit_used=MAX(0,credit_used-?) WHERE ws=? AND period=?',(refund,ws,r['wallet_ref']))
+        elif r['wallet']=='trial':
+            c.execute('UPDATE trial_access SET credit_used=MAX(0,credit_used-?) WHERE ws=? AND invite_id=?',(refund,ws,r['wallet_ref']))
+        elif r['wallet']=='ordinary':
+            c.execute('UPDATE workspace SET credits=credits+? WHERE id=?',(refund,ws))
+            c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education',refund,ref,now()))
+        else:raise ValueError('교육 잔액 유형 오류')
+    c.execute("UPDATE education_reservation SET state='settled',cost=? WHERE ws=? AND id=?",(cost,ws,ref))
+
 def charge_chat(c,w,period):
     if is_operator(w):
         x=operator_wallet(c,w); 
@@ -160,7 +189,7 @@ def charge_chat(c,w,period):
     if remaining(c,w)<=0:raise ValueError('이번 구독 기간의 상담량을 모두 사용했습니다. 요금제를 확인하세요.')
     c.execute('INSERT INTO usage VALUES(?,?,1) ON CONFLICT(ws,period) DO UPDATE SET n=usage.n+1',(w['id'],period));return 'paid'
 def refund_chat(c,w,period,kind):
-    if kind=='operator':c.execute('UPDATE operator_wallet SET chat_used=MAX(0,chat_used-1) WHERE ws=?',(w['id'],))
+    if kind=='operator':c.execute('UPDATE operator_wallet SET chat_used=MAX(0,chat_used-1) WHERE ws=? AND period=?',(w['id'],period))
     elif kind=='trial':c.execute('UPDATE trial_access SET chat_used=MAX(0,chat_used-1) WHERE ws=?',(w['id'],))
     elif kind=='free':c.execute('UPDATE workspace SET free_used=MAX(0,free_used-1) WHERE id=?',(w['id'],))
     else:c.execute('UPDATE usage SET n=MAX(0,n-1) WHERE ws=? AND period=?',(w['id'],period))
