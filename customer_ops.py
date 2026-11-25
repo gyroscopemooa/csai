@@ -18,6 +18,7 @@ def init():
         CREATE TABLE IF NOT EXISTS crm_thread(ws TEXT NOT NULL,contact TEXT NOT NULL REFERENCES crm_contact(id) ON DELETE CASCADE,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS lead_profile(ws TEXT NOT NULL,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,work TEXT NOT NULL REFERENCES work(id) ON DELETE CASCADE,stage TEXT NOT NULL,source TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS quote_item(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),name TEXT NOT NULL,price INTEGER NOT NULL CHECK(price>=0),active INTEGER NOT NULL DEFAULT 1);
+        CREATE TABLE IF NOT EXISTS quote_suggestion(ws TEXT NOT NULL,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,items TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS quote_offer(id TEXT PRIMARY KEY,ws TEXT NOT NULL,work TEXT NOT NULL REFERENCES work(id) ON DELETE CASCADE,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,items TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0),note TEXT NOT NULL,status TEXT NOT NULL,created INTEGER NOT NULL,sent INTEGER);
         """)
 init()
@@ -153,3 +154,32 @@ def quote_send(i:str,body:dict,ws=Depends(ident)):
         text+='\n결제 및 예약 확정은 별도 안내를 확인해 주세요.'
         c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,r['thread'],'staff',text,now()));c.execute("UPDATE quote_offer SET status='sent',sent=? WHERE id=?",(now(),i));c.execute("UPDATE work SET status='resolved' WHERE ws=? AND id=?",(ws,r['work']))
         return quote_view(one(c,'SELECT * FROM quote_offer WHERE id=?',(i,)))
+
+def capture_quote_suggestion(c,ws,thread,msg,result):
+    draft=result.get('workDraft')
+    if not isinstance(draft,dict) or draft.get('kind')!='quote':return
+    raw=draft.pop('quoteItems',[])
+    active={x['id']:x for x in rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1',(ws,))}
+    out=[];seen=set()
+    if isinstance(raw,list):
+        for x in raw[:30]:
+            if isinstance(x,dict) and isinstance(x.get('id'),str) and x['id'] in active and x['id'] not in seen and type(x.get('quantity')) is int and 1<=x['quantity']<=1000:
+                seen.add(x['id']);out.append({'id':x['id'],'quantity':x['quantity']})
+    # Local demo and fixed-answer paths may match only a named item with explicit quantity.
+    if not out:
+        for item in active.values():
+            m=re.search(re.escape(item['name'])+r'\s*(?:[x×]\s*)?([1-9][0-9]{0,3})\s*(?:개|건|회|명|세트)',msg,re.I)
+            if m and int(m.group(1))<=1000:out.append({'id':item['id'],'quantity':int(m.group(1))})
+    c.execute('INSERT INTO quote_suggestion VALUES(?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET items=excluded.items,updated=excluded.updated',(ws,thread,dump(out),now()))
+
+@app.get('/api/quotes/suggestions/{work}')
+def quote_suggestions(work:str,ws=Depends(ident)):
+    with db() as c:
+        access(c,ws,'quote')
+        link=one(c,"SELECT thread FROM work_link WHERE ws=? AND work=? AND kind='quote'",(ws,work));require(link,'견적 요청 없음',404)
+        row=one(c,'SELECT items FROM quote_suggestion WHERE ws=? AND thread=?',(ws,link['thread']))
+        active={x['id']:x for x in rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1',(ws,))}
+        out=[]
+        for item in loads(row['items']) if row else []:
+            if item['id'] in active:out.append({'id':item['id'],'quantity':item['quantity'],'name':active[item['id']]['name'],'unit_price':active[item['id']]['price']})
+        return out
