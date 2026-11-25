@@ -22,7 +22,7 @@ npx wrangler deploy
 
 배포 후 실제 Worker URL로 `APP_URL`을 설정하고, `SHARED_TEST_MODE=1`, `DEMO_MODE=1`, Google OAuth 및 운영자 `google:<sub>` 값을 Cloudflare secret/environment variable로 넣어야 합니다. OpenAI, Supabase, Resend, 결제 관련 비밀값은 테스트 전까지 비워 둡니다.
 
-Supabase는 다른 서비스와 공유하지 않고 `cs-ai-dev` 전용 개발 프로젝트를 생성합니다. 생성 후 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`를 로컬 `.env`와 Cloudflare secret에 각각 넣습니다. 현 런타임은 SQLite이며, `supabase/migrations/001_foundation_DRAFT.sql`은 검토 전인 초안이므로 새 프로젝트에 자동 적용하지 않습니다.
+Supabase는 다른 서비스와 공유하지 않고 `csai` 전용 개발 프로젝트를 생성합니다. 생성 후 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`를 로컬 `.env`와 Cloudflare secret에 각각 넣습니다. 현 런타임은 SQLite이며, `supabase/migrations/001_foundation_DRAFT.sql`은 검토 전인 초안이므로 새 프로젝트에 자동 적용하지 않습니다.
 
 ## Windows에서 실행
 1. ZIP 전체를 새 폴더(예: `C:\Projects\CSAI`)에 압축 해제합니다. `run.py`, `requirements.txt`, `web/`가 같은 폴더 안에 있어야 합니다. 기존 폴더에 덮어쓰기보다는 별도 폴더에서 테스트를 권장합니다.

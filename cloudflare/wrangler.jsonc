@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "cs-ai-dev",
+  "name": "csai",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-25",
   "containers": [
