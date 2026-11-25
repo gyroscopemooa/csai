@@ -102,7 +102,7 @@ def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(a
 @app.get('/api/me')
 def me(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':max(0,t['booking_limit']-one(c,"SELECT count(*) n FROM booking WHERE ws=? AND status NOT IN ('draft','superseded','cancelled')",(ws,))['n'])} if t else None)}
+        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None)}
 @app.patch('/api/settings')
 def settings(body:dict,ws=Depends(ident)):
     with db(True) as c:
@@ -144,14 +144,14 @@ def settings(body:dict,ws=Depends(ident)):
             except Exception:fail(422,'시간대 오류')
         if any(old[k]!=s[k] for k in ['open','close','duration','buffer','closed_days','payment_required','timezone']):s['template_version']+=1
         enabled=w['enabled']
-        if 'enabled' in body:require(w['plan']!='free' or not body['enabled'],'구독 후 공개할 수 있습니다.');enabled=int(bool(body['enabled']))
+        if 'enabled' in body:require(public_access(w) or not body['enabled'],'구독 또는 초청 체험 후 공개할 수 있습니다.');enabled=int(bool(body['enabled']))
         c.execute('UPDATE workspace SET settings=?,enabled=? WHERE id=?',(dump(s),enabled,ws))
     return {'ok':True}
 @app.post('/api/demo/billing')
 def demo_billing(body:dict,ws=Depends(ident)):
     require(DEMO,'실제 결제 연동 전에는 변경할 수 없습니다.')
     with db(True) as c:
-        w=getw(c,ws);p=body.get('plan',w['plan']);require(p in PLAN,'요금제 오류',422);a=body.get('addons',loads(w['addons']));require(isinstance(a,list) and all(x in ADD or x in PACK for x in a),'상품 오류',422)
+        w=getw(c,ws);require(sandbox_allowed(c,w),'공유 환경에서는 운영자만 테스트 구매할 수 있습니다.',403);p=body.get('plan',w['plan']);require(p in PLAN,'요금제 오류',422);a=body.get('addons',loads(w['addons']));require(isinstance(a,list) and all(x in ADD or x in PACK for x in a),'상품 오류',422)
         # normalize duplicated channel subscriptions
         a=set(a)
         if 'channels' in a:a-= {'naver','kakao'}
@@ -191,10 +191,10 @@ def invite_revoke(i:str,req:Request):
 def invite_accept(body:dict,req:Request,ws=Depends(ident)):
     code=bounded(body.get('code',''),200);h=__import__('hashlib').sha256(code.encode()).hexdigest()
     with db(True) as c:
-        w=getw(c,ws);require(w['owner'].startswith('google:'),'Google 로그인 후 초청을 수락할 수 있습니다.',403);require(not trial(c,w),'이 계정은 이미 체험에 참여했습니다.',409)
+        w=getw(c,ws);require(w['owner'].startswith('google:'),'Google 로그인 후 초청을 수락할 수 있습니다.',403);require(not is_operator(w) and w['plan']=='free','무료 가입 계정만 초청 체험에 참여할 수 있습니다.',409);require(not one(c,'SELECT id FROM trial_invite WHERE used_by=?',(w['owner'],)),'이 계정은 이미 체험에 참여했습니다.',409)
         x=one(c,'SELECT * FROM trial_invite WHERE code_hash=? AND revoked=0 AND used_by IS NULL AND expires>?',(h,now()));require(x,'유효하지 않거나 만료된 초청 링크입니다.',404)
         trial_expires=now()+x['days']*86400
-        c.execute('UPDATE trial_invite SET used_by=?,used_at=? WHERE id=?',(w['owner'],now(),x['id']));c.execute('INSERT INTO trial_access VALUES(?,?,?,?,?,?,?,?)',(w['id'],x['id'],x['chat_limit'],0,x['credit_limit'],0,x['booking_limit'],trial_expires))
+        c.execute('UPDATE trial_invite SET used_by=?,used_at=? WHERE id=?',(w['owner'],now(),x['id']));c.execute('INSERT INTO trial_access VALUES(?,?,?,?,?,?,?,?)',(w['id'],x['id'],x['chat_limit'],0,x['credit_limit'],0,x['booking_limit'],trial_expires));c.execute('UPDATE workspace SET free_used=1 WHERE id=?',(ws,))
     return {'ok':True,'expires':trial_expires}
 @app.get('/api/operator/costs')
 def operator_costs(req:Request):
@@ -281,7 +281,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(w and w['enabled'] and w['plan']!='free','상담이 비활성화되었습니다.',404);s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {});return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and w['enabled'],'상담이 비활성화되었습니다.',404);s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {});return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -290,7 +290,7 @@ def create_session(body:dict,req:Request):
         if kind=='test':
             token=req.cookies.get('csai_session','');s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(token,now()));require(s,'로그인 필요',401);w=getw(c,s['ws'])
         else:
-            w,agent=branding.resolve(c,body.get('slug'));require(w and w['enabled'] and w['plan']!='free','상담 비활성화',404)
+            w,agent=branding.resolve(c,body.get('slug'));require(public_access(w) and w['enabled'],'상담 비활성화',404)
         token=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,w['id'],now()+86400,kind));
         if agent:c.execute('UPDATE visitor SET agent=? WHERE token=?',(agent['id'],token))
         i=uid();c.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(i,w['id'],token,kind,now()))
@@ -309,7 +309,7 @@ def chat(body:dict):
             if prior['state']=='done':return loads(prior['result'])
             if prior['state']=='running':fail(409,'이미 처리 중입니다.')
             c.execute('DELETE FROM request WHERE ws=? AND thread=? AND client=?',key)
-        taccess=trial(c,w);require(v['kind']=='test' or (w['enabled'] and (w['plan']!='free' or taccess)),'상담 비활성화')
+        require(v['kind']=='test' or (w['enabled'] and public_access(w)),'상담 비활성화')
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
         if t['manual']:
             r={'reply':'담당자가 확인 중입니다.','manual':True,'remaining':remaining(c,w)}
@@ -358,7 +358,7 @@ def unknown(ws=Depends(ident)):
     with db() as c:return rows(c,'SELECT id,thread,q,status,created FROM unknown WHERE ws=? ORDER BY created DESC',(ws,))
 @app.get('/api/qr')
 def qr(ws=Depends(ident)):
-    with db() as c:w=getw(c,ws);require(w['plan']!='free','유료 구독 필요');url=APP_URL+'/c/'+w['slug']
+    with db() as c:w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요');url=APP_URL+'/c/'+w['slug']
     b=io.BytesIO();qrcode.make(url).save(b,format='PNG');return Response(b.getvalue(),media_type='image/png')
 
 def interval(s,start):
@@ -414,7 +414,7 @@ def availability(body:dict):
 def draft(body:dict):
     with db(True) as c:
         v=visitor(c,body.get('token',''));w=getw(c,v['ws']);s=loads(w['settings']);t=trial(c,w);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));require(v['kind']=='public','관리자 테스트에서는 실제 예약을 생성하지 않습니다.',409)
-        if t:require(one(c,"SELECT count(*) n FROM booking WHERE ws=? AND status NOT IN ('draft','superseded','cancelled')",(w['id'],))['n']<t['booking_limit'],'초청 체험 예약 한도(10건)를 모두 사용했습니다.',402)
+        if t:require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
         require(body.get('version')==s['template_version'],'양식 변경됨. 다시 확인하세요.',409);data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,v['ws'],a,b,buffer=s['buffer'],resource=resource),'선택한 시간이 이미 예약되었습니다.',409);i=uid();t=uid();c.execute("UPDATE booking SET status='superseded' WHERE ws=? AND visitor=? AND status='draft'",(v['ws'],v['token']));c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,v['ws'],v['token'],a,b,resource,dump(data),s['template_version'],dump(s['fields']),'draft',0,0,t,now()));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)),True)
 @app.post('/api/booking/{i}/confirm')
 def confirm(i:str,body:dict):
@@ -422,6 +422,7 @@ def confirm(i:str,body:dict):
         v=visitor(c,body.get('token',''));w=getw(c,v['ws']);s=loads(w['settings']);b=one(c,'SELECT * FROM booking WHERE id=? AND ws=? AND visitor=?',(i,v['ws'],v['token']));require(b and secrets.compare_digest(b['token'],str(body.get('confirmation',''))),'예약 확인 권한 없음');require('calendar' in entitlements(w) and w['enabled'] and s['modes'].get('booking')!='off')
         require(b['status']!='superseded','이전 양식은 변경되었습니다. 최신 양식을 확인하세요.',409)
         if b['status']!='draft':return booking_view(b)
+        if trial(c,w):require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
         require(b['version']==s['template_version'] and b['created']>now()-1800,'예약 정보 만료 또는 양식 변경',409);require(available(c,v['ws'],b['start'],b['end'],buffer=s['buffer'],resource=b['resource']),'다른 고객이 먼저 예약했습니다.',409);require(datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'지난 일정은 확정할 수 없습니다.',409)
         status='pending_payment' if s['payment_required'] else 'confirmed' if s['modes'].get('booking')=='auto' and 'auto_booking' in entitlements(w) else 'pending'
         c.execute('UPDATE booking SET customer_ok=1,status=? WHERE id=?',(status,i));ops.event(c,v['ws'],'booking','예약 '+('확정' if status=='confirmed' else '확인 요청'),i);c.execute("UPDATE thread SET booking_context='{}' WHERE ws=? AND visitor=?",(v['ws'],v['token']));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
@@ -432,7 +433,9 @@ def bookings(ws=Depends(ident)):
 @app.post('/api/bookings')
 def manual_booking(body:dict,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);s=loads(w['settings']);require('calendar' in entitlements(w));data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,ws,a,b,buffer=s['buffer'],resource=resource),'예약 시간이 겹칩니다.',409);i=uid();paid=bool(body.get('paid',False));status='pending_payment' if s['payment_required'] and not paid else 'confirmed';c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,'staff',a,b,resource,dump(data),s['template_version'],dump(s['fields']),status,1,int(paid),uid(),now()));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
+        w=getw(c,ws);s=loads(w['settings']);require('calendar' in entitlements(w));
+        if trial(c,w):require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
+        data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,ws,a,b,buffer=s['buffer'],resource=resource),'예약 시간이 겹칩니다.',409);i=uid();paid=bool(body.get('paid',False));status='pending_payment' if s['payment_required'] and not paid else 'confirmed';c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,'staff',a,b,resource,dump(data),s['template_version'],dump(s['fields']),status,1,int(paid),uid(),now()));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
 @app.post('/api/bookings/{i}')
 def booking_admin(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
