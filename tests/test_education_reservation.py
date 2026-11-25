@@ -45,3 +45,22 @@ def test_operator_old_month_refund_does_not_change_new_month(monkeypatch):
         store.refund_chat(d,w,store.month(),'operator')
         x=store.one(d,'SELECT credit_used,chat_used FROM operator_wallet WHERE ws=?',(ws,))
         assert x=={'credit_used':4,'chat_used':6}
+
+def test_chat_persistence_failure_refunds_once(monkeypatch):
+    from test_app import patch,public
+    import customer_ops
+    c=owner()
+    post(c,'/api/demo/billing',{'plan':'lite','addons':[]})
+    patch(c,{'enabled':True,'price':'100원'})
+    u,token=public(c)
+    body={'token':token,'message':'가격은?','clientMessageId':'persistence-failure'}
+    original=customer_ops.capture_lead
+    def fail(*args):raise RuntimeError('forced persistence failure')
+    monkeypatch.setattr(customer_ops,'capture_lead',fail)
+    assert u.post('/api/chat',json=body).status_code==502
+    assert c.get('/api/me').json()['remaining']==300
+    monkeypatch.setattr(customer_ops,'capture_lead',original)
+    result=post(u,'/api/chat',body)
+    assert result['remaining']==299
+    assert post(u,'/api/chat',body)==result
+    assert c.get('/api/me').json()['remaining']==299
