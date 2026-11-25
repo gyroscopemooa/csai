@@ -50,3 +50,23 @@ npx wrangler deploy
 - GitHub 직접 복제는 현재 실행 환경 DNS 문제로 실패했습니다.
 - 자동 테스트는 실패 또는 미확인 상태이므로 테스트 성공을 확인하기 전 배포하지 않습니다.
 - Supabase 실제 연결과 실제 PG, 외부 발송은 별도 설정 및 검증이 필요합니다.
+
+
+## 기존 SQLite 자료를 Supabase로 이전하는 경우
+
+기존 환경의 모든 쓰기를 멈추고 SQLite 공식 backup 기능으로 별도 백업을 만듭니다.
+백업 파일과 기존 설정(.env, OAuth 설정, 암호화 키)을 안전한 위치에 보존합니다.
+운영 자료나 키를 GitHub에 커밋하지 않습니다.
+새 Supabase DB의 private schema를 초기화한 후 현재 브랜치로 스키마를 먼저 생성합니다.
+DATABASE_URL은 해당 전용 DB의 비공개 환경변수로 설정합니다.
+
+저장소 루트에서 (PYTHONPATH에 저장소 루트 포함):
+
+```sh
+python -m scripts.import_sqlite --source /path/to/offline-backup.sqlite3
+```
+
+기본은 읽기 전용 dry-run입니다. 기존 대상 데이터가 있거나 스키마/무결성 문제가 있으면 중단합니다.
+검토한 백업으로 빈 대상 DB에 실제 이전하기로 결정한 경우에만 `--apply --confirmed-offline-backup`을 추가합니다.
+이 도구는 실제 PostgreSQL 이전 테스트를 아직 통과하지 않았습니다. 반드시 복제된 테스트 데이터에서 검증합니다.
+이전이 실패하더라도 기존 SQLite 백업을 삭제하지 않습니다. 두 DB에서 동시에 서비스를 쓰지 않습니다.
