@@ -1,6 +1,12 @@
 // Word Roll adaptation for the CS AI landing page. Motion values match the source.
 (() => {
-  const words = ['내 서비스에', '홈페이지에', '네이버 톡톡에', '카카오톡 채널에'];
+  const words = [
+    '내 서비스에 붙여보세요',
+    '네이버 톡톡에 붙여보세요',
+    '카카오톡 채널에 붙여보세요',
+    '링크로 간편히 안내하세요',
+    'CS AI 상담 페이지에서 응대하세요',
+  ];
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const spring = (x, k, c) => ({ x, v: 0, t: x, k, c });
   const step = (s, dt) => { const a = -s.k * (s.x - s.t) - s.c * s.v; s.v += a * dt; s.x += s.v * dt; };
@@ -10,7 +16,7 @@
     if (!copy || copy === active) return;
     active = copy;
     copy.className = 'hero-copy';
-    copy.innerHTML = '직접 교육한 AI 상담사를<br><button type="button" class="word-roll" aria-label="내 서비스에 AI 상담사를 붙여보세요"><span class="word-roll-slot"></span></button> 붙여보세요.<br>고객 상담을 24시간 도와드립니다.';
+    copy.innerHTML = '직접 교육한 AI 상담사로<br><button type="button" class="word-roll" aria-label="내 서비스에 붙여보세요"><span class="word-roll-slot"></span></button><br>고객 상담을 24시간 도와드립니다.';
     const button = copy.querySelector('.word-roll');
     const slot = copy.querySelector('.word-roll-slot');
     if (reduced.matches) { slot.textContent = words[0]; return; }
@@ -35,7 +41,7 @@
       live.push({ el, letters, out: false });
       width.t = el.offsetWidth;
       if (first) width.x = width.t;
-      button.setAttribute('aria-label', word + ' AI 상담사를 붙여보세요');
+      button.setAttribute('aria-label', word);
     }
     function advance() { index = (index + 1) % words.length; show(words[index]); nextAt = performance.now() + 2400; }
     button.addEventListener('click', advance);
