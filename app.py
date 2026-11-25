@@ -509,3 +509,17 @@ import recovery
 import developer_api
 import education_url
 import customer_ops
+
+# Optional one-process worker for the development container. Disabled unless configured.
+_worker_stop=None
+_worker_thread=None
+@app.on_event('startup')
+def start_background_worker():
+    global _worker_stop,_worker_thread
+    if os.getenv('ENABLE_BACKGROUND_WORKER')!='1' or (_worker_thread and _worker_thread.is_alive()):return
+    import worker
+    _worker_stop=threading.Event();_worker_thread=threading.Thread(target=worker.loop,args=(_worker_stop,),name='csai-worker',daemon=True);_worker_thread.start()
+@app.on_event('shutdown')
+def stop_background_worker():
+    if _worker_stop:_worker_stop.set()
+    if _worker_thread:_worker_thread.join(timeout=2)
