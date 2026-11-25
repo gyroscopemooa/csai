@@ -66,6 +66,10 @@ class Connection:
                 self.raw.execute('CREATE UNIQUE INDEX IF NOT EXISTS '+checked_name(name+'_rowid_unique')+' ON '+table+'(rowid)')
             self.raw.execute('ALTER TABLE '+table+' ENABLE ROW LEVEL SECURITY')
             self.raw.execute('REVOKE ALL ON TABLE '+table+' FROM PUBLIC')
+            # Hosted Supabase roles are optional in local PostgreSQL CI.
+            for role in ('anon','authenticated'):
+                if self.raw.execute('SELECT 1 FROM pg_roles WHERE rolname=%s',(role,)).fetchone():
+                    self.raw.execute('REVOKE ALL ON TABLE '+table+' FROM '+checked_name(role))
         return cur
 
     def executemany(self,sql,parameters):
@@ -93,6 +97,7 @@ def connect(dsn,write=False):
     raw=psycopg.connect(validate_dsn(dsn),sslmode='require' if 'sslmode=' not in dsn else parse_qs(urlsplit(dsn).query)['sslmode'][-1],connect_timeout=10,row_factory=dict_row)
     try:
         raw.execute('SET LOCAL search_path TO csai_private, pg_catalog')
+        raw.execute("SET LOCAL statement_timeout TO '45s'")
         raw.execute("SET LOCAL lock_timeout TO '30s'")
         raw.execute('SELECT pg_advisory_xact_lock(%s)',(LOCK_ID,))
         exists=raw.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name='csai_private'").fetchone()
