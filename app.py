@@ -107,7 +107,8 @@ def me(ws=Depends(ident)):
 def settings(body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);s=loads(w['settings']);old=copy.deepcopy(s)
-        for k in ['brand','tone','prompt','notice','price','location','hours','welcome','fallback']:
+        if 'prompt' in body:require(body['prompt']==s['prompt'],'상담 지침 변경은 AI 교육에서 진행하세요.',422)
+        for k in ['brand','tone','notice','price','location','hours','welcome','fallback']:
             if k in body:s[k]=bounded(body[k],2500 if k=='prompt' else 1500)
         if 'emoji' in body:s['emoji']=bool(body['emoji'])
         if 'links' in body:
@@ -209,7 +210,7 @@ def listfaq(ws=Depends(ident)):
 def faq(body:dict,ws=Depends(ident)):
     q=bounded(body.get('q',''),500);a=bounded(body.get('a',''),2000);require(q and a,'질문과 답변을 입력하세요.',422)
     with db(True) as c:
-        w=getw(c,ws);text=q+' => '+a;estimate=ai.estimate(text,[]);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',estimate,0,dump({'text':text,'images':[],'unknown':body.get('unknown')}),None,now()))
+        w=getw(c,ws);unknown_id=body.get('unknown');require(not unknown_id or one(c,'SELECT id FROM unknown WHERE ws=? AND id=? AND status=?',(ws,unknown_id,'open')),'미학습 질문 없음',404);text=ai.clean(q+' => '+a);estimate=ai.estimate(text,[]);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',estimate,0,dump({'text':text,'images':[],'unknown':body.get('unknown')}),None,now()))
         t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
     return {'id':i,'maxCredits':estimate,'credits':credits,'enough':credits>=estimate,'requires_run':True}
 @app.delete('/api/faq/{i}')
@@ -238,20 +239,23 @@ def delete_file(i:str,ws=Depends(ident)):
 def estimate(body:dict,ws=Depends(ident)):
     text=bounded(body.get('text',''),30000);images=[];ids=body.get('files',[]);require(isinstance(ids,list) and len(ids)<=10,'최대 10개 파일',422)
     with db(True) as c:
-        w=getw(c,ws)
+        w=getw(c,ws);agent_id=body.get('agent','');require(isinstance(agent_id,str),'상담원 형식 오류',422)
+        if agent_id:require('extra_agent' in entitlements(w) and one(c,'SELECT id FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)),'추가 상담원 권한 또는 정보 없음',403)
         for i in dict.fromkeys(ids):
             f=one(c,'SELECT * FROM file WHERE id=? AND ws=?',(i,ws));require(f,'파일 없음',404);text+='\n'+f['name']+'\n'+f['content'];images+=loads(f['images'])
         require((text.strip() or images) and len(text)<=60000 and len(images)<=8,'교육 자료 없음 또는 한도 초과',422)
-        text=ai.clean(text);n=ai.estimate(text,images);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',n,0,dump({'text':text,'images':images}),None,now()))
+        text=ai.clean(text);n=ai.estimate(text,images);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',n,0,dump({'text':text,'images':images,'agent':agent_id}),None,now()))
         t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
         return {'id':i,'maxCredits':n,'credits':credits,'enough':credits>=n}
 @app.post('/api/training/{i}/run')
 def train(i:str,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state']=='estimated' and j['created']>now()-1800,'유효한 교육 견적 필요',409)
+        source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
+        if agent_id:require(agent and 'extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
         try:charge_credit(c,w,j['estimate'],i)
         except ValueError as e:fail(402,str(e))
-        c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));source=loads(j['source']);s=loads(w['settings'])
+        c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {})
     try:
         result,n=ai.train(source['text'],source['images'],s);require(n<=j['estimate'],'교육 상한 초과',409)
     except Exception as e:
@@ -259,19 +263,24 @@ def train(i:str,ws=Depends(ident)):
             charge_credit(c,getw(c,ws),-j['estimate'],i);c.execute('UPDATE training SET state=\'failed\' WHERE id=?',(i,))
         fail(502,'교육 실패: '+str(e)[:200])
     with db(True) as c:
-        charge_credit(c,getw(c,ws),n-j['estimate'],i);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown')}),i));record_usage(c,ws,'training',ai.TRAIN,result)
+        charge_credit(c,getw(c,ws),n-j['estimate'],i);record_usage(c,ws,'training',ai.TRAIN,result);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown'),'agent':agent_id}),i))
     return {'id':i,'cost':n,'result':result}
 @app.get('/api/training')
 def jobs(ws=Depends(ident)):
-    with db() as c:return [dict(j,result=loads(j['result']) if j['result'] else None) for j in rows(c,'SELECT id,state,estimate,cost,result,created FROM training WHERE ws=? ORDER BY created DESC',(ws,))]
+    with db() as c:return [dict({k:v for k,v in j.items() if k!='source'},agent=loads(j['source']).get('agent',''),result=loads(j['result']) if j['result'] else None) for j in rows(c,'SELECT id,state,estimate,cost,result,created,source FROM training WHERE ws=? ORDER BY created DESC',(ws,))]
 @app.post('/api/training/{i}/publish')
 def publish(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state'] in ['review','published'],'승인할 결과 없음',409)
-        result=loads(j['result']);w=getw(c,ws);old=loads(w['published'])
+        result=loads(j['result']);w=getw(c,ws);source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
+        if agent_id:require(agent and 'extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
+        old=loads(agent['published'] if agent else w['published'])
         if body.get('replace'):merged=result
         else:merged={'style':result.get('style',old.get('style','')),'rules':list(dict.fromkeys(old.get('rules',[])+result.get('rules',[])))[-100:],'faq':list({x['q']:x for x in old.get('faq',[])+result.get('faq',[])}.values())[-200:],'conflicts':result.get('conflicts',[])}
-        ops.checkpoint(c,ws,'교육 반영 전');c.execute('UPDATE workspace SET published=? WHERE id=?',(dump(merged),ws));source=loads(j['source']);
+        if agent:
+            c.execute('INSERT INTO agent_knowledge_version VALUES(?,?,?,?,?)',(uid(),ws,agent_id,agent['published'],now()));c.execute('UPDATE agent_profile SET published=? WHERE ws=? AND id=?',(dump(merged),ws,agent_id))
+        else:
+            ops.checkpoint(c,ws,'교육 반영 전');c.execute('UPDATE workspace SET published=? WHERE id=?',(dump(merged),ws))
         if source.get('unknown'):c.execute("UPDATE unknown SET status='resolved' WHERE ws=? AND id=?",(ws,source['unknown']))
         c.execute('UPDATE training SET state=\'published\' WHERE id=?',(i,))
     return {'ok':True}
@@ -317,7 +326,7 @@ def chat(body:dict):
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
-        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=(loads(agent['faq']) if agent else [])+rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(w['published']);adds=entitlements(w)
+        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w)
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')))
     except Exception as e:
         with db(True) as c:
