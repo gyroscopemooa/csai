@@ -158,7 +158,7 @@ def charge_chat(c,w,period):
         if w['free_used']>=1:raise ValueError('무료 테스트를 모두 사용했습니다. 요금제를 확인하세요.')
         c.execute('UPDATE workspace SET free_used=free_used+1 WHERE id=?',(w['id'],));return 'free'
     if remaining(c,w)<=0:raise ValueError('이번 구독 기간의 상담량을 모두 사용했습니다. 요금제를 확인하세요.')
-    c.execute('INSERT INTO usage VALUES(?,?,1) ON CONFLICT(ws,period) DO UPDATE SET n=n+1',(w['id'],period));return 'paid'
+    c.execute('INSERT INTO usage VALUES(?,?,1) ON CONFLICT(ws,period) DO UPDATE SET n=usage.n+1',(w['id'],period));return 'paid'
 def refund_chat(c,w,period,kind):
     if kind=='operator':c.execute('UPDATE operator_wallet SET chat_used=MAX(0,chat_used-1) WHERE ws=?',(w['id'],))
     elif kind=='trial':c.execute('UPDATE trial_access SET chat_used=MAX(0,chat_used-1) WHERE ws=?',(w['id'],))
