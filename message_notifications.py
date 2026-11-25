@@ -100,7 +100,7 @@ def complete(row,state,provider_id=''):
         latest=one(c,'SELECT status FROM message_notify_delivery WHERE id=?',(row['id'],))
         if not latest or latest['status'] not in ('sending','accepted'):return
         if state=='rejected':
-            c.execute('INSERT INTO message_balance VALUES(?,?,1) ON CONFLICT(ws,kind) DO UPDATE SET n=n+1',(row['ws'],row['kind']))
+            c.execute('INSERT INTO message_balance VALUES(?,?,1) ON CONFLICT(ws,kind) DO UPDATE SET n=message_balance.n+1',(row['ws'],row['kind']))
         c.execute('UPDATE message_notify_delivery SET status=?,provider_id=?,updated=? WHERE id=?',(state,provider_id or row.get('provider_id',''),now(),row['id']))
 
 def dispatch(ws):
@@ -111,7 +111,7 @@ def dispatch(ws):
         rights=entitlements(w)
         available=balance(c,ws,conf['kind'])
         if available<=0:return 0
-        pending=rows(c,"SELECT e.* FROM event_log e LEFT JOIN message_notify_delivery d ON d.ws=e.ws AND d.event=e.id AND d.kind=? WHERE e.ws=? AND e.seen=0 AND e.created>? AND d.id IS NULL ORDER BY e.created LIMIT 100",(conf['kind'],ws,max(conf['updated'],now()-86400)))
+        pending=rows(c,"SELECT e.* FROM event_log e LEFT JOIN message_notify_delivery d ON d.ws=e.ws AND d.event=e.id AND d.kind=? WHERE e.ws=? AND e.seen=0 AND e.created>=? AND d.id IS NULL ORDER BY e.created LIMIT 100",(conf['kind'],ws,max(conf['updated'],now()-86400)))
         chosen=[x for x in pending if EVENTS.get(x['kind']) in rights][:min(5,available)]
         jobs=[]
         for event in chosen:
