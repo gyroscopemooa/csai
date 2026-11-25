@@ -50,6 +50,7 @@ def checkout_quote(body:dict,ws=Depends(ident)):
 def checkout_create(body:dict,ws=Depends(ident)):
     require(DEMO,'실제 PG 미연결',503);k,i,n=quote(body);client=bounded(body.get('client',''),100);require(client,'요청 ID 필요',422)
     with db(True) as c:
+        require(sandbox_allowed(c,getw(c,ws)),'공유 환경에서는 운영자만 테스트 구매할 수 있습니다.',403)
         old=one(c,'SELECT * FROM checkout_order WHERE ws=? AND client=?',(ws,client))
         if old:
             require(old['kind']==k and old['items']==dump(i),'동일 요청 ID에 다른 상품',409);return order_view(old)
@@ -58,6 +59,7 @@ def checkout_create(body:dict,ws=Depends(ident)):
 def checkout_confirm(i:str,ws=Depends(ident)):
     require(DEMO,'실결제 승인 불가',403)
     with db(True) as c:
+        require(sandbox_allowed(c,getw(c,ws)),'공유 환경에서는 운영자만 테스트 구매할 수 있습니다.',403)
         r=one(c,'SELECT * FROM checkout_order WHERE ws=? AND id=?',(ws,i));require(r,'주문 없음',404)
         if r['status']=='paid':return order_view(r)
         require(r['status']=='pending' and r['created']>now()-1800,'주문 만료 또는 취소',409);x=loads(r['items']);w=getw(c,ws)
