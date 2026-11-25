@@ -331,6 +331,17 @@ def create_session(body:dict,req:Request):
 def messages(token:str):
     with db() as c:
         v=visitor(c,token);t=one(c,'SELECT * FROM thread WHERE visitor=? AND ws=?',(token,v['ws']));return rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? ORDER BY rowid',(v['ws'],t['id']))
+def abort_chat_request(key,period,kind):
+    """Recover once; a successful but ambiguous commit is replayed, never refunded."""
+    ws,tid,client=key
+    with db(True) as c:
+        prior=one(c,'SELECT state,result FROM request WHERE ws=? AND thread=? AND client=?',key)
+        if prior and prior['state']=='done':return loads(prior['result'])
+        if prior and prior['state']=='running':
+            refund_chat(c,getw(c,ws),period,kind)
+            c.execute("UPDATE request SET state='failed' WHERE ws=? AND thread=? AND client=?",key)
+    return None
+
 @app.post('/api/chat')
 def chat(body:dict):
     token=bounded(body.get('token',''),100);client=bounded(body.get('clientMessageId',''),100);msg=bounded(body.get('message',''),2000);require(msg and client,'메시지 필요',422)
@@ -353,9 +364,8 @@ def chat(body:dict):
         quote_catalog=rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1 ORDER BY name LIMIT 100',(ws,)) if 'quote' in adds else []
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
-        with db(True) as c:
-            refund_chat(c,getw(c,ws),p,kind)
-            c.execute('UPDATE request SET state=\'failed\' WHERE ws=? AND thread=? AND client=?',key)
+        replay=abort_chat_request(key,p,kind)
+        if replay is not None:return replay
         fail(502,'상담 처리 실패. 사용량은 복구되었습니다.')
     proposal=r.pop('workDraft',None)
     if v['kind']=='public' and not r.get('booking') and s['modes'].get('general')!='off':
@@ -366,16 +376,24 @@ def chat(body:dict):
         if work_kind and not (work_kind=='complaints' and s['modes'].get('complaint')=='off'):
             r['workDraft']=proposal or {'kind':work_kind,'title':msg[:120],'details':msg[:2000]}
     if r.get('unknown') and s['modes'].get('unknown')=='off':r.update({'reply':'등록된 답변이 없어 안내가 어렵습니다.','unknown':False})
-    with db(True) as c:
-        for role,body in [('user',msg),('assistant',r['reply'])]:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,now()))
-        if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
-        if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
-        if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
-        if r.get('unknown'):
-            if v['kind']!='test':ops.event(c,ws,'unknown','미학습 질문 접수',tid)
-            c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(uid(),ws,tid,msg,'open',now()));c.execute('UPDATE thread SET status=\'pending\' WHERE id=?',(tid,))
-        c.execute('UPDATE thread SET booking_context=? WHERE id=?',(dump(r.get('bookingData',{})),tid))
-        r['remaining']=remaining(c,getw(c,ws));r['demo']=not bool(ai.KEY);record_usage(c,ws,'chat',ai.CHAT,r);c.execute('UPDATE request SET state=\'done\',result=? WHERE ws=? AND thread=? AND client=?',(dump(r),*key))
+    try:
+        with db(True) as c:
+            for role,body in [('user',msg),('assistant',r['reply'])]:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,now()))
+            if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
+            if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
+            if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
+            if r.get('unknown'):
+                if v['kind']!='test':ops.event(c,ws,'unknown','미학습 질문 접수',tid)
+                c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(uid(),ws,tid,msg,'open',now()));c.execute('UPDATE thread SET status=\'pending\' WHERE id=?',(tid,))
+            c.execute('UPDATE thread SET booking_context=? WHERE id=?',(dump(r.get('bookingData',{})),tid))
+            r['remaining']=remaining(c,getw(c,ws));r['demo']=not bool(ai.KEY);record_usage(c,ws,'chat',ai.CHAT,r);c.execute('UPDATE request SET state=\'done\',result=? WHERE ws=? AND thread=? AND client=?',(dump(r),*key))
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Chat persistence failed')
+        try:replay=abort_chat_request(key,p,kind)
+        except Exception:fail(503,'상담 저장 및 사용량 정산을 확인하지 못했습니다. 관리자 확인이 필요합니다.')
+        if replay is not None:return replay
+        fail(502,'상담 저장 실패. 사용량은 복구되었습니다.')
     return r
 @app.get('/api/inbox')
 def inbox(ws=Depends(ident)):
