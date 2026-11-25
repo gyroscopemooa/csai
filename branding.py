@@ -13,6 +13,8 @@ def init_branding():
         CREATE TABLE IF NOT EXISTS brand_alias(alias TEXT PRIMARY KEY,ws TEXT NOT NULL UNIQUE);
         CREATE TABLE IF NOT EXISTS agent_profile(id TEXT PRIMARY KEY,ws TEXT NOT NULL UNIQUE,slug TEXT NOT NULL UNIQUE,settings TEXT NOT NULL,faq TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0);
         ''')
+        if 'published' not in [r[1] for r in c.execute('PRAGMA table_info(agent_profile)')]:c.execute("ALTER TABLE agent_profile ADD COLUMN published TEXT NOT NULL DEFAULT '{}'")
+        c.execute('CREATE TABLE IF NOT EXISTS agent_knowledge_version(id TEXT PRIMARY KEY,ws TEXT NOT NULL,agent TEXT NOT NULL,content TEXT NOT NULL,created INTEGER NOT NULL)')
         if 'agent' not in [r[1] for r in c.execute('PRAGMA table_info(visitor)')]:c.execute("ALTER TABLE visitor ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
 init_branding()
 
@@ -65,13 +67,21 @@ def set_appearance(body:dict,ws=Depends(ident)):
 @app.get('/api/agents')
 def agents(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);require('extra_agent' in entitlements(w));a=one(c,'SELECT * FROM agent_profile WHERE ws=?',(ws,));return None if not a else dict(a,settings=loads(a['settings']),faq=loads(a['faq']))
+        w=getw(c,ws);require('extra_agent' in entitlements(w));a=one(c,'SELECT * FROM agent_profile WHERE ws=?',(ws,));return None if not a else dict(a,settings=loads(a['settings']),faq=loads(a['faq']),published=loads(a['published']))
 @app.post('/api/agents')
 def agent_save(body:dict,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);require('extra_agent' in entitlements(w));s={k:bounded(body.get(k,''),2500 if k=='prompt' else 1500) for k in ['brand','tone','prompt','welcome','fallback']};require(s['brand'] and s['welcome'],'상담원 이름 및 인사말 필요',422);s['emoji']=body.get('emoji') is True
-        f=body.get('faq',[]);require(isinstance(f,list) and len(f)<=100,'FAQ 100개 제한',422);fs=[]
-        for x in f:require(isinstance(x,dict),'FAQ 형식 오류',422);q=bounded(x.get('q',''),500);a=bounded(x.get('a',''),2000);require(q and a,'질문과 답변 필요',422);fs.append({'q':q,'a':a})
-        old=one(c,'SELECT * FROM agent_profile WHERE ws=?',(ws,));i=old['id'] if old else uid();slug=old['slug'] if old else secrets.token_urlsafe(10)
-        c.execute('INSERT INTO agent_profile VALUES(?,?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET settings=excluded.settings,faq=excluded.faq,enabled=excluded.enabled',(i,ws,slug,dump(s),dump(fs),int(body.get('enabled') is True)))
+        w=getw(c,ws);require('extra_agent' in entitlements(w));old=one(c,'SELECT * FROM agent_profile WHERE ws=?',(ws,));previous=loads(old['settings']) if old else DEFAULT;s={k:bounded(body.get(k,previous.get(k,'')),1500) for k in ['brand','tone','welcome','fallback']};s['prompt']=previous.get('prompt',DEFAULT['prompt']);require('prompt' not in body or body['prompt']==s['prompt'],'상담 지침은 AI 교육에서 변경하세요.',422);require(s['brand'] and s['welcome'],'상담원 이름 및 인사말 필요',422);s['emoji']=body.get('emoji') is True
+        fs=loads(old['faq']) if old else [];require('faq' not in body or body['faq']==fs,'개별 FAQ는 AI 교육에서 등록하세요.',422);i=old['id'] if old else uid();slug=old['slug'] if old else secrets.token_urlsafe(10)
+        c.execute('INSERT INTO agent_profile(id,ws,slug,settings,faq,enabled) VALUES(?,?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET settings=excluded.settings,faq=excluded.faq,enabled=excluded.enabled',(i,ws,slug,dump(s),dump(fs),int(body.get('enabled') is True)))
     return {'slug':slug,'id':i}
+
+@app.get('/api/agents/versions')
+def agent_versions(ws=Depends(ident)):
+    with db() as c:
+        require('extra_agent' in entitlements(getw(c,ws)));return rows(c,'SELECT id,agent,created FROM agent_knowledge_version WHERE ws=? ORDER BY created DESC LIMIT 100',(ws,))
+@app.post('/api/agents/versions/{i}/restore')
+def agent_restore(i:str,ws=Depends(ident)):
+    with db(True) as c:
+        require('extra_agent' in entitlements(getw(c,ws)));v=one(c,'SELECT * FROM agent_knowledge_version WHERE ws=? AND id=?',(ws,i));require(v,'교육 버전 없음',404);a=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,v['agent']));require(a,'상담원 없음',404);c.execute('INSERT INTO agent_knowledge_version VALUES(?,?,?,?,?)',(uid(),ws,a['id'],a['published'],now()));c.execute('UPDATE agent_profile SET published=? WHERE ws=? AND id=?',(v['content'],ws,a['id']))
+    return {'ok':True}
