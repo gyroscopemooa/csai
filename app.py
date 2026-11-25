@@ -384,7 +384,7 @@ def resource_id(s,body):
     k=body.get('resource','default');require(k in [r['id'] for r in s.get('resources',[{'id':'default','name':'기본 담당자'}])],'담당자 선택 오류',422);return k
 def available(c,ws,start,end,exclude='',buffer=0,resource='default'):
     t0=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).isoformat();t1=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).isoformat()
-    return not one(c,'SELECT id FROM booking WHERE ws=? AND resource=? AND status=\'confirmed\' AND start<? AND end>? AND id<>?',(ws,resource,t1,t0,exclude))
+    return not one(c,'SELECT id FROM booking WHERE ws=? AND resource=? AND status=\'confirmed\' AND start<? AND end>? AND id<>?',(ws,resource,t1,t0,exclude)) and not google_calendar.busy_conflict(c,ws,t0,t1)
 def validate_fields(s,data):
     require(isinstance(data,dict),'양식 오류',422);out={}
     for f in s['fields']:
