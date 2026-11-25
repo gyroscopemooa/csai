@@ -3,7 +3,7 @@ Claims are serialized in SQLite; ambiguous delivery stays failed for operator re
 """
 from store import *
 import httpx
-ALLOWED={'unknown':'unknown_alert','booking':'booking_alert','new':'new_alert'}
+ALLOWED={'unknown':'unknown_alert','booking':'booking_alert','new':'new_alert','report':'report'}
 
 def live_enabled():
     return not DEMO and os.getenv('ENABLE_LIVE_EMAIL','0')=='1' and bool(os.getenv('RESEND_API_KEY') and os.getenv('RESEND_FROM'))
@@ -26,7 +26,12 @@ def dispatch(ws, batch=10):
                 with db() as c:
                     w=getw(c,ws);latest=one(c,'SELECT * FROM notification_config WHERE ws=? AND enabled=1',(ws,))
                     if not latest or latest['email']!=cfg['email'] or not {'email',ALLOWED[x['kind']]}.issubset(entitlements(w)) or loads(w['settings'])['modes'].get('email')=='off':raise RuntimeError('알림 설정 변경')
-                r=httpx.post('https://api.resend.com/emails',headers={'Authorization':'Bearer '+os.environ['RESEND_API_KEY'],'Idempotency-Key':'csai-'+x['id']},json={'from':os.environ['RESEND_FROM'],'to':[cfg['email']],'subject':'CS AI 업무 알림','text':'새로운 업무 알림이 있습니다.\n관리자 페이지에서 확인: '+APP_URL},timeout=15)
+                subject='CS AI 업무 알림';body='새로운 업무 알림이 있습니다.\n관리자 페이지에서 확인: '+APP_URL
+                if x['kind']=='report':
+                    with db() as c:report=one(c,'SELECT summary,period FROM report_history WHERE ws=? AND id=?',(ws,x['ref']))
+                    if report:
+                        summary=loads(report['summary']);subject='CS AI 상담 리포트';body='집계 기간: '+report['period']+'\n고객 상담 '+str(summary['threads'])+'건 · 완료 '+str(summary['resolved'])+'건 · 미학습 '+str(summary['unknown'])+'건\n관리자 페이지: '+APP_URL
+                r=httpx.post('https://api.resend.com/emails',headers={'Authorization':'Bearer '+os.environ['RESEND_API_KEY'],'Idempotency-Key':'csai-'+x['id']},json={'from':os.environ['RESEND_FROM'],'to':[cfg['email']],'subject':subject,'text':body},timeout=15)
                 status='sent' if r.is_success else 'failed';error='' if r.is_success else 'HTTP '+str(r.status_code)
             except Exception:status='failed';error='전송 미확인 또는 설정 변경: 자동 재전송하지 않음'
         elif not DEMO:status='failed';error='발송 비활성화'
