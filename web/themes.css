@@ -1,0 +1,23 @@
+/* Optional paid themes only. The original dark theme is not overridden. */
+.phone.theme-toss,.phone.theme-messenger,.phone.theme-premium{background:#fff;border-color:#e5e8eb;color:#191f28}
+.phone.theme-toss .messages,.phone.theme-toss .notice,.phone.theme-toss .chat-bottom{background:#fff;color:#191f28}
+.phone.theme-toss .bubble:not(.user){background:#f2f4f6;color:#191f28;padding:11px 13px;border-radius:18px}
+.phone.theme-messenger .messages,.phone.theme-messenger .notice{background:#eaf0f5;color:#222}
+.phone.theme-messenger .chat-bottom{background:#fff}
+.phone.theme-messenger .bubble:not(.user){background:#fff;color:#222;padding:10px 12px;border-radius:12px}
+.phone.theme-messenger .bubble.user{background:#fee500;color:#191919}
+.phone.theme-premium .messages,.phone.theme-premium .notice,.phone.theme-premium .chat-bottom,.phone.theme-premium .phone-head{background:#faf9f6;color:#303d35}
+.phone.theme-premium .bubble:not(.user){background:#eeebe5;color:#303d35;padding:12px;border-radius:8px}
+.phone.theme-premium .bubble.user{background:#303d35;color:#fff;border-radius:8px}
+.phone.theme-toss .chat-day,.phone.theme-toss .chat-author,.phone.theme-messenger .chat-day,.phone.theme-messenger .chat-author,.phone.theme-premium .chat-day,.phone.theme-premium .chat-author{color:#697586;margin-left:0}
+.phone.theme-toss .compose textarea,.phone.theme-messenger .compose textarea,.phone.theme-premium .compose textarea{background:#f4f5f7;border-color:#dfe3e8;color:#191f28}
+.phone.theme-toss .chat-suggestions button,.phone.theme-messenger .chat-suggestions button,.phone.theme-premium .chat-suggestions button{border-color:#dce1e5;color:#394250}
+.phone.theme-toss .chat-suggestions button:hover,.phone.theme-messenger .chat-suggestions button:hover,.phone.theme-premium .chat-suggestions button:hover{background:#eaeef3}
+.phone.theme-toss .notice details,.phone.theme-messenger .notice details,.phone.theme-premium .notice details{border-color:#dfe3e8}
+.phone.theme-toss .notice p,.phone.theme-messenger .notice p,.phone.theme-premium .notice p{color:#4e5968}
+.phone.theme-toss .notice a,.phone.theme-messenger .notice a,.phone.theme-premium .notice a{color:#236fde}
+.phone.theme-toss .phone-foot,.phone.theme-messenger .phone-foot,.phone.theme-premium .phone-foot{color:#6b7684}
+.phone.theme-toss .chat-pending,.phone.theme-messenger .chat-pending,.phone.theme-premium .chat-pending{background:#eef0f2;color:#394250}
+.phone.density-compact .messages{gap:6px}
+.phone.density-roomy .messages{gap:18px}
+.phone.radius-square .bubble.user,.phone.radius-square .bubble:not(.user){border-radius:5px}
