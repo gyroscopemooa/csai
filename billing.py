@@ -76,7 +76,7 @@ def checkout_confirm(i:str,ws=Depends(ident)):
         elif r['kind']=='education':
             # Purchased packs credit the ordinary wallet; operator/trial safety caps are separate.
             c.execute('UPDATE workspace SET credits=credits+? WHERE id=?',(x['quantity'],ws));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education',x['quantity'],i,now()))
-        else:c.execute('INSERT INTO message_balance VALUES(?,?,?) ON CONFLICT(ws,kind) DO UPDATE SET n=n+excluded.n',(ws,x['name'],x['quantity']))
+        else:c.execute('INSERT INTO message_balance VALUES(?,?,?) ON CONFLICT(ws,kind) DO UPDATE SET n=message_balance.n+excluded.n',(ws,x['name'],x['quantity']))
         c.execute("UPDATE checkout_order SET status='paid',paid_at=? WHERE id=?",(now(),i));return order_view(one(c,'SELECT * FROM checkout_order WHERE id=?',(i,)))
 @app.post('/api/billing/orders/{i}/cancel')
 def checkout_cancel(i:str,ws=Depends(ident)):
