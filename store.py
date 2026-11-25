@@ -151,8 +151,20 @@ def reserve_education(c,w,n,ref):
     if type(n)!=int or n<0:raise ValueError('교육 비용 오류')
     if one(c,'SELECT id FROM education_reservation WHERE id=?',(ref,)):raise ValueError('이미 예약된 교육 비용')
     t=trial(c,w)
-    wallet,wallet_ref=('operator',month()) if is_operator(w) else ('trial',t['invite_id']) if t else ('ordinary','')
-    charge_credit(c,w,n,ref)
+    if is_operator(w):
+        x=operator_wallet(c,w)
+        if x['credit_used']+n>10000:raise ValueError('운영자 교육 안전 한도(월 10,000C)를 초과했습니다.')
+        wallet,wallet_ref='operator',x['period']
+        c.execute('UPDATE operator_wallet SET credit_used=credit_used+? WHERE ws=? AND period=?',(n,w['id'],wallet_ref))
+    elif t:
+        if t['credit_used']+n>t['credit_limit']:raise ValueError('초청 체험 교육 크레딧이 부족합니다.')
+        wallet,wallet_ref='trial',t['invite_id']
+        c.execute('UPDATE trial_access SET credit_used=credit_used+? WHERE ws=? AND invite_id=?',(n,w['id'],wallet_ref))
+    else:
+        if w['credits']<n:raise ValueError('교육 크레딧 부족')
+        wallet,wallet_ref='ordinary',''
+        c.execute('UPDATE workspace SET credits=credits-? WHERE id=?',(n,w['id']))
+        c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),w['id'],'education',-n,ref,now()))
     c.execute('INSERT INTO education_reservation VALUES(?,?,?,?,?,?,?,?)',(ref,w['id'],wallet,wallet_ref,n,'reserved',0,now()))
 
 def settle_education(c,ws,ref,cost):
