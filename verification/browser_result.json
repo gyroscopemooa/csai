@@ -1,0 +1,33 @@
+{
+  "result": "PASS",
+  "transport": "ASGI bridge; no direct HTTP browser navigation",
+  "screenshots": [
+    "01_home",
+    "02_education",
+    "03_training_review",
+    "04_test_chat",
+    "05_paywall",
+    "06_pricing",
+    "screen_features",
+    "screen_addons",
+    "screen_settings",
+    "screen_preview",
+    "screen_channels",
+    "screen_fields",
+    "07_mobile_chat",
+    "08_mobile_confirm",
+    "09_mobile_confirmed",
+    "10_calendar_confirmed",
+    "11_mobile_admin",
+    "12_resources_saved",
+    "19_recovery_code",
+    "20_recovered_booking",
+    "13_customer_change",
+    "14_change_approved",
+    "15_work_request",
+    "16_extra_agent",
+    "17_naver_test",
+    "18_order_history"
+  ],
+  "page_errors": []
+}

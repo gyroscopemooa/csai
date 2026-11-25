@@ -1,0 +1,512 @@
+{
+  "plans": [
+    {
+      "id": "free",
+      "name": "FREE",
+      "quantity": 1,
+      "price": 0
+    },
+    {
+      "id": "mini",
+      "name": "MINI",
+      "quantity": 100,
+      "price": 4900
+    },
+    {
+      "id": "lite",
+      "name": "LITE",
+      "quantity": 300,
+      "price": 9900
+    },
+    {
+      "id": "basic",
+      "name": "BASIC",
+      "quantity": 500,
+      "price": 14900
+    },
+    {
+      "id": "standard",
+      "name": "STANDARD",
+      "quantity": 1000,
+      "price": 19900
+    },
+    {
+      "id": "plus",
+      "name": "PLUS",
+      "quantity": 2000,
+      "price": 29900
+    },
+    {
+      "id": "pro",
+      "name": "PRO",
+      "quantity": 3000,
+      "price": 39900
+    },
+    {
+      "id": "pro_max",
+      "name": "PRO MAX",
+      "quantity": 5000,
+      "price": 59900
+    },
+    {
+      "id": "business",
+      "name": "BUSINESS",
+      "quantity": 10000,
+      "price": 99000
+    },
+    {
+      "id": "business_plus",
+      "name": "BUSINESS PLUS",
+      "quantity": 30000,
+      "price": 249000
+    },
+    {
+      "id": "enterprise",
+      "name": "ENTERPRISE",
+      "quantity": 100000,
+      "price": 699000
+    }
+  ],
+  "education": [
+    {
+      "id": "free",
+      "name": "FREE",
+      "quantity": 20,
+      "price": 0
+    },
+    {
+      "id": "mini",
+      "name": "MINI",
+      "quantity": 100,
+      "price": 1900
+    },
+    {
+      "id": "lite",
+      "name": "LITE",
+      "quantity": 300,
+      "price": 4900
+    },
+    {
+      "id": "basic",
+      "name": "BASIC",
+      "quantity": 500,
+      "price": 7900
+    },
+    {
+      "id": "standard",
+      "name": "STANDARD",
+      "quantity": 1000,
+      "price": 14900
+    },
+    {
+      "id": "plus",
+      "name": "PLUS",
+      "quantity": 2000,
+      "price": 29900
+    },
+    {
+      "id": "pro",
+      "name": "PRO",
+      "quantity": 3000,
+      "price": 39900
+    },
+    {
+      "id": "business",
+      "name": "BUSINESS",
+      "quantity": 5000,
+      "price": 69900
+    },
+    {
+      "id": "enterprise",
+      "name": "ENTERPRISE",
+      "quantity": 10000,
+      "price": 129000
+    }
+  ],
+  "addons": [
+    {
+      "id": "widget",
+      "group": "채널·디자인",
+      "name": "홈페이지 위젯",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "naver",
+      "group": "채널·디자인",
+      "name": "네이버 톡톡",
+      "price": 4900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "kakao",
+      "group": "채널·디자인",
+      "name": "카카오톡 채널",
+      "price": 4900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "channels",
+      "group": "채널·디자인",
+      "name": "네이버·카카오 통합",
+      "price": 7900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "multilingual",
+      "group": "채널·디자인",
+      "name": "다국어 자동 상담",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "extra_agent",
+      "group": "채널·디자인",
+      "name": "추가 AI 상담원",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "design",
+      "group": "채널·디자인",
+      "name": "고급 디자인",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "unbrand",
+      "group": "채널·디자인",
+      "name": "브랜드 제거",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "custom_url",
+      "group": "채널·디자인",
+      "name": "지정 URL",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "domain",
+      "group": "채널·디자인",
+      "name": "자체 도메인",
+      "price": 4900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "calendar",
+      "group": "예약·일정",
+      "name": "자체 일정표·수동 관리",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "auto_booking",
+      "group": "예약·일정",
+      "name": "AI 자동 예약",
+      "price": 4900,
+      "local": true,
+      "requires": [
+        "calendar"
+      ]
+    },
+    {
+      "id": "change_booking",
+      "group": "예약·일정",
+      "name": "예약 변경·취소",
+      "price": 2900,
+      "local": true,
+      "requires": [
+        "calendar"
+      ]
+    },
+    {
+      "id": "google_calendar",
+      "group": "예약·일정",
+      "name": "구글 캘린더",
+      "price": 2900,
+      "local": false,
+      "requires": [
+        "calendar"
+      ]
+    },
+    {
+      "id": "booking_alert",
+      "group": "예약·일정",
+      "name": "예약 자동 알림",
+      "price": 2900,
+      "local": false,
+      "requires": [
+        "calendar"
+      ]
+    },
+    {
+      "id": "crm",
+      "group": "고객·업무",
+      "name": "고객 CRM",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "quote",
+      "group": "고객·업무",
+      "name": "AI 견적 요청",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "tasks",
+      "group": "고객·업무",
+      "name": "AI 업무·할 일",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "leads",
+      "group": "고객·업무",
+      "name": "잠재 고객 분류",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "complaints",
+      "group": "고객·업무",
+      "name": "불만·민원 관리",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "stats",
+      "group": "고객·업무",
+      "name": "고급 통계",
+      "price": 4900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "export",
+      "group": "고객·업무",
+      "name": "엑셀 다운로드",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "retention",
+      "group": "고객·업무",
+      "name": "장기 보관",
+      "price": 2900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "external_api",
+      "group": "고객·업무",
+      "name": "외부 업무 API",
+      "price": 9900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "push",
+      "group": "알림",
+      "name": "웹 푸시",
+      "price": 1900,
+      "local": false,
+      "requires": []
+    },
+    {
+      "id": "email",
+      "group": "알림",
+      "name": "이메일 알림",
+      "price": 2900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "unknown_alert",
+      "group": "알림",
+      "name": "미학습 질문 알림",
+      "price": 1900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "new_alert",
+      "group": "알림",
+      "name": "신규 상담 알림",
+      "price": 1900,
+      "local": true,
+      "requires": []
+    },
+    {
+      "id": "report",
+      "group": "알림",
+      "name": "일간·주간 리포트",
+      "price": 2900,
+      "local": false,
+      "requires": []
+    }
+  ],
+  "packages": [
+    {
+      "id": "channel_pack",
+      "name": "채널 통합",
+      "price": 9900,
+      "includes": [
+        "widget",
+        "naver",
+        "kakao"
+      ]
+    },
+    {
+      "id": "booking_pack",
+      "name": "예약 관리",
+      "price": 12900,
+      "includes": [
+        "calendar",
+        "auto_booking",
+        "change_booking",
+        "google_calendar",
+        "booking_alert"
+      ]
+    },
+    {
+      "id": "customer_pack",
+      "name": "고객 관리",
+      "price": 9900,
+      "includes": [
+        "crm",
+        "leads",
+        "complaints"
+      ]
+    },
+    {
+      "id": "work_pack",
+      "name": "업무 자동화",
+      "price": 14900,
+      "includes": [
+        "quote",
+        "tasks",
+        "leads",
+        "stats"
+      ]
+    },
+    {
+      "id": "design_pack",
+      "name": "디자인 및 브랜딩",
+      "price": 9900,
+      "includes": [
+        "design",
+        "unbrand",
+        "custom_url"
+      ]
+    },
+    {
+      "id": "alert_pack",
+      "name": "알림",
+      "price": 4900,
+      "includes": [
+        "push",
+        "email",
+        "unknown_alert",
+        "new_alert",
+        "report"
+      ]
+    },
+    {
+      "id": "all",
+      "name": "ALL-IN-ONE",
+      "price": 39900,
+      "includes": [
+        "widget",
+        "naver",
+        "kakao",
+        "calendar",
+        "auto_booking",
+        "change_booking",
+        "google_calendar",
+        "booking_alert",
+        "crm",
+        "leads",
+        "complaints",
+        "quote",
+        "tasks",
+        "stats",
+        "design",
+        "unbrand",
+        "custom_url",
+        "push",
+        "email",
+        "unknown_alert",
+        "new_alert",
+        "report",
+        "multilingual",
+        "export",
+        "retention"
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "name": "알림톡",
+      "quantity": 100,
+      "price": 2900
+    },
+    {
+      "name": "알림톡",
+      "quantity": 300,
+      "price": 6900
+    },
+    {
+      "name": "알림톡",
+      "quantity": 1000,
+      "price": 19900
+    },
+    {
+      "name": "SMS",
+      "quantity": 100,
+      "price": 3900
+    },
+    {
+      "name": "SMS",
+      "quantity": 300,
+      "price": 9900
+    },
+    {
+      "name": "SMS",
+      "quantity": 1000,
+      "price": 29900
+    }
+  ],
+  "basic": [
+    "AI 상담원 1명",
+    "전용 링크·QR",
+    "비회원 상담",
+    "상담 내역 열람",
+    "직접 프롬프트·모범 답변",
+    "말투 설정",
+    "업체명·로고",
+    "공지·구매처 안내",
+    "미학습 질문 확인",
+    "관리자 직접 답변",
+    "기본 자동·수동 설정"
+  ]
+}

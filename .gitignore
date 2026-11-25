@@ -1,0 +1,11 @@
+.env
+.venv/
+data/
+__pycache__/
+.pytest_cache/
+*.pyc
+backups/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+_planning_extracted.txt
