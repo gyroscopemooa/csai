@@ -14,6 +14,8 @@
 
 `cloudflare/`에는 FastAPI를 Cloudflare Containers로 실행하는 **dev 전용** 구성이 있습니다. 일반 Pages 또는 일반 Worker Git 배포를 선택하면 Python API가 실행되지 않습니다. Containers는 beta이고 컨테이너 디스크가 재시작 시 초기화되므로, 이 구성은 SQLite 데이터를 보존하는 운영 배포에 사용하면 안 됩니다. 운영 전환은 Supabase Postgres와 RLS 이식 후 진행합니다.
 
+`wrangler.jsonc`의 `keep_vars: true`는 대시보드에 등록한 Production OAuth 변수와 시크릿을 다음 GitHub 배포에도 유지합니다. 비밀값은 저장소에 넣지 말고 Worker Runtime variables and secrets에 등록합니다.
+
 ```bash
 cd cloudflare
 npm install
