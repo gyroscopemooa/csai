@@ -69,6 +69,15 @@ def is_operator(w): return bool(w and (w['owner'] in OPERATOR_OWNERS or (w.get('
 def trial(c,w):
     r=one(c,'SELECT * FROM trial_access WHERE ws=? AND expires>?',(w['id'],now()))
     return r
+def trial_bookings_remaining(c,w):
+    t=trial(c,w)
+    if not t:return None
+    x=one(c,'SELECT used_at FROM trial_invite WHERE id=?',(t['invite_id'],))
+    used=one(c,"SELECT count(*) n FROM booking WHERE ws=? AND created>=? AND status NOT IN ('draft','superseded')",(w['id'],x['used_at'] or 0 if x else 0))['n']
+    return max(0,t['booking_limit']-used)
+def sandbox_allowed(c,w):
+    # Shared public demo must not grant arbitrary paid access. Local sandbox is for regression tests.
+    return bool(DEMO and (is_operator(w) or (not SHARED_TEST and not one(c,'SELECT id FROM trial_invite WHERE used_by=?',(w['owner'],)))))
 def operator_wallet(c,w):
     p=month();r=one(c,'SELECT * FROM operator_wallet WHERE ws=?',(w['id'],))
     if not r or r['period']!=p:
@@ -81,12 +90,17 @@ def getw(c,i):
         if sub:
             w['subscription']=sub
             if sub['period_end']<=now():w['plan']='free';w['enabled']=0;w['free_used']=1
+    if w:
+        w['trial_active']=bool(trial(c,w))
     return w
+def public_access(w):
+    return bool(w and (is_operator(w) or w['plan']!='free' or w.get('trial_active')))
 def usage_period(w):
     sub=w.get('subscription')
     return 'sub:'+str(sub['period_start']) if sub and sub['period_end']>now() else month()
 def entitlements(w):
     if is_operator(w): return set(ADD)
+    if w.get('trial_active') and w['plan']=='free': return {'calendar','auto_booking','change_booking'}
     a=set(loads(w['addons']))
     for i in list(a):
         if i in PACK:a.update(PACK[i]['includes'])
@@ -122,6 +136,7 @@ def charge_chat(c,w,period):
     if w['plan']=='free':
         if w['free_used']>=1:raise ValueError('무료 테스트를 모두 사용했습니다. 요금제를 확인하세요.')
         c.execute('UPDATE workspace SET free_used=free_used+1 WHERE id=?',(w['id'],));return 'free'
+    if remaining(c,w)<=0:raise ValueError('이번 구독 기간의 상담량을 모두 사용했습니다. 요금제를 확인하세요.')
     c.execute('INSERT INTO usage VALUES(?,?,1) ON CONFLICT(ws,period) DO UPDATE SET n=n+1',(w['id'],period));return 'paid'
 def refund_chat(c,w,period,kind):
     if kind=='operator':c.execute('UPDATE operator_wallet SET chat_used=MAX(0,chat_used-1) WHERE ws=?',(w['id'],))
