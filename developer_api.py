@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 from app import app, ident, require, bounded, limit, chat, manual_booking, bookings, work_list, work_add, estimate, train, publish, stats
 from store import *
 
-SCOPES={"chat":None,"bookings:read":"calendar","bookings:write":"calendar","work:read":None,"work:write":None,"education":None,"stats":"stats"}
+SCOPES={"chat":None,"bookings:read":"calendar","bookings:write":"calendar","bookings:change":"change_booking","work:read":None,"work:write":None,"education":None,"stats":"stats","crm:read":"crm","crm:write":"crm","leads:read":"leads","leads:write":"leads","quotes:read":"quote","quotes:write":"quote","quotes:send":"quote","reports:read":"report","export":"export"}
 
 def init_api():
     with db(True) as c:
@@ -95,3 +95,80 @@ def api_education_run(i:str,req:Request):return train(i,ws=authorize(req,'educat
 def api_education_publish(i:str,body:dict,req:Request):return publish(i,body,ws=authorize(req,'education')['ws'])
 @app.get('/v1/stats')
 def api_stats(req:Request):return stats(ws=authorize(req,'stats')['ws'])
+
+
+# Import lazily: these feature modules register their routes after this module.
+@app.get('/v1/crm/contacts')
+def api_contacts(req:Request):
+    import customer_ops
+    return customer_ops.contacts(ws=authorize(req,'crm:read')['ws'])
+
+@app.post('/v1/crm/contacts')
+def api_contact_create(body:dict,req:Request):
+    import customer_ops
+    return customer_ops.contact_create(body,ws=authorize(req,'crm:write')['ws'])
+
+@app.patch('/v1/crm/contacts/{i}')
+def api_contact_edit(i:str,body:dict,req:Request):
+    import customer_ops
+    return customer_ops.contact_edit(i,body,ws=authorize(req,'crm:write')['ws'])
+
+@app.get('/v1/leads')
+def api_leads(req:Request):
+    import customer_ops
+    return customer_ops.leads(ws=authorize(req,'leads:read')['ws'])
+
+@app.patch('/v1/leads/{thread}')
+def api_lead_edit(thread:str,body:dict,req:Request):
+    import customer_ops
+    return customer_ops.lead_edit(thread,body,ws=authorize(req,'leads:write')['ws'])
+
+@app.get('/v1/quotes/items')
+def api_quote_items(req:Request):
+    import customer_ops
+    return customer_ops.quote_items(ws=authorize(req,'quotes:read')['ws'])
+
+@app.get('/v1/quotes/offers')
+def api_quote_offers(req:Request):
+    import customer_ops
+    return customer_ops.offers(ws=authorize(req,'quotes:read')['ws'])
+
+@app.post('/v1/quotes/offers')
+def api_quote_create(body:dict,req:Request):
+    import customer_ops
+    return customer_ops.quote_create(body,ws=authorize(req,'quotes:write')['ws'])
+
+@app.post('/v1/quotes/offers/{i}/send')
+def api_quote_send(i:str,body:dict,req:Request):
+    import customer_ops
+    return customer_ops.quote_send(i,body,ws=authorize(req,'quotes:send')['ws'])
+
+@app.patch('/v1/work/{i}')
+def api_edit_work(i:str,body:dict,req:Request):
+    import ops
+    return ops.edit_work(i,body,ws=authorize(req,'work:write')['ws'])
+
+@app.get('/v1/bookings/changes')
+def api_booking_changes(req:Request):
+    import ops
+    return ops.changes(ws=authorize(req,'bookings:change')['ws'])
+
+@app.post('/v1/bookings/changes/{i}')
+def api_booking_change(i:str,body:dict,req:Request):
+    import ops
+    return ops.decide(i,body,ws=authorize(req,'bookings:change')['ws'])
+
+@app.get('/v1/analytics')
+def api_analytics(req:Request,days:int=30):
+    import reporting
+    return reporting.analytics(days=days,ws=authorize(req,'stats')['ws'])
+
+@app.get('/v1/reports')
+def api_reports(req:Request):
+    import reporting
+    return reporting.reports(ws=authorize(req,'reports:read')['ws'])
+
+@app.get('/v1/export')
+def api_export(req:Request):
+    from app import export
+    return export(ws=authorize(req,'export')['ws'])
