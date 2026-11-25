@@ -38,8 +38,9 @@ def record_usage(c,ws,kind,model,result):
     # Real Responses usage is attached by the adapter when available; demo events are never revenue.
     u=result.pop('_usage',{}) if isinstance(result,dict) else {}
     inp=int(u.get('input_tokens',0) or 0);cached=int(u.get('cached_input_tokens',u.get('input_tokens_details',{}).get('cached_tokens',0)) or 0);out=int(u.get('output_tokens',0) or 0)
-    ri,ro,rc=MODEL_RATES.get(model,(0.0,0.0,0.0));cost=(max(0,inp-cached)*ri+cached*rc+out*ro)/1_000_000
-    c.execute('INSERT INTO model_usage VALUES(?,?,?,?,?,?,?,?,?,?)',(uid(),ws,kind,model,'actual' if ai.KEY else 'simulation',inp,cached,out,cost,now()))
+    prefix='TRAIN' if kind=='training' else 'CHAT';ri,ro,rc=MODEL_RATES.get(model,(0.0,0.0,0.0))
+    ri=float(os.getenv(prefix+'_INPUT_USD_PER_M',str(ri)));ro=float(os.getenv(prefix+'_OUTPUT_USD_PER_M',str(ro)));rc=float(os.getenv(prefix+'_CACHED_USD_PER_M',str(rc)));cost=(max(0,inp-cached)*ri+cached*rc+out*ro)/1_000_000
+    c.execute('INSERT INTO model_usage VALUES(?,?,?,?,?,?,?,?,?,?)',(uid(),ws,kind,model,'actual' if u and ai.KEY else ('local_rule' if ai.KEY else 'simulation'),inp,cached,out,cost,now()))
 def ident(req:Request):
     with db() as c:
         s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(req.cookies.get('csai_session',''),now()))
@@ -210,7 +211,9 @@ def listfaq(ws=Depends(ident)):
 def faq(body:dict,ws=Depends(ident)):
     q=bounded(body.get('q',''),500);a=bounded(body.get('a',''),2000);require(q and a,'질문과 답변을 입력하세요.',422)
     with db(True) as c:
-        w=getw(c,ws);unknown_id=body.get('unknown');require(not unknown_id or one(c,'SELECT id FROM unknown WHERE ws=? AND id=? AND status=?',(ws,unknown_id,'open')),'미학습 질문 없음',404);text=ai.clean(q+' => '+a);estimate=ai.estimate(text,[]);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',estimate,0,dump({'text':text,'images':[],'unknown':body.get('unknown')}),None,now()))
+        w=getw(c,ws);unknown_id=body.get('unknown');u=one(c,"SELECT u.id,v.agent FROM unknown u JOIN thread t ON t.id=u.thread JOIN visitor v ON v.token=t.visitor WHERE u.ws=? AND u.id=? AND u.status='open'",(ws,unknown_id)) if unknown_id else None;require(not unknown_id or u,'미학습 질문 없음',404);agent_id=(u.get('agent') or '') if u else ''
+        if agent_id:require('extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
+        text=ai.clean(q+' => '+a);estimate=ai.estimate(text,[]);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',estimate,0,dump({'text':text,'images':[],'unknown':unknown_id,'agent':agent_id}),None,now()))
         t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
     return {'id':i,'maxCredits':estimate,'credits':credits,'enough':credits>=estimate,'requires_run':True}
 @app.delete('/api/faq/{i}')
@@ -499,3 +502,4 @@ import google_calendar
 import channel_live
 import branding
 import recovery
+import developer_api
