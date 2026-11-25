@@ -1,11 +1,12 @@
 """Single-process worker. Run separately or via the optional FastAPI lifespan, not both."""
 import time,os,logging
 import app
-import notifications,channel_live,google_calendar
+import notifications,channel_live,google_calendar,reporting
 from store import DEMO
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
 
 def tick_once():
+    if os.getenv('ENABLE_AUTO_REPORTS')=='1':reporting.tick()
     if os.getenv('ENABLE_AUTO_EMAIL')=='1':notifications.tick()
     if os.getenv('ENABLE_AUTO_CALENDAR')=='1':google_calendar.tick()
     if channel_live.enabled():
