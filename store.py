@@ -19,8 +19,17 @@ def loads(x): return json.loads(x)
 def month(): return time.strftime('%Y-%m',time.gmtime())
 DEFAULT_FIELDS=[{'key':k,'label':n,'type':t,'required':r} for k,n,t,r in [('name','고객명','text',True),('contact','연락처','phone',True),('location','촬영 장소','text',True),('people','촬영 인원','number',True),('product','촬영 상품','text',True),('source','구매처','text',True),('note','추가 요청사항','text',False)]]
 DEFAULT={'brand':'나의 업체','tone':'자연스럽고 정중하게','emoji':False,'prompt':'등록된 정보로만 답하고 확인되지 않은 사항은 담당자에게 전달하세요.','notice':'','links':[],'price':'','location':'','hours':'','welcome':'안녕하세요. 무엇을 도와드릴까요?','fallback':'해당 내용은 담당자 확인이 필요합니다. 확인 요청을 남기겠습니다.','timezone':'Asia/Seoul','open':'09:00','close':'18:00','closed_days':[],'duration':60,'buffer':0,'payment_required':False,'resources':[{'id':'default','name':'기본 담당자'}],'modes':{k:('auto' if k in ['general','price','location','purchase'] else 'manual') for k in ['general','price','location','purchase','unknown','booking','change','complaint','email']},'fields':DEFAULT_FIELDS,'template_version':1}
+DB_BACKEND=os.getenv('CSAI_DB_BACKEND','sqlite').lower()
+if DB_BACKEND not in ('sqlite','postgres'):raise RuntimeError('Invalid CSAI_DB_BACKEND')
+if DB_BACKEND=='sqlite' and not DEMO:raise RuntimeError('Production requires persistent PostgreSQL storage')
+if DB_BACKEND=='postgres':
+    from postgres_store import connect as postgres_connect
+
 @contextmanager
 def db(write=False):
+    if DB_BACKEND=='postgres':
+        with postgres_connect(os.environ.get('DATABASE_URL',''),write=write) as c:yield c
+        return
     c=sqlite3.connect(DATA/'csai.sqlite3',timeout=30); c.row_factory=sqlite3.Row
     c.execute('PRAGMA foreign_keys=ON'); c.execute('PRAGMA busy_timeout=30000')
     try:
@@ -31,8 +40,8 @@ def db(write=False):
         c.rollback();raise
     finally:c.close()
 def one(c,q,args=()):
-    r=c.execute(q,args).fetchone(); return dict(r) if r else None
-def rows(c,q,args=()):return [dict(r) for r in c.execute(q,args)]
+    r=c.execute(q,args).fetchone(); return {k:v for k,v in dict(r).items() if k!='rowid'} if r else None
+def rows(c,q,args=()):return [{k:v for k,v in dict(r).items() if k!='rowid'} for r in c.execute(q,args)]
 def init():
     with db(True) as c:
         c.executescript('''
