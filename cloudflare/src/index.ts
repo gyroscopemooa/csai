@@ -16,7 +16,7 @@ export default {
       SHARED_TEST_MODE: "1",
       DEMO_MODE: "1",
     };
-    for (const key of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "OPERATOR_OWNERS", "OPERATOR_EMAILS", "OPENAI_API_KEY"] as const) {
+    for (const key of ["GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET","OPERATOR_OWNERS","OPERATOR_EMAILS","OPENAI_API_KEY","TRAIN_MODEL","CHAT_MODEL","TRAIN_EFFORT","CHAT_EFFORT","BOOKING_EFFORT","TRAIN_INPUT_USD_PER_M","TRAIN_OUTPUT_USD_PER_M","TRAIN_CACHED_USD_PER_M","CHAT_INPUT_USD_PER_M","CHAT_OUTPUT_USD_PER_M","CHAT_CACHED_USD_PER_M","INTEGRATION_ENCRYPTION_KEY","RESEND_API_KEY","RESEND_FROM","ENABLE_CHANNEL_WEBHOOKS","KAKAO_CALLBACK_HOSTS","ENABLE_AUTO_EMAIL","ENABLE_LIVE_EMAIL"] as const) {
       if (env[key]) envVars[key] = env[key];
     }
     await container.startAndWaitForPorts({ startOptions: { envVars } });
@@ -31,4 +31,22 @@ interface Env {
   OPERATOR_OWNERS?: string;
   OPERATOR_EMAILS?: string;
   OPENAI_API_KEY?: string;
+  TRAIN_MODEL?: string;
+  CHAT_MODEL?: string;
+  TRAIN_EFFORT?: string;
+  CHAT_EFFORT?: string;
+  BOOKING_EFFORT?: string;
+  TRAIN_INPUT_USD_PER_M?: string;
+  TRAIN_OUTPUT_USD_PER_M?: string;
+  TRAIN_CACHED_USD_PER_M?: string;
+  CHAT_INPUT_USD_PER_M?: string;
+  CHAT_OUTPUT_USD_PER_M?: string;
+  CHAT_CACHED_USD_PER_M?: string;
+  INTEGRATION_ENCRYPTION_KEY?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
+  ENABLE_CHANNEL_WEBHOOKS?: string;
+  KAKAO_CALLBACK_HOSTS?: string;
+  ENABLE_AUTO_EMAIL?: string;
+  ENABLE_LIVE_EMAIL?: string;
 }
