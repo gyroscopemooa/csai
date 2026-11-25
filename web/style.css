@@ -21,6 +21,8 @@ body{background:var(--canvas);color:var(--ink);line-height:1.55;font-family:syst
 .hero-inner>.brand,.hero-inner>.tag,.hero-inner>h1,.hero-inner>p,.hero-inner>.stack{animation:cs-enter 440ms var(--motion-ease) both}
 .hero-inner>.tag{animation-delay:45ms}.hero-inner>h1{animation-delay:80ms}.hero-inner>p{animation-delay:115ms}.hero-inner>.stack{animation-delay:150ms}
 .hero .stack button{transition:background var(--motion-fast),box-shadow var(--motion-fast),transform var(--motion-fast) var(--motion-ease)}
+.hero .stack .auth-button{position:relative;display:flex;align-items:center;justify-content:center;gap:10px}
+.auth-button img{position:absolute;left:18px;width:20px;height:20px;object-fit:contain}
 .hero .brand{font-size:clamp(25px,6vw,34px)}
 .brand-subtitle{display:inline-flex;font-size:.7em;font-weight:750;color:#2172dd;vertical-align:middle;white-space:nowrap}
 .brand-typed{display:inline-block;overflow:hidden;width:max-content;max-width:11em;white-space:nowrap;border-right:2px solid currentColor;animation:brand-type 650ms steps(10,end) 200ms both,brand-caret 900ms steps(1,end) 1s infinite}
