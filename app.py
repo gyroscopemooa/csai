@@ -336,10 +336,14 @@ def chat(body:dict):
             refund_chat(c,getw(c,ws),p,kind)
             c.execute('UPDATE request SET state=\'failed\' WHERE ws=? AND thread=? AND client=?',key)
         fail(502,'상담 처리 실패. 사용량은 복구되었습니다. '+str(e)[:100])
+    proposal=r.pop('workDraft',None)
     if v['kind']=='public' and not r.get('booking') and s['modes'].get('general')!='off':
         work_kind=next((k for k,pat in [('quote',r'견적|제안서'),('complaints',r'불만|민원|항의'),('tasks',r'오류 신고|장애 신고|업무 요청')] if k in adds and re.search(pat,msg)),None)
+        if isinstance(proposal,dict) and proposal.get('kind') in {'quote','tasks','complaints'}&adds:
+            work_kind=proposal['kind']
+        else:proposal=None
         if work_kind and not (work_kind=='complaints' and s['modes'].get('complaint')=='off'):
-            r['workDraft']={'kind':work_kind,'title':msg[:120],'details':msg[:2000]}
+            r['workDraft']=proposal or {'kind':work_kind,'title':msg[:120],'details':msg[:2000]}
     if r.get('unknown') and s['modes'].get('unknown')=='off':r.update({'reply':'등록된 답변이 없어 안내가 어렵습니다.','unknown':False})
     with db(True) as c:
         for role,body in [('user',msg),('assistant',r['reply'])]:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,now()))
