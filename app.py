@@ -529,6 +529,7 @@ import developer_api
 import education_url
 import customer_ops
 import reporting
+import push_notifications
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
