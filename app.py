@@ -48,14 +48,32 @@ def ident(req:Request):
     return s['ws']
 @app.middleware('http')
 async def guard(req,call_next):
-    if req.method in ['POST','PATCH','DELETE','PUT']:
-        origin=req.headers.get('origin')
-        if origin and origin!=APP_URL:return Response('Origin rejected',403)
-        if int(req.headers.get('content-length','0') or 0)>8_000_000:return Response('Payload too large',413)
-    res=await call_next(req)
-    res.headers['X-Content-Type-Options']='nosniff';res.headers['Referrer-Policy']='no-referrer';res.headers['Cache-Control']='no-store'
-    if not req.url.path.startswith('/widget/'):res.headers['X-Frame-Options']='SAMEORIGIN'
-    return res
+    allowed_origin=APP_URL
+    context=None
+    host=(req.url.hostname or '').lower()
+    if os.getenv('ENABLE_CUSTOM_DOMAINS')=='1' and host!=urlsplit(APP_URL).hostname and req.url.path!='/health':
+        from starlette.concurrency import run_in_threadpool
+        def lookup():
+            with db() as c:return domains.resolve_host(c,host)
+        w=await run_in_threadpool(lookup)
+        if not w:return Response('Unknown or inactive domain',404)
+        path=req.url.path
+        if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover') or path.startswith('/assets/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
+        if not allowed:return Response('Public consultation only',404)
+        allowed_origin='https://'+host
+        context=domains.current_ws.set(w['id'])
+    try:
+        if req.method in ['POST','PATCH','DELETE','PUT']:
+            origin=req.headers.get('origin')
+            if origin and origin!=allowed_origin:return Response('Origin rejected',403)
+            if int(req.headers.get('content-length','0') or 0)>8_000_000:return Response('Payload too large',413)
+        res=await call_next(req)
+        res.headers['X-Content-Type-Options']='nosniff';res.headers['Referrer-Policy']='no-referrer';res.headers['Cache-Control']='no-store'
+        if not req.url.path.startswith('/widget/'):res.headers['X-Frame-Options']='SAMEORIGIN'
+        return res
+    finally:
+        if context is not None:domains.current_ws.reset(context)
 
 def session_response(owner,verified_email=None):
     with db(True) as c:
@@ -289,7 +307,7 @@ def publish(i:str,body:dict,ws=Depends(ident)):
     return {'ok':True}
 
 def visitor(c,token,ws=None,kind=None):
-    v=one(c,'SELECT * FROM visitor WHERE token=? AND expires>?',(token,now()));require(v and (not ws or v['ws']==ws) and (not kind or v['kind']==kind),'상담 세션이 만료되었습니다.',401);return v
+    v=one(c,'SELECT * FROM visitor WHERE token=? AND expires>?',(token,now()));require(v and (not ws or v['ws']==ws) and (not kind or v['kind']==kind) and (not domains.current_ws.get() or (v['ws']==domains.current_ws.get() and v['kind']=='public')),'상담 세션이 만료되었습니다.',401);return v
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
@@ -297,12 +315,13 @@ def public_info(slug:str):
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
+    require(not domains.current_ws.get() or kind=='public','공개 상담 전용 도메인입니다.',403)
     limit('session:'+str(req.client.host if req.client else 'unknown'),60)
     with db(True) as c:
         if kind=='test':
             token=req.cookies.get('csai_session','');s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(token,now()));require(s,'로그인 필요',401);w=getw(c,s['ws'])
         else:
-            w,agent=branding.resolve(c,body.get('slug'));require(public_access(w) and w['enabled'],'상담 비활성화',404)
+            w,agent=branding.resolve(c,body.get('slug'));require(public_access(w) and w['enabled'],'상담 비활성화',404);require(not domains.current_ws.get() or w['id']==domains.current_ws.get(),'다른 업체의 상담입니다.',404)
         token=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,w['id'],now()+86400,kind));
         if agent:c.execute('UPDATE visitor SET agent=? WHERE token=?',(agent['id'],token))
         i=uid();c.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(i,w['id'],token,kind,now()))
@@ -534,6 +553,7 @@ import education_url
 import customer_ops
 import reporting
 import push_notifications
+import domains
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
