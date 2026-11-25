@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app import app
 from playwright.sync_api import sync_playwright
 owner=TestClient(app);visitor=TestClient(app);errors=[];screens=[]
-css=(ROOT/'web/style.css').read_text(encoding='utf-8');js=(ROOT/'web/app.js').read_text(encoding='utf-8')
+css=(ROOT/'web/style.css').read_text(encoding='utf-8');js=(ROOT/'web/app.js').read_text(encoding='utf-8');scramble=(ROOT/'web/scramble.js').read_text(encoding='utf-8');word_roll=(ROOT/'web/word-roll.js').read_text(encoding='utf-8')
 # The application's exact DOM/rendering code runs in Chromium; only HTTP transport and public path are test adapters.
 bridge='''const sessionStorage={data:{},getItem(k){return this.data[k]||null},setItem(k,v){this.data[k]=v},removeItem(k){delete this.data[k]}};const fetch=async(path,opts={})=>{let r=await py_api(String(path),opts.method||'GET',opts.body||null);return {ok:r.status>=200&&r.status<300,status:r.status,json:async()=>r.body}};'''
 def page_content(page,c,public_slug=None):
@@ -21,7 +21,7 @@ def page_content(page,c,public_slug=None):
     script=js.replace("publicMode=location.pathname.startsWith('/c/')||location.pathname.startsWith('/widget/'),slug=location.pathname.split('/')[2]",f'publicMode={str(bool(public_slug)).lower()},slug={json.dumps(public_slug)}')
     # about:blank is not a secure origin, so provide only a test UUID helper.
     prefix="if(!crypto.randomUUID)crypto.randomUUID=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join('');"
-    page.set_content('<!doctype html><html lang="ko"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+css+'</style><div id="app"></div><script>'+prefix+bridge+script+'</script></html>')
+    page.set_content('<!doctype html><html lang="ko"><meta name="viewport" content="width=device-width,initial-scale=1"><style>'+css+'</style><div id="app"></div><script>'+prefix+bridge+script+'</script><script>'+scramble+'</script><script>'+word_roll+'</script></html>')
 def post(c,path,data,method='POST'):
     r=c.request(method,path,json=data);assert r.status_code==200,(path,r.status_code,r.text);return r.json()
 with sync_playwright() as pw:
@@ -33,7 +33,7 @@ with sync_playwright() as pw:
     def nav(h,title):
         pg.evaluate('(h)=>{location.hash=h;render()}',h);pg.get_by_role('heading',name=title,exact=True).wait_for(timeout=5000);pg.wait_for_timeout(100)
         assert not pg.get_by_role('heading',name='오류',exact=True).count(),pg.locator('main').inner_text()
-    pg.wait_for_timeout(500);print(pg.locator('body').inner_text(),errors,flush=True);pg.get_by_role('heading',name='나처럼 상담하는 AI').wait_for(timeout=5000);shot('01_home');owner.get('/auth/demo');pg.evaluate('async()=>{await refresh();location.hash="education";render()}');pg.get_by_role('heading',name='AI 교육시키기').wait_for(timeout=5000);shot('02_education')
+    pg.wait_for_timeout(500);print(pg.locator('body').inner_text(),errors,flush=True);pg.get_by_role('heading',name='나처럼 상담하는 AI').wait_for(timeout=5000);pg.locator('.word-roll').wait_for(timeout=5000);shot('01_home');owner.get('/auth/demo');pg.evaluate('async()=>{await refresh();location.hash="education";render()}');pg.get_by_role('heading',name='AI 교육시키기').wait_for(timeout=5000);shot('02_education')
     pg.locator('#training-text').fill('배송 기간? => 출고 후 2일입니다.');pg.get_by_role('button',name='교육 비용 확인').click();pg.get_by_role('button',name='비용 확인 및 교육 시작').click();pg.get_by_role('button',name='승인 및 상담에 반영').wait_for(timeout=5000);shot('03_training_review');pg.get_by_role('button',name='승인 및 상담에 반영').click();pg.get_by_text('반영 완료',exact=False).wait_for(timeout=5000)
     nav('test','AI 상담 테스트');pg.locator('#msg').fill('배송 기간?');pg.get_by_role('button',name='전송').click();pg.get_by_text('출고 후 2일입니다.',exact=True).wait_for(timeout=5000);shot('04_test_chat');pg.locator('#msg').fill('추가 질문');pg.get_by_role('button',name='전송').click();pg.get_by_role('heading',name='상담 이용 안내').wait_for(timeout=5000);shot('05_paywall');pg.get_by_role('button',name='요금제 보기',exact=True).click();pg.get_by_role('heading',name='요금제 및 결제').wait_for(timeout=5000);shot('06_pricing')
     post(owner,'/api/demo/billing',{'plan':'lite','addons':['auto_booking','change_booking','crm','quote','stats','export','widget']});post(owner,'/api/settings',{'brand':'테스트 스냅','fields':[{'key':'name','label':'고객명','type':'text','required':True},{'key':'location','label':'장소','type':'text','required':True}],'modes':{'booking':'auto'},'enabled':True,'notice':'공식 예약 안내','links':[{'name':'마이리얼트립','url':'https://www.myrealtrip.com/'}]},'PATCH');pg.evaluate('async()=>{await refresh();selectedPlan=me.plan;selectedAdd=new Set(me.addons);render()}')

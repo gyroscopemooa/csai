@@ -22,9 +22,20 @@ body{background:var(--canvas);color:var(--ink);line-height:1.55;font-family:syst
 .hero-inner>.tag{animation-delay:45ms}.hero-inner>h1{animation-delay:80ms}.hero-inner>p{animation-delay:115ms}.hero-inner>.stack{animation-delay:150ms}
 .hero .stack button{transition:background var(--motion-fast),box-shadow var(--motion-fast),transform var(--motion-fast) var(--motion-ease)}
 .hero .brand{font-size:clamp(25px,6vw,34px)}
-.brand-subtitle{display:inline-flex;max-width:100%;font-size:.7em;font-weight:750;color:#2172dd;vertical-align:middle;white-space:nowrap}
-.brand-typed{display:inline-block;overflow:hidden;width:11em;max-width:100%;white-space:nowrap;border-right:2px solid currentColor;animation:brand-type 650ms steps(10,end) 200ms both,brand-caret 900ms steps(1,end) 1s infinite}
-@keyframes brand-type{from{width:0}to{width:11em}}
+.brand-subtitle{display:inline-flex;font-size:.7em;font-weight:750;color:#2172dd;vertical-align:middle;white-space:nowrap}
+.brand-typed{display:inline-block;overflow:hidden;width:max-content;max-width:11em;white-space:nowrap;border-right:2px solid currentColor;animation:brand-type 650ms steps(10,end) 200ms both,brand-caret 900ms steps(1,end) 1s infinite}
+.hero h1.scramble-title{white-space:pre-wrap;cursor:default}
+.scramble-title .scramble-cell{color:#8290a1}
+.scramble-title .scramble-cell.ok{color:#192333}
+.scramble-title .scramble-caret{display:inline-block;width:.08em;height:.82em;margin-left:.08em;vertical-align:-.08em;background:#3182f6;border-radius:2px}
+.hero-copy{font-size:15px;line-height:1.8;margin:0 0 30px;color:#4e5968}
+.word-roll{display:inline-flex;align-items:center;vertical-align:middle;gap:.2em;border:0;background:transparent;color:#2172dd;font-weight:750;padding:0;min-height:1.6em;cursor:pointer}
+.word-roll-slot{position:relative;display:inline-block;height:1.6em;clip-path:inset(0 -.5em);vertical-align:middle;text-align:left}
+.word-roll-word{position:absolute;left:0;top:0;display:flex;white-space:nowrap}
+.word-roll-char{display:inline-block;white-space:pre;will-change:transform,opacity}
+.word-roll:focus-visible{outline:2px solid #91bfff;outline-offset:2px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){.word-roll-slot{width:auto!important}.word-roll-word:not(:last-child){display:none}}
+@keyframes brand-type{from{max-width:0}to{max-width:11em}}
 @keyframes brand-caret{50%{border-color:transparent}}
 @media(prefers-reduced-motion:reduce){.brand-typed{animation:none;border:0}}
 button{transition:background var(--motion-fast),box-shadow var(--motion-fast),transform var(--motion-fast) var(--motion-ease)}
