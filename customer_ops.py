@@ -26,7 +26,7 @@ def access(c,ws,key):require(key in entitlements(getw(c,ws)))
 
 def signal(msg,result):
     stage=result.get('leadStage')
-    if stage in LEAD_STAGES:return stage,'ai'
+    if isinstance(stage,str) and stage in LEAD_STAGES:return stage,'ai'
     # Explicit commercial intent only; deterministic fallback for fixed/local replies.
     if re.search(r'환불|취소|불만|민원|안\s*살|구매\s*안|예약\s*안',msg):return 'inquiry','rules'
     if re.search(r'예약\s*(하고|하겠|할게|해주)|결제\s*(하고|할게|하겠)|구매\s*(하고|할게|하겠)|신청\s*(하고|할게)',msg):return 'ready','rules'
@@ -131,7 +131,7 @@ def quote_create(body:dict,ws=Depends(ident)):
     work=bounded(body.get('work',''),100);items=body.get('items');note=bounded(body.get('note',''),1000)
     require(isinstance(items,list) and 1<=len(items)<=30,'견적 항목 필요',422)
     with db(True) as c:
-        access(c,ws,'quote');r=one(c,"SELECT t.thread FROM work_link t JOIN work w ON w.id=t.work AND w.ws=t.ws WHERE t.ws=? AND t.work=? AND t.kind='quote' AND w.kind='quote'",(ws,work));require(r,'고객 상담에서 접수한 견적 요청만 전송 가능합니다.',404)
+        access(c,ws,'quote');r=one(c,"SELECT t.thread FROM work_link t JOIN work w ON w.id=t.work AND w.ws=t.ws JOIN thread th ON th.id=t.thread AND th.ws=t.ws WHERE t.ws=? AND t.work=? AND t.kind='quote' AND w.kind='quote' AND th.kind='public'",(ws,work));require(r,'고객 상담에서 접수한 견적 요청만 전송 가능합니다.',404)
         out=[];seen=set()
         for x in items:
             require(isinstance(x,dict),'항목 오류',422);i=x.get('id');q=x.get('quantity');require(isinstance(i,str) and i not in seen and type(q)==int and 1<=q<=1000,'항목 또는 수량 오류',422);seen.add(i)
