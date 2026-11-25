@@ -21,7 +21,7 @@ body{background:var(--canvas);color:var(--ink);line-height:1.55;font-family:syst
 .hero-inner>.brand,.hero-inner>.tag,.hero-inner>h1,.hero-inner>p,.hero-inner>.stack{animation:cs-enter 440ms var(--motion-ease) both}
 .hero-inner>.tag{animation-delay:45ms}.hero-inner>h1{animation-delay:80ms}.hero-inner>p{animation-delay:115ms}.hero-inner>.stack{animation-delay:150ms}
 .hero .stack button{transition:background var(--motion-fast),box-shadow var(--motion-fast),transform var(--motion-fast) var(--motion-ease)}
-.clone-line{display:inline-block;margin:0 0 14px;padding:7px 12px;border:1px solid #cfe3ff;border-radius:999px;background:linear-gradient(90deg,#eff7ff,#fff);color:#2172dd;font-size:14px;font-weight:750;letter-spacing:-.3px;animation:cs-enter 440ms var(--motion-ease) 105ms both}
+.brand-subtitle{font-size:.5em;font-weight:650;color:#2172dd;vertical-align:middle;white-space:nowrap}
 button{transition:background var(--motion-fast),box-shadow var(--motion-fast),transform var(--motion-fast) var(--motion-ease)}
 button:not(:disabled):active{transform:scale(.98)}
 @media(hover:hover) and (pointer:fine){.hero .stack button:not(:disabled):hover{box-shadow:0 4px 14px #191f2810;transform:translateY(-1px)}nav button:not(.active):hover{background:#f4f6f8}}
