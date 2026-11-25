@@ -17,3 +17,9 @@
 - `python -m pytest -q`: 37 passed.
 - `python tests/browser_check.py`: PASS, 26 captures, no page errors (ASGI bridge).
 - Live external integration and production deployment were not tested. Motion reference sites were consulted, but no external paid templates or MCP services were installed.
+
+## v0.5 controlled trial and deployment regression (2026-11-25)
+- `python -m pytest -q`: **39 passed**. Operator-only local access, invite trial allocation, invitation limit controls, credit deductions, model cost ledger, and container health checks are covered.
+- `node --check web/app.js`: PASS.
+- `python tests/browser_check.py`: PASS, 26 captures, no page errors. The 390px mobile viewport and booking prefill path were exercised through the ASGI test bridge.
+- The Cloudflare Container project type check completed. Image deployment was not performed from this computer because Docker CLI/Desktop is not installed; production external integrations remain intentionally unverified.
