@@ -565,6 +565,7 @@ import reporting
 import push_notifications
 import domains
 import message_notifications
+import custom_integration
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
