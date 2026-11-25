@@ -319,9 +319,9 @@
     {
       "id": "external_api",
       "group": "고객·업무",
-      "name": "외부 업무 API",
+      "name": "외부 API 이용권",
       "price": 9900,
-      "local": false,
+      "local": true,
       "requires": []
     },
     {
@@ -363,6 +363,16 @@
       "price": 2900,
       "local": false,
       "requires": []
+    },
+    {
+      "id": "custom_integration",
+      "group": "고객·업무",
+      "name": "맞춤 외부 업무 연동",
+      "price": 9900,
+      "local": false,
+      "requires": [
+        "external_api"
+      ]
     }
   ],
   "packages": [
@@ -501,7 +511,7 @@
     "전용 링크·QR",
     "비회원 상담",
     "상담 내역 열람",
-    "직접 프롬프트·모범 답변",
+    "AI 교육 (크레딧 차감)",
     "말투 설정",
     "업체명·로고",
     "공지·구매처 안내",
