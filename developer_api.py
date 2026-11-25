@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 from app import app, ident, require, bounded, limit, chat, manual_booking, bookings, work_list, work_add, estimate, train, publish, stats
 from store import *
 
-SCOPES={"chat":None,"bookings:read":"calendar","bookings:write":"calendar","bookings:change":"change_booking","work:read":None,"work:write":None,"education":None,"stats":"stats","crm:read":"crm","crm:write":"crm","leads:read":"leads","leads:write":"leads","quotes:read":"quote","quotes:write":"quote","quotes:send":"quote","reports:read":"report","export":"export"}
+SCOPES={"chat":None,"bookings:read":"calendar","bookings:write":"calendar","bookings:change":"change_booking","work:read":None,"work:write":None,"education":None,"stats":"stats","crm:read":"crm","crm:write":"crm","leads:read":"leads","leads:write":"leads","quotes:read":"quote","quotes:write":"quote","quotes:send":"quote","reports:read":"report","export":"export","custom:jobs":"custom_integration"}
 
 def init_api():
     with db(True) as c:
