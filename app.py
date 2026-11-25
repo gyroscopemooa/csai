@@ -506,3 +506,4 @@ import channel_live
 import branding
 import recovery
 import developer_api
+import education_url
