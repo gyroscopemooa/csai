@@ -220,7 +220,7 @@ def invite_accept(body:dict,req:Request,ws=Depends(ident)):
 def operator_costs(req:Request):
     w=require_operator(req)
     with db() as c:
-        r=rows(c,'SELECT kind,model,mode,SUM(input_tokens) input_tokens,SUM(cached_input_tokens) cached_input_tokens,SUM(output_tokens) output_tokens,ROUND(SUM(estimated_cost_usd),6) estimated_cost_usd,COUNT(*) calls FROM model_usage GROUP BY kind,model,mode ORDER BY kind,model,mode')
+        r=rows(c,'SELECT kind,model,mode,SUM(input_tokens) input_tokens,SUM(cached_input_tokens) cached_input_tokens,SUM(output_tokens) output_tokens,CAST(ROUND(CAST(SUM(estimated_cost_usd) AS NUMERIC),6) AS REAL) estimated_cost_usd,COUNT(*) calls FROM model_usage GROUP BY kind,model,mode ORDER BY kind,model,mode')
     return {'models':{'training':ai.TRAIN,'chat':ai.CHAT},'rows':r,'note':'모의 호출은 실제 비용/매출에 집계하지 않습니다.'}
 @app.get('/api/faq')
 def listfaq(ws=Depends(ident)):
@@ -274,17 +274,17 @@ def train(i:str,ws=Depends(ident)):
         w=getw(c,ws);j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state']=='estimated' and j['created']>now()-1800,'유효한 교육 견적 필요',409)
         source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
         if agent_id:require(agent and 'extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
-        try:charge_credit(c,w,j['estimate'],i)
+        try:reserve_education(c,w,j['estimate'],i)
         except ValueError as e:fail(402,str(e))
         c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {})
     try:
-        result,n=ai.train(source['text'],source['images'],s);require(n<=j['estimate'],'교육 상한 초과',409)
+        result,n=ai.train(source['text'],source['images'],s);require(type(n)==int and 0<=n<=j['estimate'],'교육 비용 상한 초과 또는 형식 오류',409)
     except Exception as e:
         with db(True) as c:
-            charge_credit(c,getw(c,ws),-j['estimate'],i);c.execute('UPDATE training SET state=\'failed\' WHERE id=?',(i,))
-        fail(502,'교육 실패: '+str(e)[:200])
+            settle_education(c,ws,i,0);c.execute('UPDATE training SET state=\'failed\' WHERE id=?',(i,))
+        fail(502,'교육에 실패했습니다. 예약된 크레딧은 정산되었습니다.')
     with db(True) as c:
-        charge_credit(c,getw(c,ws),n-j['estimate'],i);record_usage(c,ws,'training',ai.TRAIN,result);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown'),'agent':agent_id}),i))
+        settle_education(c,ws,i,n);record_usage(c,ws,'training',ai.TRAIN,result);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown'),'agent':agent_id}),i))
     return {'id':i,'cost':n,'result':result}
 @app.get('/api/training')
 def jobs(ws=Depends(ident)):
@@ -293,6 +293,7 @@ def jobs(ws=Depends(ident)):
 def publish(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state'] in ['review','published'],'승인할 결과 없음',409)
+        if j['state']=='published':return {'ok':True}
         result=loads(j['result']);w=getw(c,ws);source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
         if agent_id:require(agent and 'extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
         old=loads(agent['published'] if agent else w['published'])
@@ -355,7 +356,7 @@ def chat(body:dict):
         with db(True) as c:
             refund_chat(c,getw(c,ws),p,kind)
             c.execute('UPDATE request SET state=\'failed\' WHERE ws=? AND thread=? AND client=?',key)
-        fail(502,'상담 처리 실패. 사용량은 복구되었습니다. '+str(e)[:100])
+        fail(502,'상담 처리 실패. 사용량은 복구되었습니다.')
     proposal=r.pop('workDraft',None)
     if v['kind']=='public' and not r.get('booking') and s['modes'].get('general')!='off':
         work_kind=next((k for k,pat in [('quote',r'견적|제안서'),('complaints',r'불만|민원|항의'),('tasks',r'오류 신고|장애 신고|업무 요청')] if k in adds and re.search(pat,msg)),None)
