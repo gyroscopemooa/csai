@@ -1,6 +1,6 @@
 from test_app import owner,post
 from fastapi.testclient import TestClient
-from app import app
+from app import app,session_response
 import store
 from store import db,one,uid,now,workspace
 
@@ -10,6 +10,16 @@ def make_google_client(subject):
         w=workspace(d,'google:'+subject);token=uid();d.execute('INSERT INTO session VALUES(?,?,?)',(token,w['id'],now()+3600))
     c.cookies.set('csai_session',token)
     return c
+
+def test_verified_google_email_grants_operator_only_to_matching_identity(monkeypatch):
+    monkeypatch.setattr(store,'OPERATOR_EMAILS',{'jeonmeensoo@gmail.com'})
+    session_response('google:verified-owner','jeonmeensoo@gmail.com')
+    session_response('google:other-owner','other@gmail.com')
+    session_response('google:unverified-owner')
+    with db() as d:
+        assert store.is_operator(one(d,'SELECT * FROM workspace WHERE owner=?',('google:verified-owner',)))
+        assert not store.is_operator(one(d,'SELECT * FROM workspace WHERE owner=?',('google:other-owner',)))
+        assert not store.is_operator(one(d,'SELECT * FROM workspace WHERE owner=?',('google:unverified-owner',)))
 
 def test_operator_invite_trial_wallet_and_direct_education():
     op=owner()

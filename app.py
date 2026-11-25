@@ -56,9 +56,12 @@ async def guard(req,call_next):
     if not req.url.path.startswith('/widget/'):res.headers['X-Frame-Options']='SAMEORIGIN'
     return res
 
-def session_response(owner):
+def session_response(owner,verified_email=None):
     with db(True) as c:
-        w=workspace(c,owner);t=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(t,w['id'],now()+86400*7))
+        w=workspace(c,owner)
+        if owner.startswith('google:') and verified_email:
+            c.execute('UPDATE workspace SET owner_email=? WHERE id=?',(verified_email.lower(),w['id']))
+        t=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(t,w['id'],now()+86400*7))
     r=RedirectResponse('/#education',303);r.set_cookie('csai_session',t,httponly=True,samesite='lax',secure=APP_URL.startswith('https://'),max_age=86400*7);return r
 def current_workspace(req):
     with db() as c:
@@ -88,7 +91,8 @@ def callback(req:Request,code:str,state:str):
         require(one(c,'SELECT * FROM oauth_state WHERE state=? AND expires>?',(state,now())),'OAuth 만료');c.execute('DELETE FROM oauth_state WHERE state=?',(state,))
     t=httpx.post('https://oauth2.googleapis.com/token',data={'code':code,'client_id':os.environ['GOOGLE_CLIENT_ID'],'client_secret':os.environ['GOOGLE_CLIENT_SECRET'],'redirect_uri':APP_URL+'/auth/google/callback','grant_type':'authorization_code'},timeout=15);require(t.status_code==200,'Google 인증 실패',502)
     p=httpx.get('https://openidconnect.googleapis.com/v1/userinfo',headers={'Authorization':'Bearer '+t.json()['access_token']},timeout=15);require(p.status_code==200 and p.json().get('sub'),'Google 사용자 확인 실패',502)
-    return session_response('google:'+p.json()['sub'])
+    identity=p.json();verified_email=identity.get('email') if identity.get('email_verified') is True else None
+    return session_response('google:'+identity['sub'],verified_email)
 @app.post('/api/logout')
 def logout(req:Request):
     with db(True) as c:c.execute('DELETE FROM session WHERE token=?',(req.cookies.get('csai_session',''),))

@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-25",
   "keep_vars": true,
+  "vars": {
+    "OPERATOR_EMAILS": "jeonmeensoo@gmail.com"
+  },
   "containers": [
     {
       "class_name": "CsAiDevContainer",

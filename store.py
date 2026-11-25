@@ -9,6 +9,7 @@ CAT=json.loads((ROOT/'catalog.json').read_text(encoding='utf-8'))
 DEMO=os.getenv('DEMO_MODE','1')=='1'
 SHARED_TEST=os.getenv('SHARED_TEST_MODE','0')=='1'
 OPERATOR_OWNERS={x.strip() for x in os.getenv('OPERATOR_OWNERS','').split(',') if x.strip()}
+OPERATOR_EMAILS={x.strip().lower() for x in os.getenv('OPERATOR_EMAILS','').split(',') if x.strip()}
 APP_URL=os.getenv('APP_URL','http://127.0.0.1:8000').rstrip('/')
 PLAN={x['id']:x for x in CAT['plans']}; ADD={x['id']:x for x in CAT['addons']}; PACK={x['id']:x for x in CAT['packages']}
 def uid(): return secrets.token_urlsafe(18)
@@ -58,12 +59,13 @@ def init():
         ''')
         if 'booking_context' not in [r[1] for r in c.execute('PRAGMA table_info(thread)')]:c.execute("ALTER TABLE thread ADD COLUMN booking_context TEXT NOT NULL DEFAULT '{}'")
         if 'days' not in [r[1] for r in c.execute('PRAGMA table_info(trial_invite)')]:c.execute('ALTER TABLE trial_invite ADD COLUMN days INTEGER NOT NULL DEFAULT 14')
+        if 'owner_email' not in [r[1] for r in c.execute('PRAGMA table_info(workspace)')]:c.execute('ALTER TABLE workspace ADD COLUMN owner_email TEXT')
 def workspace(c,owner):
     w=one(c,'SELECT * FROM workspace WHERE owner=?',(owner,))
     if not w:
         i=uid(); c.execute('INSERT INTO workspace(id,owner,slug,settings) VALUES(?,?,?,?)',(i,owner,secrets.token_urlsafe(7),dump(DEFAULT)));w=one(c,'SELECT * FROM workspace WHERE id=?',(i,))
     return w
-def is_operator(w): return w and w['owner'] in OPERATOR_OWNERS
+def is_operator(w): return bool(w and (w['owner'] in OPERATOR_OWNERS or (w.get('owner_email') or '').lower() in OPERATOR_EMAILS and w['owner'].startswith('google:')))
 def trial(c,w):
     r=one(c,'SELECT * FROM trial_access WHERE ws=? AND expires>?',(w['id'],now()))
     return r

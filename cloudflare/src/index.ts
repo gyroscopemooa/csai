@@ -16,7 +16,7 @@ export default {
       SHARED_TEST_MODE: "1",
       DEMO_MODE: "1",
     };
-    for (const key of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "OPERATOR_OWNERS", "OPENAI_API_KEY"] as const) {
+    for (const key of ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "OPERATOR_OWNERS", "OPERATOR_EMAILS", "OPENAI_API_KEY"] as const) {
       if (env[key]) envVars[key] = env[key];
     }
     await container.startAndWaitForPorts({ startOptions: { envVars } });
@@ -29,5 +29,6 @@ interface Env {
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   OPERATOR_OWNERS?: string;
+  OPERATOR_EMAILS?: string;
   OPENAI_API_KEY?: string;
 }
