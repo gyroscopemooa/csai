@@ -9,3 +9,5 @@ backups/
 *.sqlite3-wal
 *.sqlite3-shm
 _planning_extracted.txt
+node_modules/
+.wrangler/

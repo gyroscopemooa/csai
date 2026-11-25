@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "cs-ai-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-25",
+  "containers": [
+    {
+      "class_name": "CsAiDevContainer",
+      "image": "../Dockerfile",
+      "instance_type": "lite",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CS_AI_APP",
+        "class_name": "CsAiDevContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CsAiDevContainer"]
+    }
+  ]
+}

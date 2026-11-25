@@ -1,0 +1,9 @@
+{
+  "name": "cs-ai-cloudflare-dev",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@cloudflare/containers": "latest",
+    "wrangler": "latest"
+  }
+}

@@ -10,6 +10,18 @@
 - 초청 체험은 운영자가 1회용 링크로 발급하며 기본 50회 상담/100C/14일(상담 100·300회, 교육 20~300C, 기간 1~30일 조절 가능), 예약 체험 10건을 제공합니다. 체험과 운영자 사용량은 일반 구독 지갑과 분리됩니다.
 - 교육은 `gpt-6.2-sol`, 상담은 `gpt-6-luna`를 기본 환경변수 값으로 두고, 모델 사용량·예상 원가를 운영자 전용으로 기록합니다. 실제 키·계정 가용성 및 청구 단가는 배포 전 별도 확인해야 합니다.
 
+## Cloudflare dev 배포
+
+`cloudflare/`에는 FastAPI를 Cloudflare Containers로 실행하는 **dev 전용** 구성이 있습니다. 일반 Pages 또는 일반 Worker Git 배포를 선택하면 Python API가 실행되지 않습니다. Containers는 beta이고 컨테이너 디스크가 재시작 시 초기화되므로, 이 구성은 SQLite 데이터를 보존하는 운영 배포에 사용하면 안 됩니다. 운영 전환은 Supabase Postgres와 RLS 이식 후 진행합니다.
+
+```bash
+cd cloudflare
+npm install
+npx wrangler deploy
+```
+
+배포 후 실제 Worker URL로 `APP_URL`을 설정하고, `SHARED_TEST_MODE=1`, `DEMO_MODE=1`, Google OAuth 및 운영자 `google:<sub>` 값을 Cloudflare secret/environment variable로 넣어야 합니다. OpenAI, Supabase, Resend, 결제 관련 비밀값은 테스트 전까지 비워 둡니다.
+
 ## Windows에서 실행
 1. ZIP 전체를 새 폴더(예: `C:\Projects\CSAI`)에 압축 해제합니다. `run.py`, `requirements.txt`, `web/`가 같은 폴더 안에 있어야 합니다. 기존 폴더에 덮어쓰기보다는 별도 폴더에서 테스트를 권장합니다.
 2. Python 3.11~3.13 설치 후 `start_windows.bat` 더블클릭. 첫 실행에는 의존성 설치를 위한 인터넷이 필요합니다.

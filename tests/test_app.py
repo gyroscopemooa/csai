@@ -10,6 +10,9 @@ import ai
 def owner():
     c=TestClient(app); assert c.get('/auth/demo').status_code==200;return c
 
+def test_health_endpoint():
+    r=TestClient(app).get('/health');assert r.status_code==200 and r.json()['ok'] is True
+
 def post(c,path,body):
     r=c.post(path,json=body);assert r.status_code==200,(path,r.status_code,r.text);return r.json()
 def teach(c,q,a,unknown=None):

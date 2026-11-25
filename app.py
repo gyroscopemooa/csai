@@ -21,6 +21,8 @@ def limit(key,maximum=30,window=60):
             for k in list(RATE):
                 if not RATE[k] or RATE[k][-1]<t-window:RATE.pop(k,None)
 app.mount('/assets',StaticFiles(directory=ROOT/'web'),name='assets')
+@app.get('/health')
+def health():return {'ok':True,'service':'CS AI','mode':'development' if DEMO else 'configured'}
 
 def fail(status,msg):raise HTTPException(status,msg)
 def require(ok,msg='추가 기능 구매가 필요합니다.',status=403):
