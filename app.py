@@ -349,7 +349,8 @@ def chat(body:dict):
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
         c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w)
-    try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')))
+        quote_catalog=rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1 ORDER BY name LIMIT 100',(ws,)) if 'quote' in adds else []
+    try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
         with db(True) as c:
             refund_chat(c,getw(c,ws),p,kind)
