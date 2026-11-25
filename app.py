@@ -378,15 +378,23 @@ def chat(body:dict):
     return r
 @app.get('/api/inbox')
 def inbox(ws=Depends(ident)):
-    with db() as c:return rows(c,'SELECT id,kind,status,manual,created,(SELECT body FROM message WHERE thread=thread_outer.id ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? ORDER BY created DESC',(ws,))
+    with db() as c:
+        w=getw(c,ws);cutoff=history_cutoff(w)
+        return rows(c,'SELECT id,kind,status,manual,created,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?)) ORDER BY created DESC',(cutoff,ws,cutoff,cutoff))
+@app.get('/api/history-policy')
+def history_policy(ws=Depends(ident)):
+    with db() as c:
+        w=getw(c,ws);cutoff=history_cutoff(w)
+        hidden=one(c,'SELECT COUNT(*) n FROM thread t WHERE t.ws=? AND t.created<? AND NOT EXISTS(SELECT 1 FROM message m WHERE m.ws=t.ws AND m.thread=t.id AND m.created>=?)',(ws,cutoff,cutoff))['n']
+        return {'base_days':BASE_HISTORY_DAYS,'extended_days':EXTENDED_HISTORY_DAYS,'accessible_days':history_days(w),'older_threads':hidden,'deletion_enabled':False,'policy':'provisional_access_window'}
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t,'상담 없음',404);return t|{'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? ORDER BY rowid',(ws,i))}
+        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.post('/api/inbox/{i}')
 def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
-        t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t,'상담 없음',404)
+        t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         if 'manual' in body:c.execute('UPDATE thread SET manual=? WHERE id=?',(int(bool(body['manual'])),i))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
         if body.get('reply'):c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
@@ -519,7 +527,7 @@ def export(ws=Depends(ident)):
     b=Workbook();b.remove(b.active)
     with db() as c:
         w=getw(c,ws);a=entitlements(w);require('export' in a)
-        rr=rows(c,'SELECT m.thread,m.role,m.body,m.created FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND t.kind<>? ORDER BY m.created',(ws,'test'))
+        rr=rows(c,'SELECT m.thread,m.role,m.body,m.created FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND t.kind<>? AND m.created>=? ORDER BY m.created',(ws,'test',history_cutoff(w)))
         require(len(rr)<=50000,'상담 기록이 너무 많습니다. 관리자에게 문의하세요.',422)
         add_sheet(b,'상담 기록',['상담 ID','역할','본문','일시 UTC'],[(r['thread'],r['role'],r['body'],datetime.fromtimestamp(r['created'],timezone.utc).isoformat()) for r in rr])
         if 'crm' in a:
