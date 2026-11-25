@@ -179,7 +179,7 @@ def invite_create(body:dict,req:Request):
     code=secrets.token_urlsafe(24);i=uid()
     accept_expires=now()+7*86400
     with db(True) as c:c.execute('INSERT INTO trial_invite(id,code_hash,chat_limit,credit_limit,booking_limit,expires,days,created,revoked) VALUES(?,?,?,?,?,?,?,?,?)',(i,__import__('hashlib').sha256(code.encode()).hexdigest(),chats,credits,10,accept_expires,days,now(),0))
-    return {'id':i,'code':code,'accept_path':'/invite/'+code,'chat_limit':chats,'credit_limit':credits,'days':days,'accept_expires':accept_expires}
+    return {'id':i,'code':code,'accept_path':'/#invite='+code,'chat_limit':chats,'credit_limit':credits,'days':days,'accept_expires':accept_expires}
 @app.post('/api/operator/invites/{i}/revoke')
 def invite_revoke(i:str,req:Request):
     require_operator(req)
@@ -491,6 +491,9 @@ def widget(slug:str):
     with db() as c:
         w,agent=branding.resolve(c,slug);require(w and w['enabled'] and 'widget' in entitlements(w),'위젯 비활성화',404)
     return FileResponse(ROOT/'web/index.html')
+@app.get('/invite/{code}')
+def invite_redirect(code:str):
+    require(bool(re.fullmatch(r'[A-Za-z0-9_-]{20,100}',code)),'잘못된 초청 링크',404);return RedirectResponse('/#invite='+code)
 @app.get('/')
 @app.get('/c/{slug}')
 def index(slug:str=''):return FileResponse(ROOT/'web/index.html')
