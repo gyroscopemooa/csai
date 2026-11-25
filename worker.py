@@ -1,17 +1,23 @@
-"""Run separately: python worker.py. No live email by default, even with keys."""
+"""Single-process worker. Run separately or via the optional FastAPI lifespan, not both."""
 import time,os,logging
 import app
 import notifications,channel_live,google_calendar
 from store import DEMO
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
-if __name__=='__main__':
+
+def tick_once():
+    if os.getenv('ENABLE_AUTO_EMAIL')=='1':notifications.tick()
+    if os.getenv('ENABLE_AUTO_CALENDAR')=='1':google_calendar.tick()
+    if channel_live.enabled():
+        for _ in range(10):
+            if not channel_live.process_one():break
+
+def loop(stop=None):
     logging.info('Worker started. demo=%s auto_email=%s channels=%s',DEMO,os.getenv('ENABLE_AUTO_EMAIL')=='1',channel_live.enabled())
-    while True:
-        try:
-            if os.getenv('ENABLE_AUTO_EMAIL')=='1':notifications.tick()
-            if os.getenv('ENABLE_AUTO_CALENDAR')=='1':google_calendar.tick()
-            if channel_live.enabled():
-                for _ in range(10):
-                    if not channel_live.process_one():break
+    while stop is None or not stop.is_set():
+        try:tick_once()
         except Exception:logging.exception('Worker iteration failed')
-        time.sleep(5)
+        if stop is None:time.sleep(5)
+        else:stop.wait(5)
+
+if __name__=='__main__':loop()
