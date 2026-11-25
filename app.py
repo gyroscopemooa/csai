@@ -344,6 +344,7 @@ def chat(body:dict):
     with db(True) as c:
         for role,body in [('user',msg),('assistant',r['reply'])]:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,now()))
         if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
+        if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
         if r.get('unknown'):
             if v['kind']!='test':ops.event(c,ws,'unknown','미학습 질문 접수',tid)
             c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(uid(),ws,tid,msg,'open',now()));c.execute('UPDATE thread SET status=\'pending\' WHERE id=?',(tid,))
@@ -507,3 +508,4 @@ import branding
 import recovery
 import developer_api
 import education_url
+import customer_ops
