@@ -356,7 +356,9 @@ def chat(body:dict):
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
         if t['manual']:
             r={'reply':'담당자가 확인 중입니다.','manual':True,'remaining':remaining(c,w)}
-            c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));return r
+            c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));
+            if v['kind']!='test' and not one(c,'SELECT id FROM event_log WHERE ws=? AND kind=? AND ref=?',(ws,'new',tid)):ops.event(c,ws,'new','신규 고객 상담',tid)
+            return r
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
@@ -500,17 +502,17 @@ def manual_booking(body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);s=loads(w['settings']);require('calendar' in entitlements(w));
         if trial(c,w):require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
-        data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,ws,a,b,buffer=s['buffer'],resource=resource),'예약 시간이 겹칩니다.',409);i=uid();paid=bool(body.get('paid',False));status='pending_payment' if s['payment_required'] and not paid else 'confirmed';c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,'staff',a,b,resource,dump(data),s['template_version'],dump(s['fields']),status,1,int(paid),uid(),now()));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
+        data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,ws,a,b,buffer=s['buffer'],resource=resource),'예약 시간이 겹칩니다.',409);i=uid();paid=bool(body.get('paid',False));status='pending_payment' if s['payment_required'] and not paid else 'confirmed';c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,'staff',a,b,resource,dump(data),s['template_version'],dump(s['fields']),status,1,int(paid),uid(),now()));ops.event(c,ws,'booking','관리자 예약 등록',i);return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
 @app.post('/api/bookings/{i}')
 def booking_admin(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);s=loads(w['settings']);require('calendar' in entitlements(w));b=one(c,'SELECT * FROM booking WHERE id=? AND ws=?',(i,ws));require(b,'일정 없음',404);act=body.get('action')
         if act=='approve':
             require(b['status'] in ['pending','pending_payment'] and b['customer_ok'],'확정할 수 없는 일정',409);require(b['version']==s['template_version'],'양식 또는 정책 변경. 신규 예약 요청 필요.',409);paid=bool(b['paid'] or body.get('paid'));require(not s['payment_required'] or paid,'결제 확인 필요',409);require(available(c,ws,b['start'],b['end'],i,s['buffer'],b['resource']) and datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'예약 시간 충돌 또는 만료',409);c.execute('UPDATE booking SET paid=?,status=\'confirmed\' WHERE id=?',(int(paid),i));ops.event(c,ws,'booking','예약 확정',i)
-        elif act=='cancel':require(b['status'] in ['confirmed','pending','pending_payment'],'취소 불가',409);c.execute('UPDATE booking SET status=\'cancelled\' WHERE id=?',(i,))
-        elif act=='complete':require(b['status']=='confirmed','확정 일정만 완료 가능',409);c.execute('UPDATE booking SET status=\'completed\' WHERE id=?',(i,))
+        elif act=='cancel':require(b['status'] in ['confirmed','pending','pending_payment'],'취소 불가',409);c.execute('UPDATE booking SET status=\'cancelled\' WHERE id=?',(i,));ops.event(c,ws,'booking','관리자 예약 취소',i)
+        elif act=='complete':require(b['status']=='confirmed','확정 일정만 완료 가능',409);c.execute('UPDATE booking SET status=\'completed\' WHERE id=?',(i,));ops.event(c,ws,'booking','예약 완료',i)
         elif act=='change':
-            require('change_booking' in entitlements(w));require(b['status']=='confirmed','확정 일정만 변경',409);a,z=interval(s,body.get('start',''));require(available(c,ws,a,z,i,s['buffer'],b['resource']),'일정 충돌',409);c.execute('UPDATE booking SET start=?,end=? WHERE id=?',(a,z,i))
+            require('change_booking' in entitlements(w));require(b['status']=='confirmed','확정 일정만 변경',409);a,z=interval(s,body.get('start',''));require(available(c,ws,a,z,i,s['buffer'],b['resource']),'일정 충돌',409);c.execute('UPDATE booking SET start=?,end=? WHERE id=?',(a,z,i));ops.event(c,ws,'booking','관리자 예약 변경',i)
         else:fail(422,'업무 유형 오류')
         return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
 @app.get('/api/work')
