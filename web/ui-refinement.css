@@ -151,3 +151,8 @@
 .agent-use-grid strong{display:block;margin-bottom:7px;color:#191f28}
 .agent-use-grid p{margin:0;color:#4e5968;font-size:13px;line-height:1.65}
 @media(max-width:700px){.agent-use-grid{grid-template-columns:1fr}}
+.demo-view-select{margin:0 8px 14px;padding:12px;background:#f5f8fc;border-radius:12px}
+.demo-view-select label{display:block;margin-bottom:6px;color:#4e5968;font-size:11px;font-weight:700}
+.demo-view-select select{min-height:36px;padding:7px 9px;font-size:12px}
+.demo-view-select small{display:block;margin-top:6px;font-size:10px;line-height:1.4}
+@media(max-width:700px){.app-sidebar:not(.open) .demo-view-select{display:none}.demo-view-select{margin:8px 0}}
