@@ -86,8 +86,13 @@ with sync_playwright() as pw:
     desktop.locator('[data-education-method="website"]').click()
     assert desktop.locator("#education-url").input_value() == "https://example.com"
     desktop.locator('[data-education-method="direct"]').click()
+    desktop.locator(".app-sidebar").get_by_role("button", name="교육 크레딧", exact=True).click()
+    desktop.locator(".app-sidebar").get_by_role("button", name="AI 교육시키기").click()
+    desktop.locator("#training-text").wait_for()
+    assert desktop.locator("#training-text").input_value() == "교육 초안 보존 확인"
     desktop.locator("#training-text").fill("AI 티가 나지 않게 짧고 자연스럽게 답해줘. 이모지는 쓰지 마.")
-    desktop.locator(".training-attachments summary").click()
+    if not desktop.locator(".training-attachments").evaluate("(el) => el.open"):
+        desktop.locator(".training-attachments summary").click()
     desktop.locator("#training-conversation").fill("고객: 예약 가능한가요?\n나: 날짜 알려주시면 확인해드릴게요.")
     desktop.get_by_role("button", name="보내기 · 비용 확인").click()
     desktop.locator("#estimate .training-turn").wait_for()
