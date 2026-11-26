@@ -45,7 +45,18 @@ def next_month(t):
 def order_view(r):return dict(r,items=loads(r['items']))
 @app.post('/api/billing/quote')
 def checkout_quote(body:dict,ws=Depends(ident)):
-    k,i,n=quote(body);return {'kind':k,'items':i,'amount':n,'currency':'KRW','sandbox':True}
+    k,i,n=quote(body);result={'kind':k,'items':i,'amount':n,'currency':'KRW','sandbox':True}
+    if k=='subscription':
+        with db() as c:
+            w=getw(c,ws);sub=one(c,'SELECT * FROM subscription WHERE ws=? AND period_end>?',(ws,now()))
+            previous=one(c,"SELECT amount FROM checkout_order WHERE id=? AND ws=? AND status='paid'",(sub['order_id'],ws)) if sub else None
+            old=previous['amount'] if previous else (PLAN[w['plan']]['price']+normalize_addons(loads(w['addons']))[1] if w['plan']!='free' else 0)
+            delta=n-old
+            remaining=max(0,sub['period_end']-now()) if sub else 0
+            duration=max(1,sub['period_end']-sub['period_start']) if sub else 1
+            estimate=(max(0,delta)*remaining+duration-1)//duration if sub and previous else None
+            result['change']={'current_monthly':old,'next_monthly':n,'monthly_delta':delta,'period_end':sub['period_end'] if sub else None,'estimated_upgrade_proration':estimate,'actual_charge_verified':False,'sandbox_only':True}
+    return result
 @app.post('/api/billing/orders')
 def checkout_create(body:dict,ws=Depends(ident)):
     require(DEMO,'실제 PG 미연결',503);k,i,n=quote(body);client=bounded(body.get('client',''),100);require(client,'요청 ID 필요',422)

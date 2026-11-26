@@ -64,6 +64,8 @@ const CSAISetup=(()=>{
   let r=rules[route]||['필요한 기능을 둘러보고 구독 구성표에서 예상 요금을 확인할 수 있습니다.','구독 구성표 열기','receipt'];
   if(route==='education'&&Object.keys(me.published||{}).length)r=['교육이 반영되었습니다. 실제 고객처럼 질문해 상담을 테스트해 보세요.','상담 테스트','test'];
   if(route==='preview'&&me.enabled)r=['상담원이 공개되었습니다. 홈페이지 위젯이나 외부 채널을 연결할 수 있습니다.','채널 연결 보기','route:channels'];
+  if(route==='settings'&&!me.settings?.desired_work?.length)r=['여러 업종과 필요한 업무를 선택해 주세요. 선택만으로 결제되지는 않습니다.','업종·업무 설정','settings'];
+  if(route==='inbox'&&me.settings?.consultation_mode==='staff')r=['직접 상담한 기록을 검토한 뒤 교육 자료로 활용할 수 있습니다. 교육 분석에는 크레딧이 필요합니다.','교육 방식 보기','education'];
   if(route==='calendar'&&has('calendar')&&!has('auto_booking'))r=['일정표를 사용 중이시네요. AI가 예약 접수까지 맡도록 구성할 수도 있습니다.','자동 예약 알아보기','auto_booking'];
   if(route==='calendar'&&has('auto_booking')&&!has('booking_alert'))r=['자동 예약을 사용 중이시네요. 예약 안내 알림도 설정할 수 있습니다.','예약 알림 알아보기','booking_alert'];
   if(all()[r[2]]&&featureSet(current()).has(r[2]))return [r[0],'구독 구성표 열기','receipt'];

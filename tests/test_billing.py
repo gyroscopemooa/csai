@@ -57,3 +57,15 @@ def test_repriced_channel_bundle_and_education():
     assert amount(['all']) == 64800
     assert post(c,'/api/billing/quote',{'kind':'education','sku':'mini'})['amount'] == 2900
     assert post(c,'/api/billing/quote',{'kind':'subscription','plan':'enterprise','addons':[]})['amount'] == 899000
+
+
+def test_subscription_change_quote_is_read_only():
+    c=owner()
+    paid(c,order(c,'subscription',plan='lite',addons=[],client='initial-change'))
+    r=post(c,'/api/billing/quote',{'kind':'subscription','plan':'lite','addons':['auto_booking']})
+    assert r['amount']==22700
+    assert r['change']['current_monthly']==9900
+    assert r['change']['monthly_delta']==12800
+    assert 0<=r['change']['estimated_upgrade_proration']<=12800
+    assert not r['change']['actual_charge_verified']
+    assert c.get('/api/me').json()['addons']==[]

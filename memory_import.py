@@ -32,6 +32,18 @@ def chatgpt_export(raw):
     return data
 
 
+# Local title-only hints: not an AI classification or approval to import.
+def category_hint(title):
+    lowered=title.lower()
+    groups={
+        '사업·상품·서비스':('사업','상품','서비스','제품','고객','업체','창업','business','product','service'),
+        '운영·업무 흐름':('업무','운영','예약','절차','프로세스','정책','workflow','booking','policy'),
+        '가격·결제·환불':('가격','요금','결제','환불','매출','price','billing','refund'),
+        '개발·기술':('개발','코드','api','오류','배포','code','debug'),
+        '홍보·브랜드':('홍보','마케팅','광고','브랜드','marketing','brand'),
+        '개인정보 주의':('가족','건강','병원','연애','개인','비밀번호','password','medical'),
+    }
+    return [name for name,words in groups.items() if any(word in lowered for word in words)] or ['미분류']
 def summarize(conversations, start=None, end=None):
     seen = set()
     listed = []
@@ -75,6 +87,8 @@ def summarize(conversations, start=None, end=None):
         seen.add(fingerprint)
         listed.append({'id': fingerprint, 'title': str(item.get('title') or '제목 없음')[:160],
                        'date': day.isoformat() if day else '', 'messages': len(messages),
+                       'categoryHints': category_hint(str(item.get('title') or '')),
+                       'classification': 'title_only',
                        'chars': sum(len(part) for _, part in messages), 'approxTokens': (len(content) + 2) // 3})
     return {'conversations': listed, 'duplicates': duplicates, 'excluded': excluded}
 

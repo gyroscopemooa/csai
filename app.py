@@ -154,6 +154,14 @@ def settings(body:dict,ws=Depends(ident)):
         for k in ['brand','tone','notice','price','location','hours','welcome','fallback']:
             if k in body:s[k]=bounded(body[k],2500 if k=='prompt' else 1500)
         if 'emoji' in body:s['emoji']=bool(body['emoji'])
+        for key in ('industries','desired_work'):
+            if key in body:
+                values=body[key]
+                require(isinstance(values,list) and len(values)<=30 and all(isinstance(x,str) and 0<len(x.strip())<=80 for x in values),'복수 선택 항목 형식 오류',422)
+                s[key]=list(dict.fromkeys(x.strip() for x in values))
+        if 'consultation_mode' in body:
+            require(body['consultation_mode'] in ('ai','staff'),'상담 방식 오류',422)
+            s['consultation_mode']=body['consultation_mode']
         if 'links' in body:
             require(isinstance(body['links'],list) and len(body['links'])<=10,'판매처 최대 10개',422);s['links']=[]
             for x in body['links']:
@@ -352,7 +360,8 @@ def create_session(body:dict,req:Request):
             w,agent=branding.resolve(c,body.get('slug'));require(public_access(w) and w['enabled'],'상담 비활성화',404);require(not domains.current_ws.get() or w['id']==domains.current_ws.get(),'다른 업체의 상담입니다.',404)
         token=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,w['id'],now()+86400,kind));
         if agent:c.execute('UPDATE visitor SET agent=? WHERE token=?',(agent['id'],token))
-        i=uid();c.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(i,w['id'],token,kind,now()))
+        i=uid();staff=kind=='public' and loads(w['settings']).get('consultation_mode')=='staff'
+        c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(i,w['id'],token,kind,now(),int(staff)))
     return {'token':token,'thread':i}
 @app.get('/api/session/{token}/messages')
 def messages(token:str):
@@ -448,6 +457,23 @@ def history_policy(ws=Depends(ident)):
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
         w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+@app.get('/api/inbox/{i}/education-source')
+def staff_education_source(i:str,ws=Depends(ident)):
+    with db() as c:
+        w=getw(c,ws);t=one(c,'SELECT id,kind FROM thread WHERE ws=? AND id=?',(ws,i))
+        require(t and t['kind'] in ('public','naver','kakao') and thread_accessible(c,w,i),'실제 고객 상담 없음 또는 조회 범위 초과',404)
+        require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 교육할 수 없습니다.',409)
+        messages=rows(c,"SELECT role,body FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid",(ws,i,history_cutoff(w)))
+        pairs=[];questions=[]
+        for m in messages:
+            if m['role']=='user':questions.append(m['body'])
+            elif m['role']=='assistant':questions=[]
+            elif m['role']=='staff' and questions:
+                pairs.append('고객: '+'\n'.join(questions)+'\n담당자: '+m['body']);questions=[]
+        text=ai.clean('\n\n'.join(pairs))
+        require(bool(text),'담당자가 직접 답변한 고객 질문이 없습니다.',422)
+        require(len(text)<=30000,'교육 자료가 30,000자를 초과합니다. 기간 또는 내용을 나누어 등록하세요.',422)
+        return {'text':text,'pairs':len(pairs),'chars':len(text)}
 @app.delete('/api/inbox/{i}')
 def delete_test_thread(i:str,ws=Depends(ident)):
     with db(True) as c:

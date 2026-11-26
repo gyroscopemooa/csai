@@ -27,3 +27,10 @@ def test_memory_preflight_has_no_raw_messages_or_training_side_effects():
     assert filtered.json()['excluded'] == 2
     assert client.get('/api/me').json()['credits'] == credits
     assert client.get('/api/training').json() == jobs
+
+
+def test_title_category_hints_are_not_ai_classification():
+    from memory_import import category_hint
+    assert '사업·상품·서비스' in category_hint('사업 상품 계획')
+    assert '개인정보 주의' in category_hint('가족 건강')
+    assert category_hint('unclassified text') == ['미분류']
