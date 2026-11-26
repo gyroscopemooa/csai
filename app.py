@@ -629,6 +629,7 @@ def index(slug:str=''):return FileResponse(ROOT/'web/index.html')
 # Operational endpoints are registered after the original routes.
 import ops
 import billing
+import polar_sandbox
 import google_calendar
 import channel_live
 import branding
@@ -643,6 +644,8 @@ import message_notifications
 import custom_integration
 import policies
 policies.register(app,ident,require)
+import memory_import
+memory_import.register(app, ident)
 import demo_samples
 
 # Optional one-process worker for the development container. Disabled unless configured.

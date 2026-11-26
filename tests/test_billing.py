@@ -17,3 +17,31 @@ def test_credit_message_orders_and_isolation():
 
 def test_package_overlap():
     c=owner();r=c.post('/api/billing/quote',json={'kind':'subscription','plan':'lite','addons':['customer_pack','work_pack']});assert r.status_code==422;r=post(c,'/api/billing/quote',{'kind':'subscription','plan':'lite','addons':['all','channel_pack','channels','widget']});assert r['amount']==49800
+
+def test_polar_sandbox_uses_server_calculated_price(monkeypatch):
+    import httpx
+    import polar_sandbox
+
+    client = owner()
+    request = {'kind': 'subscription', 'plan': 'lite', 'addons': ['all', 'widget'], 'amount': 1}
+    path = '/api/operator/polar/sandbox-checkout'
+    assert client.post(path, json=request).status_code == 403
+    monkeypatch.setattr(polar_sandbox, 'require_operator', lambda request: None)
+    monkeypatch.setenv('POLAR_SANDBOX_CHECKOUT_ENABLED', '0')
+    assert client.post(path, json=request).status_code == 503
+    product = '6d2751d7-e66a-4c56-a700-e66dd883b3cb'
+    monkeypatch.setenv('POLAR_SANDBOX_CHECKOUT_ENABLED', '1')
+    monkeypatch.setenv('POLAR_SANDBOX_TOKEN', 'test-token')
+    monkeypatch.setenv('POLAR_SANDBOX_MONTHLY_PRODUCT_ID', product)
+
+    def checkout(url, *, json, headers, timeout):
+        assert url == 'https://sandbox-api.polar.sh/v1/checkouts/'
+        assert json['prices'][product][0]['price_amount'] == 49800
+        return httpx.Response(201, request=httpx.Request('POST', url), json={
+            'id': 'test-checkout', 'amount': 49800, 'currency': 'krw', 'url': 'https://sandbox.polar.sh/example',
+        })
+
+    monkeypatch.setattr(polar_sandbox.httpx, 'post', checkout)
+    result = client.post(path, json=request)
+    assert result.status_code == 200
+    assert result.json()['items']['addons'] == ['all']
