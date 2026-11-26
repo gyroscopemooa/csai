@@ -28,6 +28,7 @@ const CSAISetup=(()=>{
   return best?{keys:best.keys,amount:best.amount,saving:current.amount-best.amount}:null;
  }
  const rules={
+  setup:['처음에는 직접 상담하면서 교육할 수도 있습니다. 시작 체크리스트에서 진행 상태와 미학습 질문을 확인하세요.','AI 교육 시작','education'],
   education:['교육할 자료가 있나요? 기존 상담 내역, 문서, 홈페이지 또는 ChatGPT 내보내기 파일을 사용할 수 있습니다.','교육 방식 보기','education'],
   preview:['실제 고객처럼 질문해 상담원의 답변을 확인할 수 있습니다. 무료 제공량 이후에는 상담량이 차감됩니다.','상담 테스트','test'],
   test:['답변이 마음에 들지 않으면 교육 화면에서 수정해 주세요.','교육 수정','education'],
