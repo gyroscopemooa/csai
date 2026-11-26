@@ -98,13 +98,13 @@ def login_demo():
 @app.post('/api/demo/view')
 def demo_view(req:Request,body:dict,ws=Depends(ident)):
     require(DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and req.url.hostname in ('localhost','127.0.0.1'),'로컬 개발 환경에서만 전환할 수 있습니다.',403)
-    mode=body.get('mode');require(mode in ('free','subscriber','developer'),'화면 유형 오류',422)
+    mode=body.get('mode');require(mode in ('free','subscriber','subscriber_agent','developer'),'화면 유형 오류',422)
     with db(True) as c:
-        current=getw(c,ws);match=re.fullmatch(r'demo:([A-Za-z0-9_-]+)(?::(?:free|subscriber|developer))?',current['owner']) if current else None
+        current=getw(c,ws);match=re.fullmatch(r'demo:([A-Za-z0-9_-]+)(?::(?:free|subscriber|subscriber_agent|developer))?',current['owner']) if current else None
         require(match,'로컬 데모 계정만 전환할 수 있습니다.',403)
         owner='demo:'+match.group(1)+':'+mode;target=workspace(c,owner)
         plan='free' if mode=='free' else 'lite'
-        addons=sorted(x['id'] for x in CAT['addons'] if x.get('local')) if mode=='developer' else []
+        addons=sorted(x['id'] for x in CAT['addons'] if x.get('local')) if mode=='developer' else (['extra_agent'] if mode=='subscriber_agent' else [])
         c.execute('UPDATE workspace SET plan=?,addons=?,enabled=CASE WHEN ?=\'free\' THEN 0 ELSE enabled END WHERE id=?',(plan,dump(addons),plan,target['id']))
         for acceptance in rows(c,'SELECT version,terms,privacy,ai,dpa,marketing,accepted FROM policy_acceptance WHERE ws=?',(ws,)):
             c.execute('INSERT INTO policy_acceptance VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(ws,version) DO NOTHING',(target['id'],acceptance['version'],acceptance['terms'],acceptance['privacy'],acceptance['ai'],acceptance['dpa'],acceptance['marketing'],acceptance['accepted']))
@@ -142,7 +142,7 @@ def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(a
 @app.get('/api/me')
 def me(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);local_demo=DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and bool(re.fullmatch(r'demo:[A-Za-z0-9_-]+(?::(?:free|subscriber|developer))?',w['owner']));return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws),'sample_tools':local_demo,'demo_view':w['owner'].rsplit(':',1)[-1] if local_demo and w['owner'].count(':')==2 else ('legacy' if local_demo else None)}
+        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);local_demo=DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and bool(re.fullmatch(r'demo:[A-Za-z0-9_-]+(?::(?:free|subscriber|subscriber_agent|developer))?',w['owner']));return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws),'sample_tools':local_demo,'demo_view':w['owner'].rsplit(':',1)[-1] if local_demo and w['owner'].count(':')==2 else ('legacy' if local_demo else None)}
 @app.patch('/api/settings')
 def settings(body:dict,ws=Depends(ident)):
     with db(True) as c:

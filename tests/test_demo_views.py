@@ -24,6 +24,13 @@ def test_local_free_subscriber_and_developer_views_are_separate():
     assert subscriber['entitlements']==[] and not subscriber['operator']
     assert subscriber['slug']!=free['slug']
     assert client.patch('/api/settings',json={'brand':'유료 화면 업체'}).status_code==200
+    subscriber_agent=switch(client,'subscriber_agent')
+    assert subscriber_agent['plan']=='lite' and subscriber_agent['demo_view']=='subscriber_agent'
+    assert subscriber_agent['entitlements']==['extra_agent'] and not subscriber_agent['operator']
+    assert subscriber_agent['slug'] not in (free['slug'],subscriber['slug'])
+    agent=client.post('/api/agents',json={'brand':'웨딩 상담원','tone':'정중하게','welcome':'웨딩 문의 도와드릴게요.','fallback':'담당자 확인이 필요합니다.','enabled':True})
+    assert agent.status_code==200,agent.text
+    assert client.get('/api/agents').json()['settings']['brand']=='웨딩 상담원'
     developer=switch(client,'developer')
     assert developer['demo_view']=='developer' and developer['plan']=='lite'
     assert {'extra_agent','widget','design','calendar'} <= set(developer['entitlements'])
@@ -31,6 +38,8 @@ def test_local_free_subscriber_and_developer_views_are_separate():
     assert developer['slug'] not in (free['slug'],subscriber['slug'])
     assert switch(client,'free')['settings']['brand']=='나의 업체'
     assert switch(client,'subscriber')['settings']['brand']=='유료 화면 업체'
+    assert switch(client,'subscriber_agent')['entitlements']==['extra_agent']
+    assert client.get('/api/agents').json()['settings']['brand']=='웨딩 상담원'
 
 
 def test_demo_view_rejects_non_demo_identity_and_bad_mode():
