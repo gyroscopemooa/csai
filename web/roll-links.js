@@ -84,9 +84,9 @@
       title.append(letters);
       return { article, title, cells, on: false };
     });
-    let pointer = false, visible = false, auto = 0, autoAt = performance.now() + 800, last = performance.now();
+    let pointer = false, visible = false, auto = 0, autoAt = performance.now() + 800, last = performance.now(), observer = null;
     if ('IntersectionObserver' in window) {
-      const observer = new IntersectionObserver(events => {
+      observer = new IntersectionObserver(events => {
         visible = events[0].isIntersecting;
         if (visible) autoAt = performance.now() + 800;
         else {
@@ -116,7 +116,7 @@
     });
     grid.addEventListener('pointerleave', () => { pointer = false; autoAt = performance.now() + 900; });
     function frame(now) {
-      if (!grid.isConnected) return;
+      if (!grid.isConnected) { observer?.disconnect(); return; }
       const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
       if (visible && !pointer && now >= autoAt) { select(entries[auto]); auto = (auto + 1) % entries.length; autoAt = now + 1450; }
       if (visible && !reduced.matches) for (let k = 0; k < 4; k++) entries.forEach(item => item.cells.forEach(cell => { if (now >= cell.at) step(cell.s, dt / 4); }));
