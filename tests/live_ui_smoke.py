@@ -67,7 +67,14 @@ with sync_playwright() as pw:
     desktop.get_by_role("heading", name="통합 상담함").wait_for()
     assert desktop.locator("#inbox-kind").count() == 1
     assert desktop.locator("#inbox-q").count() == 1
+    assert desktop.locator("#inbox-kind").input_value() == "customer"
+    desktop.get_by_role("heading", name="무료 계정에서는 상담 테스트 1회를 확인할 수 있어요").wait_for()
+    desktop.locator("#inbox-kind").select_option("all")
+    desktop.get_by_role("button", name="찾기").click()
     desktop.locator(".inbox-entry").first.wait_for()
+    if desktop.locator(".inbox-entry").count() < 8:
+        desktop.get_by_role("button", name="샘플 상담 8건 넣기").click()
+        desktop.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 8")
     assert desktop.locator(".inbox-entry").count() >= 8
     assert desktop.locator(".sample-tag").count() >= 8
     desktop.wait_for_timeout(500)
@@ -151,6 +158,12 @@ with sync_playwright() as pw:
     mobile.get_by_role("button", name="메뉴 열기").click()
     mobile.locator(".app-sidebar").get_by_role("button", name="통합 상담함").click()
     mobile.get_by_role("heading", name="통합 상담함").wait_for()
+    mobile.get_by_role("heading", name="무료 계정에서는 상담 테스트 1회를 확인할 수 있어요").wait_for()
+    mobile.locator("#inbox-kind").select_option("all")
+    mobile.get_by_role("button", name="찾기").click()
+    if mobile.locator(".inbox-entry").count() < 8:
+        mobile.get_by_role("button", name="샘플 상담 8건 넣기").click()
+        mobile.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 8")
     assert mobile.locator(".inbox-entry").count() >= 8
     mobile.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
     mobile.get_by_text("메시지 22개").wait_for()
