@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import re
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import PurePosixPath
@@ -19,13 +20,21 @@ def chatgpt_export(raw):
             members = archive.infolist()
             if len(members) > 3000:
                 raise ValueError('ZIP 항목이 너무 많습니다.')
-            sources = [f for f in members if not f.is_dir() and PurePosixPath(f.filename).name == 'conversations.json']
-            if len(sources) != 1 or sources[0].file_size > MAX_EXPANDED:
-                raise ValueError('ZIP에 처리 가능한 conversations.json이 하나 있어야 합니다.')
-            with archive.open(sources[0]) as source:
-                raw = source.read(MAX_EXPANDED + 1)
-            if len(raw) > MAX_EXPANDED:
-                raise ValueError('압축 해제 크기 한도를 초과했습니다.')
+            sources = [f for f in members if not f.is_dir() and re.fullmatch(r'conversations(?:[-_]?\d+)?\.json', PurePosixPath(f.filename).name, re.I)]
+            if not sources or len(sources)>20 or sum(f.file_size for f in sources)>MAX_EXPANDED:
+                raise ValueError('대화 JSON 압축 해제 한도를 초과했거나 대화 파일이 없습니다. 압축을 풀고 JSON 파일을 선택하세요.')
+            data=[]
+            expanded=0
+            for f in sources:
+                with archive.open(f) as source:
+                    chunk=source.read(MAX_EXPANDED-expanded+1)
+                expanded+=len(chunk)
+                if expanded>MAX_EXPANDED:raise ValueError('압축 해제 크기 한도를 초과했습니다.')
+                batch=json.loads(chunk.decode('utf-8-sig'))
+                if not isinstance(batch,list) or len(data)+len(batch)>MAX_CONVERSATIONS:
+                    raise ValueError('대화 배열 또는 대화 수 한도 오류')
+                data.extend(batch)
+            return data
     data = json.loads(raw.decode('utf-8-sig'))
     if not isinstance(data, list) or len(data) > MAX_CONVERSATIONS:
         raise ValueError('ChatGPT 대화 배열이 필요하며 최대 3,000개까지 확인할 수 있습니다.')

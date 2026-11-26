@@ -167,7 +167,7 @@
     {
       "id": "extra_agent",
       "group": "채널·디자인",
-      "name": "추가 AI 상담원",
+      "name": "추가 브랜드 상담원",
       "price": 9900,
       "local": true,
       "requires": []

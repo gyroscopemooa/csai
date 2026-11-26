@@ -36,7 +36,7 @@ const CSAISetup=(()=>{
   'booking-settings':['예약 확인을 자동화하고 싶으신가요? 실제 자동 확정은 권한과 위험 안내 동의가 필요합니다.','자동 예약 알아보기','auto_booking'],
   customers:['상담을 고객·업무 기록으로 남기고 관리할 수 있습니다.','고객 CRM 알아보기','crm'],
   channels:['홈페이지에 상담창을 설치하면 고객이 별도 앱 없이 상담할 수 있습니다.','홈페이지 위젯 알아보기','widget'],
-  agents:['서비스마다 상담원과 교육 자료를 독립적으로 운영할 수 있습니다.','추가 상담원 알아보기','extra_agent'],
+  agents:['서비스마다 상담원과 교육 자료를 독립적으로 운영할 수 있습니다.','추가 브랜드 상담원 알아보기','extra_agent'],
   settings:['브랜드와 고객 응대 방식을 설정할 수 있습니다.','고급 디자인 알아보기','design'],
   alerts:['새로운 상담을 놓치지 않도록 알림을 설정할 수 있습니다.','신규 상담 알림 알아보기','new_alert'],
   developer:['기존 서비스와 상담 기능을 서버 API로 연결할 수 있습니다.','외부 API 알아보기','external_api'],
@@ -123,7 +123,7 @@ const CSAISetup=(()=>{
  }
  function preview(k){
   const a=all()[k];if(!a)return;
-  const demo={calendar:'11월 30일 14:00 · 샘플 예약 · 승인 대기',auto_booking:'고객: 오후 2시 가능한가요? → 예약 가능 시간 안내 → 담당자 승인 또는 자동 확정',crm:'샘플 고객 · 문의 접수 → 담당자 지정 → 처리 완료',widget:'홈페이지 방문자 → 상담창 열기 → 질문 입력',extra_agent:'기본 상담원 / 별도 상품 상담원',design:'상담창 테마 · 색상 · 메시지 간격 설정'}[k]||'이 기능의 적용 범위와 이용 조건을 확인한 뒤 구독 구성에 추가할 수 있습니다.';
+  const demo={calendar:'11월 30일 14:00 · 샘플 예약 · 승인 대기',auto_booking:'고객: 오후 2시 가능한가요? → 예약 가능 시간 안내 → 담당자 승인 또는 자동 확정',crm:'샘플 고객 · 문의 접수 → 담당자 지정 → 처리 완료',widget:'홈페이지 방문자 → 상담창 열기 → 질문 입력',extra_agent:'기본 브랜드 상담원 / 다른 브랜드 전용 상담원',design:'상담창 테마 · 색상 · 메시지 간격 설정'}[k]||'이 기능의 적용 범위와 이용 조건을 확인한 뒤 구독 구성에 추가할 수 있습니다.';
   modal(a.name+' 미리보기','<p>'+escape(descriptions[k]||a.name+' 기능입니다.')+'</p><div class="setup-demo"><b>가상 이용 예시</b><p>'+escape(demo)+'</p></div><p>월 '+won(a.price)+' · '+(a.local?'서비스 활성화는 구매 후 가능':'외부 연동 검증 준비 중')+'</p><p class="muted">실제 고객 데이터, 외부 서비스, AI 호출 또는 발송은 사용하지 않습니다.</p><div class="row"><button type="button" class="primary" onclick="CSAISetup.add(\''+k+'\');this.closest(\'.modal\').remove()">구독 구성에 추가</button><button type="button" onclick="this.closest(\'.modal\').remove();go(\''+(routes[k]||'pricing')+'\')">관련 페이지 보기</button></div>');
  }
  function event(ev){
