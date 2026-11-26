@@ -28,7 +28,7 @@ def normalize_addons(a):
     for k in list(a):
         if k in ADD:a.update(x for x in ADD[k]['requires'] if x not in covered)
     price=sum((ADD.get(k) or PACK[k])['price'] for k in a)
-    if {'naver','kakao'}<=a:price-=1900
+    if {'naver','kakao'}<=a:price-=ADD['naver']['price']+ADD['kakao']['price']-ADD['channels']['price']
     return sorted(a),price
 
 def quote(body):

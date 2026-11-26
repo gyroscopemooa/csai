@@ -25,7 +25,7 @@ with sync_playwright() as pw:
     page.locator('[data-price-key="package-all"]').click()
     assert not page.locator('[data-price-key="package-booking_pack"] input').is_checked()
     assert "49,800원" in page.locator("#quote-price").inner_text()
-    assert page.evaluate("fetch('/api/billing/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'subscription',plan:'lite',addons:['all']})}).then(r=>r.json()).then(x=>x.amount)") == 49800
+    assert page.evaluate("fetch('/api/billing/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'subscription',plan:'lite',addons:['all']})}).then(r=>r.json()).then(x=>x.amount)") == 69800
     assert "is-covered" in page.locator('[data-price-key="addon-calendar"]').get_attribute("class")
     assert "is-covered" not in page.locator('[data-price-key="addon-external_api"]').get_attribute("class")
     page.locator(".price-task-package").first.locator("summary").click()

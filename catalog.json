@@ -46,25 +46,25 @@
       "id": "pro_max",
       "name": "PRO MAX",
       "quantity": 5000,
-      "price": 59900
+      "price": 69900
     },
     {
       "id": "business",
       "name": "BUSINESS",
       "quantity": 10000,
-      "price": 99000
+      "price": 129000
     },
     {
       "id": "business_plus",
       "name": "BUSINESS PLUS",
       "quantity": 30000,
-      "price": 249000
+      "price": 299000
     },
     {
       "id": "enterprise",
       "name": "ENTERPRISE",
       "quantity": 100000,
-      "price": 699000
+      "price": 899000
     }
   ],
   "education": [
@@ -78,7 +78,7 @@
       "id": "mini",
       "name": "MINI",
       "quantity": 100,
-      "price": 1900
+      "price": 2900
     },
     {
       "id": "lite",
@@ -136,7 +136,7 @@
       "id": "naver",
       "group": "채널·디자인",
       "name": "네이버 톡톡",
-      "price": 4900,
+      "price": 9900,
       "local": false,
       "requires": []
     },
@@ -144,7 +144,7 @@
       "id": "kakao",
       "group": "채널·디자인",
       "name": "카카오톡 채널",
-      "price": 4900,
+      "price": 9900,
       "local": false,
       "requires": []
     },
@@ -152,7 +152,7 @@
       "id": "channels",
       "group": "채널·디자인",
       "name": "네이버·카카오 통합",
-      "price": 7900,
+      "price": 14900,
       "local": false,
       "requires": []
     },
@@ -160,7 +160,7 @@
       "id": "multilingual",
       "group": "채널·디자인",
       "name": "다국어 자동 상담",
-      "price": 2900,
+      "price": 4900,
       "local": true,
       "requires": []
     },
@@ -168,7 +168,7 @@
       "id": "extra_agent",
       "group": "채널·디자인",
       "name": "추가 AI 상담원",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -176,7 +176,7 @@
       "id": "design",
       "group": "채널·디자인",
       "name": "고급 디자인",
-      "price": 2900,
+      "price": 4900,
       "local": true,
       "requires": []
     },
@@ -184,7 +184,7 @@
       "id": "unbrand",
       "group": "채널·디자인",
       "name": "브랜드 제거",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -200,7 +200,7 @@
       "id": "domain",
       "group": "채널·디자인",
       "name": "자체 도메인",
-      "price": 4900,
+      "price": 9900,
       "local": false,
       "requires": []
     },
@@ -216,7 +216,7 @@
       "id": "auto_booking",
       "group": "예약·일정",
       "name": "AI 자동 예약",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": [
         "calendar"
@@ -226,7 +226,7 @@
       "id": "change_booking",
       "group": "예약·일정",
       "name": "예약 변경·취소",
-      "price": 2900,
+      "price": 4900,
       "local": true,
       "requires": [
         "calendar"
@@ -236,7 +236,7 @@
       "id": "google_calendar",
       "group": "예약·일정",
       "name": "구글 캘린더",
-      "price": 2900,
+      "price": 4900,
       "local": false,
       "requires": [
         "calendar"
@@ -246,7 +246,7 @@
       "id": "booking_alert",
       "group": "예약·일정",
       "name": "예약 자동 알림",
-      "price": 2900,
+      "price": 4900,
       "local": false,
       "requires": [
         "calendar"
@@ -256,7 +256,7 @@
       "id": "crm",
       "group": "고객·업무",
       "name": "고객 CRM",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -264,7 +264,7 @@
       "id": "quote",
       "group": "고객·업무",
       "name": "AI 견적 요청",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -272,7 +272,7 @@
       "id": "tasks",
       "group": "고객·업무",
       "name": "AI 업무·할 일",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -312,7 +312,7 @@
       "id": "retention",
       "group": "고객·업무",
       "name": "장기 보관",
-      "price": 2900,
+      "price": 4900,
       "local": false,
       "requires": []
     },
@@ -320,7 +320,7 @@
       "id": "external_api",
       "group": "고객·업무",
       "name": "외부 API 이용권",
-      "price": 9900,
+      "price": 19900,
       "local": true,
       "requires": []
     },
@@ -360,7 +360,7 @@
       "id": "report",
       "group": "알림",
       "name": "일간·주간 리포트",
-      "price": 2900,
+      "price": 4900,
       "local": false,
       "requires": []
     },
@@ -379,7 +379,7 @@
     {
       "id": "channel_pack",
       "name": "채널 통합",
-      "price": 9900,
+      "price": 16900,
       "includes": [
         "widget",
         "naver",
@@ -389,7 +389,7 @@
     {
       "id": "booking_pack",
       "name": "예약 관리",
-      "price": 12900,
+      "price": 19900,
       "includes": [
         "calendar",
         "auto_booking",
@@ -401,7 +401,7 @@
     {
       "id": "customer_pack",
       "name": "고객 관리",
-      "price": 9900,
+      "price": 14900,
       "includes": [
         "crm",
         "leads",
@@ -411,7 +411,7 @@
     {
       "id": "work_pack",
       "name": "업무 자동화",
-      "price": 14900,
+      "price": 24900,
       "includes": [
         "quote",
         "tasks",
@@ -422,7 +422,7 @@
     {
       "id": "design_pack",
       "name": "디자인 및 브랜딩",
-      "price": 9900,
+      "price": 14900,
       "includes": [
         "design",
         "unbrand",
@@ -432,7 +432,7 @@
     {
       "id": "alert_pack",
       "name": "알림",
-      "price": 4900,
+      "price": 7900,
       "includes": [
         "push",
         "email",
@@ -444,7 +444,7 @@
     {
       "id": "all",
       "name": "ALL-IN-ONE",
-      "price": 39900,
+      "price": 59900,
       "includes": [
         "widget",
         "naver",

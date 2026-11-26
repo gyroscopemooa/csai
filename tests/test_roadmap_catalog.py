@@ -8,4 +8,4 @@ def test_future_integrations_are_visible_but_not_billable():
             '위챗', 'AI 전화 상담'} <= names
     assert all('price' not in item and 'id' not in item for item in CAT['roadmap'])
     assert CAT['plans'][1]['price'] == 4900
-    assert next(item for item in CAT['addons'] if item['id'] == 'naver')['price'] == 4900
+    assert next(item for item in CAT['addons'] if item['id'] == 'naver')['price'] == 9900
