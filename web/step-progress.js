@@ -11,22 +11,6 @@
     const buttons = [...root.querySelectorAll('.unify-step')];
     const detail = root.querySelector('.unify-step-detail');
     const bar = root.querySelector('.unify-step-bar');
-    const sources = root.querySelector('.unify-source-list');
-    const alignSources = () => {
-      if (!sources) return;
-      const chips = [...sources.children];
-      if (chips.length < 2) return;
-      const box = sources.getBoundingClientRect();
-      const first = chips[0].getBoundingClientRect();
-      const lastChip = chips[chips.length - 1].getBoundingClientRect();
-      const destination = root.querySelector('.unify-destination').getBoundingClientRect();
-      const center = destination.left + destination.width / 2;
-      const reach = Math.max(center - (first.left + first.width / 2), lastChip.left + lastChip.width / 2 - center);
-      sources.style.setProperty('--merge-left', `${center - reach - box.left}px`);
-      sources.style.setProperty('--merge-right', `${box.right - center - reach}px`);
-    };
-    const resizeObserver = new ResizeObserver(alignSources);
-    if (sources) { resizeObserver.observe(sources); alignSources(); }
     const line = spring(0, 160, 22);
     const states = buttons.map(() => ({ fill: spring(0, 260, 24), check: spring(0, 140, 20), pop: spring(1, 500, 14) }));
     let current = 0, visible = false, userUntil = 0, nextAt = performance.now() + 1500, last = performance.now();
@@ -52,7 +36,7 @@
     buttons.forEach((button, i) => button.addEventListener('click', () => select(i, true)));
     select(0);
     function frame(now) {
-      if (!root.isConnected) { observer.disconnect(); resizeObserver.disconnect(); return; }
+      if (!root.isConnected) { observer.disconnect(); return; }
       const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
       if (visible && !reduced.matches && now > nextAt && now > userUntil) select((current + 1) % buttons.length);
       if (!reduced.matches) for (let j = 0; j < 4; j++) { step(line, dt / 4); states.forEach(s => { step(s.fill, dt / 4); step(s.check, dt / 4); step(s.pop, dt / 4); }); }
