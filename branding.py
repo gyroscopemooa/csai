@@ -104,7 +104,7 @@ def set_appearance(body:dict,ws=Depends(ident)):
 def agent_list(ws=Depends(ident)):
     with db() as c:
         w=getw(c,ws)
-        return {'quantity':brand_quantity(w),'agents':[brand_view(w,a) for a in rows(c,'SELECT * FROM agent_profile WHERE ws=? ORDER BY slot',(ws,))]}
+        return {'quantity':brand_quantity(w),'agents':[brand_view(w,a)|{'archived':bool(one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,a['id'])))} for a in rows(c,'SELECT * FROM agent_profile WHERE ws=? ORDER BY slot',(ws,))]}
 
 @app.get('/api/agents')
 def agents(agent:str='',ws=Depends(ident)):
@@ -135,6 +135,7 @@ def agent_save(body:dict,ws=Depends(ident)):
         require(slot is not None,'구매한 브랜드 수량을 모두 사용했습니다.',409)
         i=old['id'] if old else uid();slug=old['slug'] if old else secrets.token_urlsafe(10)
         enabled=int(body.get('enabled',bool(old and old['enabled'])) is True)
+        if enabled:require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,i)),'보관된 브랜드를 먼저 복구하세요.',409)
         c.execute('INSERT INTO agent_profile(id,ws,slug,settings,faq,enabled,slot) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET settings=excluded.settings,faq=excluded.faq,enabled=excluded.enabled',(i,ws,slug,dump(s),dump(fs),enabled,slot))
     return {'slug':slug,'id':i,'slot':slot}
 

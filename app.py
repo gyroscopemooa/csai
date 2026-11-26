@@ -63,7 +63,7 @@ async def guard(req,call_next):
         if not w:return Response('Unknown or inactive domain',404)
         path=req.url.path
         if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
-        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
         if not allowed:return Response('Public consultation only',404)
         allowed_origin='https://'+host
         context=domains.current_ws.set(w['id'])
@@ -414,8 +414,13 @@ def chat(body:dict):
             c.execute('DELETE FROM request WHERE ws=? AND thread=? AND client=?',key)
         require(v['kind']=='test' or ((agent or w['enabled']) and public_access(w)),'상담 비활성화')
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
-        if t['manual']:
-            r={'reply':'담당자가 확인 중입니다.','manual':True,'remaining':remaining(c,w)}
+        route_mode,route_reason=workflow_controls.decision(workflow_controls.get_policy(c,ws,v.get('agent','')),msg,s)
+        if t['manual'] or route_mode!='auto':
+            staff=bool(t['manual'] or route_mode=='staff')
+            if staff and not t['manual']:
+                c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
+                ops.event(c,ws,'handoff_urgent' if route_reason=='urgent' else 'handoff','담당자 확인 필요',tid)
+            r={'reply':'담당자가 확인 중입니다.' if staff else '해당 업무는 자동 상담으로 제공하지 않습니다.','manual':staff,'policyBlocked':not staff,'remaining':remaining(c,w)}
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));
             if v['kind']!='test' and not one(c,'SELECT id FROM event_log WHERE ws=? AND kind=? AND ref=?',(ws,'new',tid)):ops.event(c,ws,'new','신규 고객 상담',tid)
             return r
@@ -429,6 +434,7 @@ def chat(body:dict):
         replay=abort_chat_request(key,p,kind)
         if replay is not None:return replay
         fail(502,'상담 처리 실패. 사용량은 복구되었습니다.')
+    context=r.pop('_context',None)
     proposal=r.pop('workDraft',None)
     if v['kind']=='public' and not r.get('booking') and s['modes'].get('general')!='off':
         work_kind=next((k for k,pat in [('quote',r'견적|제안서'),('complaints',r'불만|민원|항의'),('tasks',r'오류 신고|장애 신고|업무 요청')] if k in adds and re.search(pat,msg)),None)
@@ -440,7 +446,9 @@ def chat(body:dict):
     if r.get('unknown') and s['modes'].get('unknown')=='off':r.update({'reply':'등록된 답변이 없어 안내가 어렵습니다.','unknown':False})
     try:
         with db(True) as c:
-            for role,body in [('user',msg),('assistant',r['reply'])]:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,now()))
+            c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()))
+            answer_id=uid();c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(answer_id,ws,tid,'assistant',r['reply'],now()))
+            if context:c.execute('INSERT INTO answer_context VALUES(?,?,?,?)',(ws,answer_id,v.get('agent',''),dump(context)))
             if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
             if v['kind']!='test' and not agent:customer_ops.capture_lead(c,ws,tid,msg,r)
             if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
@@ -483,7 +491,7 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.get('/api/inbox/{i}/education-source')
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:
@@ -708,6 +716,8 @@ memory_import.register(app, ident)
 import demo_samples
 import product_progress
 product_progress.register(app,ident)
+import workflow_controls
+workflow_controls.register(app,ident)
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

@@ -131,16 +131,16 @@ def answer(msg,history,settings,faq,published,addons,booking_context=None,quote_
             if l['name'] in combined:return {'reply':f"{l['name']}에서 구매하셨다면 해당 판매처에서 취소·환불을 신청해 주세요. 실제 처리 여부와 환불 금액은 판매처에서 확인해야 합니다.\n{l['url']}",'unknown':False}
         if links:return {'reply':'어느 판매처에서 결제하셨나요? '+', '.join(l['name'] for l in links),'unknown':False}
     for f in faq:
-        if norm(msg)==norm(f['q']):return {'reply':f['a'],'unknown':False}
+        if norm(msg)==norm(f['q']):return {'reply':f['a'],'unknown':False,'_context':{'type':'exact_faq','faq':[f]}}
     data={'price':settings['price'],'location':settings['location']+' '+settings['hours']}.get(category,'').strip()
-    if data:return {'reply':data,'unknown':False}
+    if data:return {'reply':data,'unknown':False,'_context':{'type':'business_setting','field':category,'value':data}}
     all_faq=faq+published.get('faq',[])
     candidates=sorted(all_faq,key=lambda x:score(msg,x['q']),reverse=True)[:5]
     relevant=[x for x in candidates if score(msg,x['q'])>.12]
     if KEY and not relevant and len(all_faq)<=8:relevant=all_faq
     rules=sorted(published.get('rules',[]),key=lambda x:score(msg,x),reverse=True)[:4]
     if not KEY and DEMO:
-        if relevant and score(msg,relevant[0]['q'])>.55:return {'reply':relevant[0]['a'],'unknown':False}
+        if relevant and score(msg,relevant[0]['q'])>.55:return {'reply':relevant[0]['a'],'unknown':False,'_context':{'type':'matched_faq','faq':[relevant[0]]}}
         return {'reply':fallback,'unknown':True}
     trained_style=published.get('style') or settings['tone']
     no_emoji=bool(re.search(r'이모지.{0,12}(?:금지|사용하지|사용 안|쓰지|빼|제외)|(?:no|avoid)\s+emoji',trained_style+' '+' '.join(rules),re.I))
@@ -158,11 +158,11 @@ def answer(msg,history,settings,faq,published,addons,booking_context=None,quote_
                 if isinstance(x,dict) and isinstance(x.get('id'),str) and x['id'] in valid and x['id'] not in seen and type(x.get('quantity')) is int and 1<=x['quantity']<=1000:
                     seen.add(x['id']);items.append({'id':x['id'],'quantity':x['quantity']})
         if items:work['workDraft']['quoteItems']=items
-    if result.get('unknown') is not False:return {'reply':fallback,'unknown':True,'_usage':u,**lead,**work}
+    if result.get('unknown') is not False:return {'reply':fallback,'unknown':True,'_usage':u,'_context':{'type':'model_candidates','faq':relevant,'rules':rules},**lead,**work}
     reply=str(result.get('reply','')).strip()[:2000]
     if not reply:raise RuntimeError('빈 AI 응답')
     if not settings['emoji']:reply=re.sub(r'[\U0001F300-\U0001FAFF\u2600-\u27BF]','',reply)
-    return {'reply':reply,'unknown':False,'_usage':u,**lead,**work}
+    return {'reply':reply,'unknown':False,'_usage':u,'_context':{'type':'model_candidates','faq':relevant,'rules':rules},**lead,**work}
 
 
 def booking_answer(msg,history,s,context):
