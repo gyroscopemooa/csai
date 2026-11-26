@@ -102,7 +102,7 @@ async function preview(test=false){let brands=has('extra_agent')?(await api('/ap
 function brandSelect(id,brands,value,handler,includeAll=false){return brands.length?label('관리 브랜드',select(id,[...(includeAll?[['all','전체 브랜드']]:[]),['',me.settings.brand+' · 기본'],...brands.map(a=>[a.id,a.settings.brand])],value).replace('<select','<select onchange="'+handler+'"')):''}
 function choosePreviewBrand(id){if(sending){toast('답변 완료 후 브랜드를 변경해 주세요.');return;}previewAgent=id;chatSession=null;chatMessages=[];render()}
 async function enableLocalChatTesting(){await act(async()=>{if(me.demo_view==='free')await api('/api/demo/view',{mode:'subscriber'});else await api('/api/demo/billing',{plan:'lite',addons:[]});chatSession=null;chatMessages=[];await refresh();await render();toast('유료 구독 예시로 전환했습니다. 실제 결제는 없습니다.')})}
-let educationAgent='',trainingChat=[],educationMethod='direct',educationDraft=null,educationBusy=false;
+let memoryTransfer=null;let educationAgent='',trainingChat=[],educationMethod='direct',educationDraft=null,educationBusy=false;
 const educationMethods=[['direct','직접 교육','대화·업무 지침 입력','messages-square'],['file','파일 교육','PDF·문서·이미지','list'],['website','웹사이트 교육','공개 홈페이지 URL','external-link'],['memory','외부 AI 기억 이전','ChatGPT 대화 이전','receipt']];
 function educationCards(){return '<nav class="education-methods" aria-label="교육 방식">'+educationMethods.map(([id,name,desc,icon])=>`<button type="button" data-education-method="${id}" aria-pressed="${educationMethod===id}" onclick="selectEducationMethod('${id}')">${uiIcon(icon)}<strong>${e(name)}</strong><small>${e(desc)}</small></button>`).join('')+'</nav>'}
 function selectEducationMethod(method){
@@ -111,7 +111,7 @@ function selectEducationMethod(method){
  document.querySelectorAll('[data-education-method]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.educationMethod===method)));
  document.querySelectorAll('[data-education-panel]').forEach(el=>{el.hidden=!el.dataset.educationPanel.split(' ').includes(method)});
 }
-function resetEducationDraft(){educationDraft=null;educationMethod='direct';educationBusy=false;}
+function resetEducationDraft(){educationDraft=null;educationMethod='direct';educationBusy=false;memoryTransfer=null;}
 function captureEducationDraft(){
  const root=$('#education-workspace');if(!root)return;
  const values={};for(const id of ['training-text','training-conversation','faq-q','faq-a','education-url']){const el=root.querySelector('#'+id);if(el)values[id]=el.value;}
@@ -134,26 +134,26 @@ function restoreEducationDraft(){
  renderEducationQuote();
 }
 function memoryImportCard(){
- return card('외부 AI 기억 이전',`<p>ChatGPT에서 축적한 사업 정보, 운영 고민, 상품, 업무 흐름과 의사결정 기준을 가져옵니다. 상담 교육 기록이 없어도 사용할 수 있습니다. 계정 자동 동기화는 지원하지 않습니다.</p><details><summary>사업 정보만 간단히 가져오는 방법</summary><p>ChatGPT에서 다음 문구로 사업 정보 문서를 작성하도록 요청한 뒤 직접 교육에 붙여넣거나 TXT 파일로 등록하세요. 원본 기록 전체 이전과 동일하지 않으며 CSAI의 AI 분석에는 일반 교육 크레딧이 차감됩니다.</p><textarea readonly>내가 제공한 정보 중 확인 가능한 사업체 정보, 상품·가격, 업무 흐름, 운영 정책, 고민과 해결 방향, 고객 응대 원칙을 정리해줘. 확정 사실과 아이디어를 구분하고 모르는 내용은 추측하지 마. 개인정보, 계정 비밀번호, API 키와 불필요한 개인 대화는 제외해줘.</textarea></details><p>ZIP·JSON 사전 확인에는 결제나 크레딧 차감이 없습니다.</p><form onsubmit="event.preventDefault();previewMemoryImport(this)"><label class="label" for="memory-file">ChatGPT ZIP 또는 conversations.json</label><input id="memory-file" type="file" accept=".zip,.json" multiple required><div class="row"><label>시작일 <input name="start" type="date"></label><label>종료일 <input name="end" type="date"></label></div><label class="line"><input type="checkbox" name="consent" required> 자료 처리 권한이 있으며 JSON은 기기에서, 소형 ZIP은 서버에서 일시 분석하는 데 동의합니다.</label><button class="primary" type="submit">파일 사전 확인</button></form><div id="memory-preview" aria-live="polite"></div><p class="muted">JSON 여러 개 선택 가능 · 파일당 128MiB, 전체 1GiB, 최대 20개 · 소형 ZIP 25MiB 이하(압축 해제 대화 JSON 합계 80MiB 이하). 큰 ZIP은 압축을 풀어 대화 JSON만 선택하세요. 대형 파일은 PC 권장. 첨부파일은 처리하지 않으며 유료 이전은 준비 중입니다.</p>`);
+ return card('외부 AI 기억 이전',`<p>ChatGPT에서 축적한 사업 정보, 운영 고민, 상품, 업무 흐름과 의사결정 기준을 가져옵니다. 상담 교육 기록이 없어도 사용할 수 있습니다. 계정 자동 동기화는 지원하지 않습니다.</p><details><summary>사업 정보만 간단히 가져오는 방법</summary><p>ChatGPT에서 다음 문구로 사업 정보 문서를 작성하도록 요청한 뒤 직접 교육에 붙여넣거나 TXT 파일로 등록하세요. 원본 기록 전체 이전과 동일하지 않으며 CSAI의 AI 분석에는 일반 교육 크레딧이 차감됩니다.</p><textarea readonly>내가 제공한 정보 중 확인 가능한 사업체 정보, 상품·가격, 업무 흐름, 운영 정책, 고민과 해결 방향, 고객 응대 원칙을 정리해줘. 확정 사실과 아이디어를 구분하고 모르는 내용은 추측하지 마. 개인정보, 계정 비밀번호, API 키와 불필요한 개인 대화는 제외해줘.</textarea></details><p>ZIP·JSON 사전 확인에는 결제나 크레딧 차감이 없습니다.</p><form onsubmit="event.preventDefault();previewMemoryImport(this)"><label class="label" for="memory-file">ChatGPT ZIP 또는 conversations.json</label><input id="memory-file" type="file" accept=".zip,.json" multiple required><div class="row"><label>시작일 <input name="start" type="date"></label><label>종료일 <input name="end" type="date"></label></div><label class="line"><input type="checkbox" name="consent" required> 자료 처리 권한이 있으며 JSON은 기기에서, 소형 ZIP은 서버에서 일시 분석하는 데 동의합니다.</label><button class="primary" type="submit">파일 사전 확인</button></form><div id="memory-preview" aria-live="polite"></div><p class="muted">JSON 여러 개 선택 가능 · 파일당 128MiB, 전체 1GiB, 최대 20개 · 소형 ZIP 25MiB 이하(압축 해제 대화 JSON 합계 80MiB 이하). 큰 ZIP은 압축을 풀어 대화 JSON만 선택하세요. 대형 파일은 PC 권장. 첨부파일은 처리하지 않습니다. 선택 대화 유료 이전은 테스트 결제 환경에서만 이용할 수 있습니다.</p>`);
 }
-function memoryLocalPreview(files,start,end,progress){
+function memoryLocalPreview(files,start,end,progress,ids){
  return new Promise((resolve,reject)=>{
   const worker=new Worker('/assets/memory-preview-worker.js');
   worker.onmessage=event=>{const r=event.data;if(r.progress){progress(r.progress);return;}worker.terminate();if(r.error)reject(Error(r.error));else resolve(r.result);};
   worker.onerror=()=>{worker.terminate();reject(Error('기기에서 JSON을 처리하지 못했습니다. 더 작은 파일로 나누거나 PC에서 다시 시도해 주세요.'));};
-  worker.postMessage({files,start,end});
+  worker.postMessage({files,start,end,ids});
  });
 }
-function showMemoryCandidates(output,result){
+function showMemoryCandidates(output,result,sourceFiles){
  const items=result.conversations,selected=new Set();let page=0,query='',category='';
  const size=100,categories=[...new Set(items.flatMap(x=>x.categoryHints||[]))].sort();
- output.innerHTML='<p>확인한 대화 '+items.length.toLocaleString()+'개 · 중복 '+result.duplicates.toLocaleString()+'개 · 제외 '+result.excluded.toLocaleString()+'개</p><p class="muted">제목 키워드 기반 분류이며 정확한 AI 분류가 아닙니다. 개인정보 주의 분류를 포함해 선택 내용을 직접 확인하세요.</p><label>제목 검색 <input data-memory-query type="search"></label><label>분류 <select data-memory-category><option value="">전체</option>'+categories.map(x=>'<option value="'+e(x)+'">'+e(x)+'</option>').join('')+'</select></label><div class="row"><button type="button" data-memory-select>검색 결과 모두 선택</button><button type="button" data-memory-clear>선택 초기화</button></div><p data-memory-total></p><div data-memory-list class="scrolltext"></div><div class="row"><button type="button" data-memory-prev>이전</button><span data-memory-page></span><button type="button" data-memory-next>다음</button></div>';
+ output.innerHTML='<p>확인한 대화 '+items.length.toLocaleString()+'개 · 중복 '+result.duplicates.toLocaleString()+'개 · 제외 '+result.excluded.toLocaleString()+'개</p><p class="muted">제목 키워드 기반 분류이며 정확한 AI 분류가 아닙니다. 개인정보 주의 분류를 포함해 선택 내용을 직접 확인하세요.</p><label>제목 검색 <input data-memory-query type="search"></label><label>분류 <select data-memory-category><option value="">전체</option>'+categories.map(x=>'<option value="'+e(x)+'">'+e(x)+'</option>').join('')+'</select></label><div class="row"><button type="button" data-memory-select>검색 결과 모두 선택</button><button type="button" data-memory-clear>선택 초기화</button></div><p data-memory-total></p><div data-memory-list class="scrolltext"></div><div class="row"><button type="button" data-memory-prev>이전</button><span data-memory-page></span><button type="button" data-memory-next>다음</button></div><div class="row"><button type="button" class="primary" data-memory-transfer>선택 대화 이전 준비</button></div>';
  const get=key=>output.querySelector('[data-memory-'+key+']');
  const filtered=()=>items.filter(x=>(!query||x.title.toLowerCase().includes(query))&&(!category||(x.categoryHints||[]).includes(category)));
  function draw(){const rows=filtered(),pages=Math.max(1,Math.ceil(rows.length/size));page=Math.min(page,pages-1);get('list').innerHTML=rows.slice(page*size,(page+1)*size).map(x=>'<label class="line"><input class="check" type="checkbox" data-memory-id="'+e(x.id)+'" '+(selected.has(x.id)?'checked':'')+'> '+e(x.title)+' · '+e(x.date||'날짜 없음')+' · '+x.messages+'개 메시지 · '+e((x.categoryHints||[]).join(', '))+'</label>').join('');get('page').textContent=(page+1)+' / '+pages;get('prev').disabled=page===0;get('next').disabled=page+1>=pages;total();}
  function total(){let tokens=0;for(const x of items)if(selected.has(x.id))tokens+=x.approxTokens;get('total').textContent='선택 '+selected.size.toLocaleString()+'개 · 약 '+tokens.toLocaleString()+'토큰 (거친 추정, 결제 견적 아님)';}
  get('query').oninput=()=>{query=get('query').value.toLowerCase();page=0;draw();};get('category').onchange=()=>{category=get('category').value;page=0;draw();};
- get('select').onclick=()=>{for(const x of filtered())selected.add(x.id);draw();};get('clear').onclick=()=>{selected.clear();draw();};get('prev').onclick=()=>{page--;draw();};get('next').onclick=()=>{page++;draw();};
+ get('select').onclick=()=>{for(const x of filtered())selected.add(x.id);draw();};get('clear').onclick=()=>{selected.clear();draw();};get('transfer').onclick=()=>prepareMemorySelection(sourceFiles,[...selected],output);get('prev').onclick=()=>{page--;draw();};get('next').onclick=()=>{page++;draw();};
  output.onchange=ev=>{const id=ev.target.dataset.memoryId;if(id){if(ev.target.checked)selected.add(id);else selected.delete(id);total();}};draw();
 }
 async function previewMemoryImport(form){
@@ -173,7 +173,7 @@ async function previewMemoryImport(form){
    const response=await fetch('/api/memory-import/preview?'+dates,{method:'POST',body:files[0]});
    result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'파일 확인에 실패했습니다.');
   }
-  showMemoryCandidates(output,result);
+  showMemoryCandidates(output,result,files);
  }catch(err){output.textContent=err.message;}
  finally{button.disabled=false;educationBusy=false;}
 }
@@ -189,7 +189,7 @@ async function education(){
  let training=card('AI와 대화하며 교육하기',`<p class="muted">현재 보유 ${me.credits} C · 대화 내용을 AI가 분석할 때 교육 크레딧이 차감됩니다. 반영 전에는 결과를 검토할 수 있습니다.</p>${chatLines}<form class="training-composer" onsubmit="event.preventDefault();estimateTraining()"><label class="label" for="training-text">AI에게 말해 주세요</label><textarea id="training-text" maxlength="30000" placeholder="예: 고객에게 AI 티 안 나게, 내 말투처럼 짧고 자연스럽게 답해줘."></textarea><div class="row"><button class="primary" type="submit">보내기 · 비용 확인</button>${trainingChat.length?btn('대화 새로 시작','if(!educationBusy){trainingChat=[];estimate=null;render()}'):''}</div></form><div id="estimate"></div><details class="training-attachments" open><summary>기존 상담 내역을 붙여넣어 함께 교육하기</summary>${fileList}${conversation}<p class="muted">체크한 파일과 붙여넣은 상담 내역은 다음 교육 메시지와 함께 분석됩니다. 파일·웹사이트 교육은 추가 지침 없이도 분석할 수 있습니다.</p></details>`);
  let results=`<div id="training-results">${card('교육 결과 검토 및 반영',jobs.filter(j=>j.result).map(j=>`<div class="line"><strong>${e(j.agent?'추가 브랜드 상담원':'기본 상담원')} · ${e(j.state==='published'?'반영 완료':'검토 필요')} · ${j.cost} C</strong><p>${e(j.result.style||'말투 분석 없음')}</p>${j.result.rules?.length?`<ul>${j.result.rules.map(rule=>`<li>${e(rule)}</li>`).join('')}</ul>`:''}${j.result.conflicts?.length?`<p class="muted">확인 필요: ${e(j.result.conflicts.join(' · '))}</p>`:''}${j.state==='review'?btn('결과 수정',`reviewModal('${j.id}')`)+btn('승인 및 상담에 반영',`act(async()=>{await api('/api/training/${j.id}/publish',{});await refresh();render()})`,'primary'):''}</div>`).join('')||'<p class="muted">대화에서 교육을 시작하면 분석 결과가 표시됩니다. 승인 전에는 고객 상담에 반영되지 않습니다.</p>')}</div>`;
  let direct=card('모범 답변으로 교육',`<p class="muted">고객 질문과 원하는 답변을 알려주세요. 입력과 견적 확인은 무료이고, 교육을 시작하면 교육 크레딧이 차감됩니다. 결과를 검토하고 승인해야 상담에 반영됩니다.</p>${label('고객 질문',input('faq-q','','text','예: 예약은 어떻게 하나요?'))}${label('내가 원하는 답변',ta('faq-a'))}<p class="muted">같은 문장만 찾는 방식은 아닙니다. 실제 AI는 유사한 질문에도 교육한 답변을 참고하지만, 표현이 크게 다르면 놓칠 수 있어 상담 테스트로 확인해 주세요. 로컬 데모는 단순 유사도 판정입니다.</p>${btn('교육 비용 확인',"act(async()=>{showEducationQuote(await api('/api/faq',{q:val('faq-q'),a:val('faq-a'),agent:educationAgent}))})",'primary')}${faq.map(f=>`<div class="line"><b>${e(f.q)}</b><p>${e(f.a)}</p>${btn('삭제',`act(async()=>{await api('/api/faq/${f.id}',undefined,'DELETE');render()})`)}</div>`).join('')}`);
-  return pageTop('AI 교육시키기','교육 방식을 선택하고 결과를 검토한 뒤 상담원에 반영하세요.')+`<div id="education-workspace"><div class="training-credit-summary training-credit-top"><span>교육 크레딧 <strong>${me.credits} C</strong><small>교육 분석을 시작할 때 차감됩니다.</small></span>${btn('크레딧 내역',"go('credits')")}</div>${brandSelect('training-agent',brands,educationAgent,'trainingAgentChanged(this.value)')}${educationCards()}<div id="training-materials" data-education-panel="file" hidden>${materials}</div><div data-education-panel="website" hidden>${website}</div><div data-education-panel="direct file website">${training}</div><div data-education-panel="direct"><details class="training-more"><summary>모범 답변으로 교육하기</summary>${direct}</details></div><div id="memory-import" data-education-panel="memory" hidden>${memoryImportCard()}</div>${results}${btn('AI 상담 테스트',"previewAgent=educationAgent;chatSession=null;chatMessages=[];go('test')",'primary')}</div>`;
+  return pageTop('AI 교육시키기','교육 방식을 선택하고 결과를 검토한 뒤 상담원에 반영하세요.')+`<div id="education-workspace"><div class="training-credit-summary training-credit-top"><span>교육 크레딧 <strong>${me.credits} C</strong><small>교육 분석을 시작할 때 차감됩니다.</small></span>${btn('크레딧 내역',"go('credits')")}</div>${brandSelect('training-agent',brands,educationAgent,'trainingAgentChanged(this.value)')}${educationCards()}<div id="training-materials" data-education-panel="file" hidden>${materials}</div><div data-education-panel="website" hidden>${website}</div><div data-education-panel="direct file website">${training}</div><div data-education-panel="direct"><details class="training-more"><summary>모범 답변으로 교육하기</summary>${direct}</details></div><div id="memory-import" data-education-panel="memory" hidden>${memoryImportCard()}${memoryTransfer&&memoryTransfer.agent===educationAgent?btn('진행 중인 이전 작업 열기','openMemoryTransfer()','primary'):''}</div>${results}${btn('AI 상담 테스트',"previewAgent=educationAgent;chatSession=null;chatMessages=[];go('test')",'primary')}</div>`;
 }
 
 function fileDropPick(){if(!$('#file-drop')?.classList.contains('uploading'))$('#upload')?.click()}
@@ -331,7 +331,7 @@ async function channelTest(k){await act(async()=>{let u=val('external-user'),m=v
 
 let checkoutPending=null;
 async function openCheckout(body){let q=await api('/api/billing/quote',body);checkoutPending=await api('/api/billing/orders',{...body,client:crypto.randomUUID()});modal('테스트 주문 확인',`<div class="price">${money(q.amount)}</div><p>주문 금액은 서버에서 산정합니다. 실제 결제되지 않습니다.</p>${q.change?`<p>기존 월 ${money(q.change.current_monthly)} → 변경 후 월 ${money(q.change.next_monthly)} · 월 차액 ${money(q.change.monthly_delta)}</p>${q.change.estimated_upgrade_proration!==null?`<p>잔여 기간 추가요금 참고값: ${money(q.change.estimated_upgrade_proration)}</p>`:''}<p class="muted">테스트 주문은 전체 월 요금으로 표시됩니다. 실제 일할 결제·차기 적용은 PG 연결 및 검증 후 제공됩니다.</p>`:''}<pre class="scrolltext">${e(JSON.stringify(q.items,null,2))}</pre>${btn('테스트 결제 완료','finishCheckout()','primary')}${btn('주문 취소','cancelCheckout()')}`)}
-async function finishCheckout(){await act(async()=>{await api('/api/billing/orders/'+checkoutPending.id+'/sandbox-confirm',{});$('.modal').remove();await refresh();if(checkoutPending.kind==='subscription')CSAISetup.afterPurchase();toast('테스트 주문 처리 완료');render()})}
+async function finishCheckout(){await act(async()=>{await api('/api/billing/orders/'+checkoutPending.id+'/sandbox-confirm',{});$('.modal').remove();await refresh();if(checkoutPending.kind==='subscription')CSAISetup.afterPurchase();toast('테스트 주문 처리 완료');await render();if(checkoutPending.kind==='memory_import'&&memoryTransfer&&memoryTransfer.agent===educationAgent){memoryTransfer.order=checkoutPending.id;await openMemoryTransfer()}})}
 async function cancelCheckout(){await act(async()=>{await api('/api/billing/orders/'+checkoutPending.id+'/cancel',{});$('.modal').remove();render()})}
 async function orders(){let r=await api('/api/billing/history');return pageTop('주문 및 구독 내역','테스트 결제 내역입니다. 실제 청구되지 않습니다.')+billingTabs()+card('구독 상태',r.subscription?`<p>이용 종료: ${e(new Date(r.subscription.period_end*1000).toLocaleString())}</p><p>${r.subscription.cancel_at_end?'기간 종료 후 해지 예정':'테스트 구독 · 자동 갱신 없음'}</p>${!r.subscription.cancel_at_end&&r.subscription.period_end*1000>Date.now()?btn('기간 종료 후 해지',"act(async()=>{await api('/api/billing/subscription/cancel',{});render()})"):''}`:'<p>주문으로 생성된 구독이 없습니다.</p>')+card('주문 내역',r.orders.map(o=>`<div class="line"><b>${e(o.kind)} · ${money(o.amount)}</b><p>${e(o.status)} · ${e(new Date(o.created*1000).toLocaleString())}</p>${o.status==='pending'&&me.sandbox_allowed?btn('테스트 완료',`act(async()=>{await api('/api/billing/orders/${o.id}/sandbox-confirm',{});render()})`)+btn('취소',`act(async()=>{await api('/api/billing/orders/${o.id}/cancel',{});render()})`)+btn('결제 실패 테스트',`sandboxFail('${o.id}')`):o.status==='paid'&&me.sandbox_allowed?btn('환불 테스트',`sandboxRefund('${o.id}')`):''}</div>`).join('')||'<p>주문 내역 없음</p>')+card('메시지 충전 잔액',r.messages.map(m=>`<p>${e(m.kind)} ${m.n}건</p>`).join('')||'<p>충전 내역 없음</p>')+card('메시지 테스트 충전',me.sandbox_allowed?cfg.catalog.messages.map((m,i)=>`<div class="row between line"><span>${e(m.name)} ${m.quantity}건 · ${money(m.price)}</span>${btn('선택',`act(async()=>{let m=cfg.catalog.messages[${i}];await openCheckout({kind:'message',name:m.name,quantity:m.quantity})})`)}</div>`).join('')+'<p class="muted">메시지 충전 후 알림 화면에서 수신 설정을 진행하세요. 실제 발송은 외부 서비스 설정 및 검증이 필요합니다.</p>':'<p>실제 결제 미연결</p>')}
 
@@ -518,3 +518,45 @@ async function qualityBatch(){await act(async()=>{const threads=[...document.que
 async function qualityCompare(id,agent){await act(async()=>{const d=await api('/api/quality/version/'+id+'/compare?agent='+enc(agent));modal('교육 버전 비교',table(['추가 FAQ','동일 FAQ','충돌 FAQ','기존 규칙','복원 규칙'],[[d.added_questions.length,d.duplicates.length,d.conflicts.length,d.old_rule_count,d.new_rule_count]])+d.conflicts.map(x=>'<div class="line"><b>'+e(x.question)+'</b><p>현재: '+e(x.previous)+'</p><p>복원: '+e(x.proposed)+'</p></div>').join(''))})}
 async function featureDraft(k){await act(async()=>{const r=await api('/api/quality/feature-draft/'+enc(k));modal('기능 설정 체험','<p>실제 기능 활성화 없이 설정 초안을 저장합니다. 개인정보와 비밀키는 입력하지 마세요.</p>'+r.fields.map((f,i)=>label(f,ta('feature-draft-'+i,r.config[f]||''))).join('')+btn('초안 저장',"saveFeatureDraft('"+k+"')",'primary'))})}
 async function saveFeatureDraft(k){await act(async()=>{const r=await api('/api/quality/feature-draft/'+enc(k));await api('/api/quality/feature-draft/'+enc(k),{config:Object.fromEntries(r.fields.map((f,i)=>[f,val('feature-draft-'+i)]))});$('.modal')?.remove();toast('설정 초안 저장 완료')})}
+
+async function prepareMemorySelection(files,ids,output){
+ if(educationBusy)return;
+ if(!ids.length){toast('이전할 대화를 선택하세요.');return;}
+ if(!files?.every(f=>/\.json$/i.test(f.name))){toast('유료 이전은 ZIP을 푼 JSON 파일에서 선택해 주세요.');return;}
+ if(!me.sandbox_allowed){toast('실제 유료 이전 결제는 준비 중입니다.');return;}
+ if(!confirm('선택한 대화 내용을 기기에서 추출해 검토할까요? 아직 서버 전송이나 크레딧 차감은 없습니다.'))return;
+ educationBusy=true;
+ try{
+  const progress=document.createElement('p');progress.setAttribute('role','status');output.append(progress);
+  const r=await memoryLocalPreview(files,'','',p=>{progress.textContent=p;},ids);
+  progress.remove();
+  memoryTransfer={agent:educationAgent,batches:r.batches,index:0,selected:r.selected,done:new Set(),order:''};
+  await openMemoryTransfer();
+ }catch(err){toast(err.message)}finally{educationBusy=false}
+}
+async function openMemoryTransfer(){
+ await act(async()=>{
+  const t=memoryTransfer;
+  if(!t||t.agent!==educationAgent){toast('이전 자료를 다시 선택하세요.');return;}
+  const orders=await api('/api/memory-import/paid-orders?agent='+enc(t.agent));
+  if(!orders.some(x=>x.id===t.order))t.order=orders[0]?.id||'';
+  const order=orders.find(x=>x.id===t.order);
+  let controls='<p>선택한 대화 '+t.selected+'개 · '+t.batches.length+'개 구간 · 현재 '+(t.index+1)+'번</p><p class="muted">테스트 이전 이용권 '+money(cfg.catalog.memory_import.price)+' · AI 교육 크레딧은 별도입니다. 구간별 검토와 비용 확인 후 분석합니다.</p>';
+  controls+=orders.length?label('이전 이용권',select('memory-paid-order',orders.map(x=>[x.id,new Date(x.paid_at*1000).toLocaleString()+' · '+x.batches.length+'/'+x.max_batches+' 구간']),t.order).replace('<select','<select onchange="memoryTransfer.order=this.value;openMemoryTransfer()"')):'<p>이 브랜드에 사용할 테스트 이전 이용권이 없습니다.</p>';
+  controls+=btn('이전 이용권 테스트 구매',"act(async()=>{await openCheckout({kind:'memory_import',agent:memoryTransfer.agent})})");
+  if(order)controls+='<p>이전 기록: 검토·반영 완료 '+order.batches.filter(b=>['review','published'].includes(b.state)).length+'구간</p>';
+  controls+=label('전송 전 자료 검토 및 수정',ta('memory-batch-text',t.batches[t.index]))+'<p class="muted">개인정보·비밀정보·개인 대화·확정되지 않은 사업 아이디어를 제외하세요.</p><label><input type="checkbox" id="memory-batch-consent"> 처리 권한과 개인정보·기밀을 확인했고 이 구간의 서버 분석에 동의합니다.</label><div class="row">'+(t.index>0?btn('이전 구간','moveMemoryBatch(-1)'):'')+(t.index+1<t.batches.length?btn('다음 구간','moveMemoryBatch(1)'):'')+(order?btn('교육 비용 확인','quoteMemoryBatch()','primary'):'')+'</div>';
+  modal('외부 AI 기억 이전',controls);
+ });
+}
+function moveMemoryBatch(delta){if(!memoryTransfer)return;memoryTransfer.batches[memoryTransfer.index]=val('memory-batch-text');memoryTransfer.index=Math.max(0,Math.min(memoryTransfer.batches.length-1,memoryTransfer.index+delta));openMemoryTransfer()}
+async function quoteMemoryBatch(){await act(async()=>{
+ const t=memoryTransfer;if(!t||t.agent!==educationAgent)return;
+ if(!checked('memory-batch-consent')){toast('자료 처리 동의가 필요합니다.');return;}
+ const text=val('memory-batch-text').trim();if(!text||text.length>50000){toast('구간은 50,000자 이하로 입력하세요.');return;}
+ t.batches[t.index]=text;
+ const q=await api('/api/memory-import/prepare',{order:t.order,agent:t.agent,text,consent:true});
+ if(q.state!=='estimated'){toast(q.state==='running'?'이미 분석 중입니다.':'이미 분석한 구간입니다. 교육 결과를 확인하세요.');openMemoryTransfer();return;}
+ modal('기억 이전 교육 비용 확인','<p>최대 '+q.maxCredits+' C 예약 · 현재 '+q.credits+' C</p><p>실제 사용량만 정산되고 결과를 검토하여 승인해야 합니다.</p>'+(q.enough?btn('구간 분석 시작',"runMemoryBatch('"+q.id+"')",'primary'):btn('크레딧 충전',"$('.modal')?.remove();go('credits')"))+btn('구간 검토로 돌아가기','openMemoryTransfer()'));
+})}
+async function runMemoryBatch(id){if(educationBusy)return;educationBusy=true;try{const r=await api('/api/training/'+id+'/run',{});toast('구간 교육 결과 생성 · '+r.cost+' C');await refresh();$('.modal')?.remove();await render();}catch(err){toast(err.message);await openMemoryTransfer()}finally{educationBusy=false}}

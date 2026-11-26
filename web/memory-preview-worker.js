@@ -42,4 +42,37 @@ async function inspect(files,start,end,progress){
  }
  return {conversations,duplicates,excluded};
 }
-self.onmessage=async ev=>{try{const {files,start,end}=ev.data;const result=await inspect(files,start,end,progress=>self.postMessage({progress}));self.postMessage({result});}catch(err){self.postMessage({error:err instanceof SyntaxError?'JSON 파일 형식이 올바르지 않습니다.':String(err.message||'파일 분석 실패')});}};
+
+async function extractSelected(files,ids,progress){
+ if(!Array.isArray(files)||!files.length||files.length>MAX_FILES||files.some(f=>f.size>MAX_FILE)||files.reduce((n,f)=>n+f.size,0)>MAX_TOTAL)throw Error('파일 한도를 확인하세요.');
+ const wanted=new Set(ids),seen=new Set(),encoder=new TextEncoder(),batches=[];
+ let current='',total=0,count=0;
+ function append(text){
+  while(text.length){
+   let space=48000-current.length;
+   if(space<2){batches.push(current);current='';space=48000;}
+   let n=Math.min(space,text.length);
+   if(n<text.length&&/[\uD800-\uDBFF]/.test(text[n-1]))n--;
+   current+=text.slice(0,n);text=text.slice(n);total+=n;
+   if(total>48000*120)throw Error('이번 이전 작업은 최대 120개 구간입니다. 선택 범위를 줄이세요.');
+  }
+ }
+ for(let i=0;i<files.length;i++){
+  progress('선택 자료 추출 '+(i+1)+'/'+files.length);
+  const items=JSON.parse(await files[i].text());if(!Array.isArray(items))throw Error('대화 배열 JSON이 필요합니다.');
+  count+=items.length;if(count>MAX_COUNT)throw Error('대화 수 한도 초과');
+  for(const item of items){
+   const ms=messages(item);if(!ms.length)continue;
+   const data=encoder.encode(JSON.stringify(ms)),digest=await crypto.subtle.digest('SHA-256',data),id=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
+   if(!wanted.has(id)||seen.has(id))continue;
+   seen.add(id);
+   append('\n\n[과거 대화 제목: '+String(item.title||'제목 없음').slice(0,160)+']\n');
+   for(const [role,part] of ms)append((role==='user'?'사업주 발화: ':'과거 AI 답변: ')+part+'\n');
+  }
+ }
+ if(seen.size!==wanted.size)throw Error('선택한 대화를 모두 찾지 못했습니다. 파일을 다시 확인해 주세요.');
+ if(current.trim())batches.push(current);
+ if(!batches.length||batches.length>120)throw Error('이전할 자료가 없거나 구간 한도를 초과했습니다.');
+ return {batches,selected:seen.size};
+}
+self.onmessage=async ev=>{try{const {files,start,end,ids}=ev.data;const progress=value=>self.postMessage({progress:value});const result=Array.isArray(ids)?await extractSelected(files,ids,progress):await inspect(files,start,end,progress);self.postMessage({result});}catch(err){self.postMessage({error:err instanceof SyntaxError?'JSON 파일 형식이 올바르지 않습니다.':String(err.message||'파일 분석 실패')});}};
