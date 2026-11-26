@@ -13,6 +13,8 @@
 .app-sidebar nav button{min-height:39px;padding:9px 10px;margin:2px 0;background:transparent;color:#4e5968;border-radius:11px;font-size:12px;font-weight:600;gap:10px}
 .app-sidebar nav button:hover{background:#f4f7fa;color:#191f28}
 .app-sidebar nav button.active,.app-sidebar nav button.active:hover{background:#eaf3ff;color:#2175e3}
+.app-sidebar nav button.nav-allinone{margin-top:10px;background:#eaf3ff;color:#246bd1;font-weight:800}
+.app-sidebar nav button.nav-allinone:hover,.app-sidebar nav button.nav-allinone.active{background:#dcecff;color:#155fc4}
 .app-sidebar nav button .ui-icon{width:16px;height:16px}
 .sidebar-bottom{flex:none;background:#fff;border-top:1px solid #edf0f2;padding:12px 7px 4px}
 .usage-label{color:#6b7684;font-size:11px}
@@ -160,6 +162,18 @@
 .training-credit-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin:16px 0;border-radius:14px;background:#f4f8ff;color:#263b58}
 .training-credit-summary strong{margin-left:8px;color:#2477ed;font-size:18px}
 .training-credit-summary small{display:block;margin-top:3px}
+.allinone-hero{padding:28px 30px;margin:14px 0;border-radius:22px;background:linear-gradient(125deg,#eaf3ff,#f8fbff);color:#191f28}
+.allinone-hero small{color:#3182f6;font-weight:800;letter-spacing:.1em}
+.allinone-hero h2{font-size:30px;line-height:1.3;margin:12px 0}
+.allinone-hero p{margin:0;color:#4e5968}
+.allinone-price{padding:16px 18px;margin:18px 0;border-radius:16px;background:#f7f9fc}
+.allinone-price>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0}
+.allinone-price .allinone-total{margin-top:8px;padding-top:16px;border-top:1px solid #dfe5ec;font-weight:700}
+.allinone-total strong{font-size:25px;color:#2477ed}
+.allinone-price p{margin:8px 0 0;color:#4e5968}
+.allinone-actions{flex-wrap:wrap;margin:16px 0 8px}
+.allinone-features{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+.allinone-features span{padding:7px 10px;border-radius:9px;background:#f2f6fb;color:#4e5968;font-size:12px}
 @media(max-width:640px){.training-dialogue{padding:12px;min-height:240px;max-height:420px}.training-turn{max-width:94%}}
 .agent-guide>p{color:#4e5968}
 .agent-use-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
