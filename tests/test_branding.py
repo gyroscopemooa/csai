@@ -2,6 +2,14 @@ from test_app import owner,post,patch,public,teach
 from fastapi.testclient import TestClient
 from app import app
 
+def test_free_account_can_save_basic_company_logo():
+    import base64, io
+    from PIL import Image
+    c=owner();image=io.BytesIO();Image.new('RGB',(20,20),'#3182f6').save(image,format='PNG')
+    post(c,'/api/appearance',{'logo':base64.b64encode(image.getvalue()).decode()})
+    assert c.get('/api/appearance').json()['logo'].startswith('data:image/png;base64,')
+    assert c.post('/api/appearance',json={'theme':'toss'}).status_code==403
+
 def test_alias_and_brand_entitlements():
     c=owner();assert c.post('/api/appearance',json={'alias':'snap-test'}).status_code==403;post(c,'/api/demo/billing',{'plan':'lite','addons':['custom_url','design','unbrand']});patch(c,{'enabled':True});post(c,'/api/appearance',{'alias':'snap-test','color':'#123456','unbrand':True});assert c.get('/api/public/snap-test').json()['color']=='#123456';assert c.get('/api/public/snap-test').json()['unbrand'];b=owner();post(b,'/api/demo/billing',{'plan':'lite','addons':['custom_url']});assert b.post('/api/appearance',json={'alias':'snap-test'}).status_code==409;post(c,'/api/demo/billing',{'plan':'lite','addons':[]});assert c.get('/api/public/snap-test').status_code==404
 

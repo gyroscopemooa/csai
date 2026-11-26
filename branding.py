@@ -47,7 +47,7 @@ def set_appearance(body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);s=loads(w['settings']);a=entitlements(w)
         if 'logo' in body:
-            require(public_access(w) or body['logo']=='','유료 구독 또는 초청 체험 필요');data=bounded(body['logo'],600000)
+            data=bounded(body['logo'],600000)
             if data:
                 try:
                     raw=base64.b64decode(data,validate=True);require(len(raw)<=400000,'로고 400KB 이하',422)
