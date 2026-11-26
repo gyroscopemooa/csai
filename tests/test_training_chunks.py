@@ -30,3 +30,11 @@ def test_published_training_style_overrides_initial_preset(monkeypatch):
     ai.answer('안녕하세요',[],DEFAULT|{'emoji':True},[],{'style':'AI 티 안 나게 답하고 이모지 사용 금지','rules':[]},set())
     assert seen[0]['style']=='AI 티 안 나게 답하고 이모지 사용 금지'
     assert seen[0]['emoji'] is False
+
+def test_small_faq_set_reaches_model_when_words_differ(monkeypatch):
+    monkeypatch.setattr(ai,'KEY','mock');seen=[]
+    def fake(*args,**kwargs):
+        seen.append(args[2]);return {'reply':'담당자 확인 후 안내드릴게요','unknown':False},{'input_tokens':100,'output_tokens':30}
+    monkeypatch.setattr(ai,'call',fake)
+    ai.answer('돈 돌려받고 싶어요',[],DEFAULT,[],{'faq':[{'q':'환불은 어떻게 하나요?','a':'담당자 확인 후 안내드립니다.'}]},set())
+    assert seen[0]['faq'][0]['q']=='환불은 어떻게 하나요?'
