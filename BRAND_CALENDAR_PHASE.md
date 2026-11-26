@@ -1,0 +1,2 @@
+# Additional-brand calendars (development)
+Separate persisted staff booking rows and settings; custom fields, resources, conflict checks per brand, date range and manual edits. Existing primary reservation and Google sync remain unchanged. Customer booking, recovery, Google sync, consolidated reporting/export and CRM/external channels for additional brands remain pending. No trial bypass. Runtime tests not yet run.

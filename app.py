@@ -746,6 +746,8 @@ import product_progress
 product_progress.register(app,ident)
 import workflow_controls
 workflow_controls.register(app,ident)
+import brand_calendar
+brand_calendar.register(app,ident)
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
