@@ -63,7 +63,7 @@ const CSAISetup=(()=>{
  function prompt(){
   let r=rules[route]||['필요한 기능을 둘러보고 구독 구성표에서 예상 요금을 확인할 수 있습니다.','구독 구성표 열기','receipt'];
   if(route==='education'&&Object.keys(me.published||{}).length)r=['교육이 반영되었습니다. 실제 고객처럼 질문해 상담을 테스트해 보세요.','상담 테스트','test'];
-  if(route==='preview'&&me.enabled)r=['상담원이 공개되었습니다. 홈페이지 위젯이나 외부 채널을 연결할 수 있습니다.','채널 연결 보기','channels'];
+  if(route==='preview'&&me.enabled)r=['상담원이 공개되었습니다. 홈페이지 위젯이나 외부 채널을 연결할 수 있습니다.','채널 연결 보기','route:channels'];
   if(route==='calendar'&&has('calendar')&&!has('auto_booking'))r=['일정표를 사용 중이시네요. AI가 예약 접수까지 맡도록 구성할 수도 있습니다.','자동 예약 알아보기','auto_booking'];
   if(route==='calendar'&&has('auto_booking')&&!has('booking_alert'))r=['자동 예약을 사용 중이시네요. 예약 안내 알림도 설정할 수 있습니다.','예약 알림 알아보기','booking_alert'];
   if(all()[r[2]]&&featureSet(current()).has(r[2]))return [r[0],'구독 구성표 열기','receipt'];
@@ -79,12 +79,12 @@ const CSAISetup=(()=>{
   const recommendation=cheaper(cfg.catalog,result.keys);
   let content='<div class="setup-receipt-head"><strong>나의 구독 구성</strong><span>예상 월 <b>'+won(matched?verified.amount:amount)+'</b></span>'+button(state.receipt?'접기':'구성표 보기','receipt')+'</div>';
   if(state.receipt){
-   content+='<div class="setup-receipt-body"><p class="muted">선택한 상품만 반영됩니다. 아직 결제되지 않았습니다.</p><label>기본 상담 요금제<select data-setup-plan>'+cfg.catalog.plans.filter(x=>x.price>0).map(x=>'<option value="'+escape(x.id)+'" '+(p.id===x.id?'selected':'')+'>'+escape(x.name+' · '+x.quantity.toLocaleString()+'회 · '+won(x.price))+'</option>').join('')+'</select></label>'+line(p.name+' 기본 상담',won(p.price));
+   content+='<div class="setup-receipt-body"><p class="muted">선택한 상품만 반영됩니다. 아직 결제되지 않았습니다.</p><label>기본 상담 요금제<select data-setup-plan>'+cfg.catalog.plans.map(x=>'<option value="'+escape(x.id)+'" '+(p.id===x.id?'selected':'')+'>'+escape(x.name+' · '+x.quantity.toLocaleString()+'회 · '+won(x.price))+'</option>').join('')+'</select></label>'+line(p.name+' 기본 상담',won(p.price));
    content+=result.keys.length?result.keys.map(k=>line(by[k].name,won(by[k].price),button('제외','remove',k))).join(''):'<p class="muted">추가한 기능이 없습니다.</p>';
    if(result.discount)content+=line('채널 묶음 할인','-'+won(result.discount));
    content+='<div class="setup-total">'+line('추가 기능 합계',won(result.amount))+line('예상 월 구독료',won(matched?verified.amount:amount))+'</div>';
    if(me.plan!=='free')content+=line('현재 구성의 카탈로그 기준 요금',won(oldAmount))+line('예상 차액',(delta>0?'+':delta<0?'-':'')+won(Math.abs(delta)))+'<small>실제 기존 청구액·일할 계산과 다를 수 있습니다.</small>';
-   content+='<small>교육 크레딧, 이전 이용권, 문자 충전 별도 · '+(matched?'서버 견적 확인 완료':failedKey===key?'서버 견적 확인 실패. 다시 시도해 주세요.':'서버 견적 확인 중 또는 미확인')+'</small>';
+   content+='<small>교육 크레딧, 이전 이용권, 문자 충전 별도 · '+(!p.price?'무료 요금제 · 추가 기능은 유료 요금제 필요':matched?'서버 견적 확인 완료':failedKey===key?'서버 견적 확인 실패. 다시 시도해 주세요.':'서버 견적 확인 중 또는 미확인')+'</small>';
    if(recommendation)content+='<div class="setup-suggestion"><b>패키지 적용 시 월 '+won(recommendation.saving)+' 절약 가능</b><small>선택한 기능을 모두 유지하는 구성입니다. 준비 중 기능의 실제 제공 여부는 별도 확인하세요.</small>'+button('절약 구성 확인·적용','optimize')+'</div>';
    content+='<div class="setup-actions">'+button('요금제 및 결제 확인','navigate','pricing')+(failedKey===key?button('견적 다시 확인','retry'):'')+'</div></div>';
   }
@@ -94,7 +94,7 @@ const CSAISetup=(()=>{
   const p=plan(),r=current();if(!p.price)return;
   const key=JSON.stringify([p.id,r.keys]);if(verified?.key===key||pendingKey===key||failedKey===key)return;
   const request=++serial;pendingKey=key;
-  api('/api/billing/quote',{kind:'subscription',plan:p.id,addons:r.keys}).then(q=>{if(request!==serial)return;verified={key,amount:q.amount};}).catch(()=>{if(request===serial)failedKey=key;}).finally(()=>{if(request!==serial)return;pendingKey='';receipt();});
+  api('/api/billing/quote',{kind:'subscription',plan:p.id,addons:r.keys}).then(q=>{if(request!==serial||JSON.stringify([plan().id,current().keys])!==key)return;verified={key,amount:q.amount};}).catch(()=>{if(request===serial&&JSON.stringify([plan().id,current().keys])===key)failedKey=key;}).finally(()=>{if(request!==serial)return;pendingKey='';receipt();if(state?.receipt)quote();});
  }
  function guide(){
   const el=document.getElementById('setup-guide');if(!el)return;
@@ -108,7 +108,7 @@ const CSAISetup=(()=>{
   el.innerHTML=html;const log=el.querySelector('.setup-dialogue');if(log)log.scrollTop=log.scrollHeight;
  }
  function redraw(){receipt();guide();save();if(state.receipt)quote();}
- function changed(){failedKey='';redraw();if(route==='pricing')render();}
+ function changed(){failedKey='';if(plan().id==='free'&&selectedAdd.size)selectedPlan='lite';redraw();if(route==='pricing')render();}
  function add(k){
   initialize();if(!all()[k])return;
   const old=current(),wanted=featureSet(old);
@@ -130,7 +130,7 @@ const CSAISetup=(()=>{
   if(action==='receipt')state.receipt=!state.receipt;
   else if(action==='guide')state.guide=!state.guide;
   else if(action==='navigate'){if(v==='receipt')state.receipt=true;else go(v);}
-  else if(action==='reply'){const r=prompt();state.messages.push({role:'user',text:r[1]});if(all()[v]){state.messages.push({role:'guide',text:(descriptions[v]||all()[v].name+' 기능을 확인할 수 있습니다.')+' 월 '+won(all()[v].price)+'입니다. 원하시면 구독 구성에 추가하세요.'});preview(v);}else if(v==='receipt'){state.receipt=true;state.messages.push({role:'guide',text:'선택 내역과 월 요금을 구성표에서 확인하세요.'});}else go(v);}
+  else if(action==='reply'){const r=prompt();state.messages.push({role:'user',text:r[1]});if(all()[v]){state.messages.push({role:'guide',text:(descriptions[v]||all()[v].name+' 기능을 확인할 수 있습니다.')+' 월 '+won(all()[v].price)+'입니다. 원하시면 구독 구성에 추가하세요.'});preview(v);}else if(v==='receipt'){state.receipt=true;state.messages.push({role:'guide',text:'선택 내역과 월 요금을 구성표에서 확인하세요.'});}else go(v.startsWith('route:')?v.slice(6):v);}
   else if(action==='dismiss'){state.dismissed.add(v);state.messages.push({role:'user',text:'나중에 할게요'},{role:'guide',text:'필요해지면 언제든 다시 확인할 수 있습니다.'});}
   else if(action==='reopen'){state.dismissed.delete(v);state.seen.delete(v);}
   else if(action==='remove'){
@@ -150,5 +150,5 @@ const CSAISetup=(()=>{
   redraw();
  }
  function afterPurchase(){if(!state||state.slug!==me.slug)return;selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);verified=null;failedKey='';pendingKey='';serial++;save();}
- return {normalize,cheaper,mount,add,preview,afterPurchase};
+ return {normalize,cheaper,mount,add,preview,afterPurchase,initialize};
 })();
