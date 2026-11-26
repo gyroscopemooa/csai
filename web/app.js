@@ -303,32 +303,31 @@ async function sendQuote(id){if(!confirm('검토한 견적 금액을 고객 채�
 
 function landingBenefits(){
  const benefits=[
- ['내 사업을 알려주면, 나처럼 상담한다',[
-  '내 사업 지식과 영업 노하우, 상담 기준을 직접 가르친다.',
-  '말투와 응대 스타일도 고친다. 고객이 듣는 답변을 내 방식에 맞춘다.',
-  '사업 비밀과 민감한 내부 정보는 필요한 범위만 교육하고, 고객에게 보여줄 정보는 내가 정한다.',
-  '내 사업을 가장 잘 이해하는 파트너처럼 키우되, 사람에게 비밀을 맡길 때의 걱정은 정보 공개 범위와 권한 설정으로 관리한다.'
- ]],
- ['채용하고, 가르치고, 다시 뽑는 일을 줄인다',[
-  '직원 간 인간관계, 채용·면접·인수인계에서 오는 사람 스트레스를 줄인다.',
-  'AI 상담사는 불만이나 불평을 하지 않고, 일을 배워 독립하거나 퇴사하지 않는다.',
-  'AI 서비스 이용 자체에는 식대·퇴직금·해고 및 퇴직 절차가 없다.',
-  '반복 상담을 위해 추가 채용이 필요하지 않다면 고용 문제와 신고·분쟁 대응 부담도 줄어든다.'
- ]],
- ['잠든 사이에도 상담하고, 예약까지 챙긴다',[
-  '내가 쉬는 시간에도 고객 문의를 24시간 받을 수 있다.',
-  '상담만 하는 게 아니라 예약 요청, 일정 확인, 견적 초안, 고객 관리까지 비서처럼 돕는다.',
-  '중요한 예약 확정과 금전 결정은 내가 정한 자동·수동 설정과 담당자 승인에 따른다.',
-  '필요한 채널과 기능은 개발·연동 검증이 끝나는 대로 더해 간다.'
- ]],
- ['가르치고 고칠수록, 내 사업에 더 맞아진다',[
-  '틀린 답변을 바로잡고 모르는 질문을 교육해 일을 더 잘하도록 만든다.',
-  '더 많은 서비스를 연결해 상담부터 예약과 후속 업무까지 맡긴다.',
-  '직원을 고용하는 편이 더 쌀 수도 있다. 내 상황에 맞게 직접 비교하면 된다.',
-  '반복 상담에 드는 시간과 인건비를 줄이고 싶다면 저렴한 요금제부터 필요한 만큼 시작한다.'
- ]]
+ '나의 사업 비밀과 민감한 정보까지 교육할 수 있습니다.',
+ '나의 분신처럼 나처럼 상담할 수 있습니다.',
+ '나의 말투와 상담 스타일을 반영하고 수정할 수 있습니다.',
+ '직원 간의 인간관계 문제가 없습니다.',
+ '사람으로 인한 스트레스가 없습니다.',
+ '하루 24시간, 365일 일합니다.',
+ '퇴직금이 없습니다.',
+ '불만과 불평이 없습니다.',
+ '직원 고용 및 노동관계 신고·분쟁에 대한 부담이 없습니다.',
+ '일을 배워서 스스로 독립할 일이 없습니다.',
+ '갑작스러운 퇴사나 퇴직 문제가 없습니다.',
+ '나의 사업을 가장 잘 이해합니다.',
+ '단순한 직원을 넘어 사업 파트너의 역할까지 수행합니다.',
+ '사람에게 사업 정보를 공유할 때 발생하는 신뢰와 정보 유출에 대한 걱정을 줄일 수 있습니다.',
+ '채용 스트레스가 없습니다.',
+ '식비가 들지 않습니다.',
+ '교육을 통해 업무를 잘 수행하도록 만들 수 있습니다.',
+ '상담부터 예약, 비서 역할까지 해냅니다.',
+ '교육할수록 일을 더 잘합니다.',
+ '지속적인 교육을 통해 업무 능력이 향상됩니다.',
+ '고객에게 더 많은 서비스를 제공할 수 있습니다.',
+ '인건비를 절약할 수 있습니다.',
+ '저렴하고 합리적인 비용으로 이용할 수 있습니다.'
  ];
- return `<section class="landing-benefits" aria-labelledby="landing-benefit-title"><div class="landing-benefits-inner"><p class="landing-benefits-kicker">WHY CS AI</p><h2 id="landing-benefit-title">나의 사업을 이해하는<br>나의 클론 상담사.</h2><p class="landing-lead">직원을 고용하는 편이 더 쌀 수도 있습니다. 그래도 내 사업을 내가 직접 가르치고, 나처럼 상담하게 하고, 채용과 사람 문제를 줄일 수 있다면 어떨까요?</p><div class="landing-benefit-grid">${benefits.map(([h,items],i)=>`<article class="landing-benefit"><span class="landing-benefit-number">${String(i+1).padStart(2,'0')}</span><div class="landing-benefit-content"><h3 class="landing-roll-title">${e(h)}</h3><ul>${items.map(x=>`<li>${e(x)}</li>`).join('')}</ul></div></article>`).join('')}</div><div class="landing-benefits-cta"><div><h3>내 상담 방식, 직접 가르쳐볼까요?</h3><p>첫 상담 테스트 1회와 교육 크레딧 20C로 시작할 수 있습니다.</p></div><button type="button" onclick="google()">내 클론 상담사 만들어보기 <span aria-hidden="true">↗</span></button></div><p class="landing-benefits-note">AI 응답에는 오류가 있을 수 있으며, 24시간 이용은 서비스 상태와 구독 한도에 따릅니다. 예약·견적·외부 연동 등은 해당 기능의 구매 및 설정이 필요하며 일부는 개발·검증 중입니다. 교육 자료는 서비스 및 AI 처리에 사용될 수 있으므로 비밀번호, 결제 정보, 불필요한 개인정보는 입력하지 마세요. 정보 유출이 없다고 보장할 수 없으며, 실제 데이터 보호와 비용 절감은 운영 방식에 따라 달라집니다.</p></div></section>`
+ return `<section class="landing-benefits" aria-labelledby="landing-benefit-title"><div class="landing-benefits-inner"><p class="landing-benefits-kicker">WHY CS AI</p><h2 id="landing-benefit-title">나의 사업을 이해하는<br>나의 클론 상담사.</h2><p class="landing-lead">사실 직원을 직접 고용하는 것이 더 저렴할 수도 있습니다. 하지만 나의 클론 상담직원은 다릅니다.</p><div class="landing-benefit-grid" role="list" aria-label="나의 클론 상담직원의 23가지 장점">${benefits.map((item,i)=>`<div class="landing-benefit" role="listitem"><span class="landing-benefit-number">${String(i+1).padStart(2,'0')}</span><span class="landing-roll-title">${e(item)}</span></div>`).join('')}</div><div class="landing-benefits-cta"><div><h3>내 상담 방식, 직접 가르쳐볼까요?</h3><p>첫 상담 테스트 1회와 교육 크레딧 20C로 시작할 수 있습니다.</p></div><button type="button" onclick="google()">내 클론 상담사 만들어보기 <span aria-hidden="true">↗</span></button></div><p class="landing-benefits-note">AI 응답에는 오류가 있을 수 있으며, 24시간 이용은 서비스 상태와 구독 한도에 따릅니다. 예약·견적·외부 연동 등은 해당 기능의 구매 및 설정이 필요하며 일부는 개발·검증 중입니다. 교육 자료는 서비스 및 AI 처리에 사용될 수 있으므로 비밀번호, 결제 정보, 불필요한 개인정보는 입력하지 마세요. 정보 유출이 없다고 보장할 수 없으며, 실제 데이터 보호와 비용 절감은 운영 방식에 따라 달라집니다.</p></div></section>`
 }
 
 function landingUnification(){

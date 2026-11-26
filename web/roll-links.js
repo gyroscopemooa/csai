@@ -74,17 +74,23 @@
       const letters = document.createElement('span');
       letters.className = 'roll-letters';
       letters.setAttribute('aria-hidden', 'true');
-      const cells = [...label].map(ch => {
-        const shell = document.createElement('span'); shell.className = 'roll-letter';
-        const inner = document.createElement('span'); inner.className = 'roll-letter-inner';
-        for (let i = 0; i < 2; i++) { const glyph = document.createElement('i'); glyph.textContent = ch; inner.append(glyph); }
-        shell.append(inner); letters.append(shell);
-        return { inner, s: spring(), at: 0 };
+      const cells = [];
+      label.split(' ').forEach((word, wordIndex) => {
+        if (wordIndex) letters.append(document.createTextNode(' '));
+        const group = document.createElement('span'); group.className = 'roll-word';
+        [...word].forEach(ch => {
+          const shell = document.createElement('span'); shell.className = 'roll-letter';
+          const inner = document.createElement('span'); inner.className = 'roll-letter-inner';
+          for (let i = 0; i < 2; i++) { const glyph = document.createElement('i'); glyph.textContent = ch; inner.append(glyph); }
+          shell.append(inner); group.append(shell);
+          cells.push({ inner, s: spring(), at: 0 });
+        });
+        letters.append(group);
       });
       title.append(letters);
       return { article, title, cells, on: false };
     });
-    let pointer = false, visible = false, auto = 0, autoAt = performance.now() + 800, last = performance.now(), observer = null;
+    let pointer = false, visible = false, auto = 0, autoOn = false, autoAt = performance.now() + 800, last = performance.now(), observer = null;
     if ('IntersectionObserver' in window) {
       observer = new IntersectionObserver(events => {
         visible = events[0].isIntersecting;
@@ -99,14 +105,18 @@
       }, { threshold: 0.12 });
       observer.observe(grid);
     } else visible = true;
-    function select(entry) {
+    function select(entry, shouldScroll = false) {
       const now = performance.now();
       entries.forEach(item => {
         item.on = item === entry;
         item.article.classList.toggle('on', item.on);
         item.cells.forEach((cell, i) => { cell.at = now + i * 30; cell.s.t = item.on ? 1 : 0; });
       });
-      grid.classList.add('hot');
+      grid.classList.toggle('hot', !!entry);
+      if (entry && shouldScroll && !reduced.matches) {
+        const target = entry.article.offsetTop - grid.offsetTop - (grid.clientHeight - entry.article.offsetHeight) / 2;
+        grid.scrollTo({ top: target, behavior: 'smooth' });
+      }
     }
     entries.forEach(entry => {
       entry.article.addEventListener('pointerenter', () => { pointer = true; select(entry); });
@@ -118,7 +128,10 @@
     function frame(now) {
       if (!grid.isConnected) { observer?.disconnect(); return; }
       const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
-      if (visible && !pointer && now >= autoAt) { select(entries[auto]); auto = (auto + 1) % entries.length; autoAt = now + 1450; }
+      if (visible && !pointer && now >= autoAt) {
+        if (autoOn) { select(null); autoOn = false; auto = (auto + 1) % entries.length; autoAt = now + 350; }
+        else { const entry = entries[auto]; select(entry, true); autoOn = true; autoAt = now + Math.max(1100, entry.cells.length * 30 + 500); }
+      }
       if (visible && !reduced.matches) for (let k = 0; k < 4; k++) entries.forEach(item => item.cells.forEach(cell => { if (now >= cell.at) step(cell.s, dt / 4); }));
       entries.forEach(item => item.cells.forEach(cell => { cell.inner.style.transform = `translateY(${-cell.s.x * 50}%)`; }));
       requestAnimationFrame(frame);
