@@ -96,6 +96,7 @@ def decide(i:str,body:dict,ws=Depends(ident)):
 def convert_work(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w));t=one(c,'SELECT id FROM thread WHERE ws=? AND id=?',(ws,i));require(t,'상담 없음',404)
+        require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 업무로 등록할 수 없습니다.',409)
         existing=one(c,'SELECT work FROM work_link WHERE ws=? AND thread=? AND kind=?',(ws,i,k))
         if existing:return {'id':existing['work'],'duplicate':True}
         title=bounded(body.get('title',''),200);require(title,'제목 필요',422);detail=bounded(body.get('details',''),2000);j=uid();c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(j,ws,k,title,detail,'open',now()));c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,i,k,j));event(c,ws,'work','상담에서 업무 등록',j)

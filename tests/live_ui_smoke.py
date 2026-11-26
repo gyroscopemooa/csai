@@ -37,6 +37,14 @@ with sync_playwright() as pw:
     desktop.get_by_role("heading", name="통합 상담함").wait_for()
     assert desktop.locator("#inbox-kind").count() == 1
     assert desktop.locator("#inbox-q").count() == 1
+    desktop.locator(".inbox-entry").first.wait_for()
+    assert desktop.locator(".inbox-entry").count() >= 8
+    assert desktop.locator(".sample-tag").count() >= 8
+    desktop.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
+    desktop.get_by_text("메시지 22개").wait_for()
+    assert desktop.locator(".inbox-conversation").evaluate("el => el.scrollHeight > el.clientHeight")
+    assert desktop.locator(".inbox-list").evaluate("el => el.scrollHeight > el.clientHeight")
+    desktop.screenshot(path=str(OUT / "live_inbox_samples_desktop.png"))
     desktop.locator(".app-sidebar").get_by_role("button", name="채팅창 미리보기").click()
     desktop.get_by_role("heading", name="채팅창 미리보기").wait_for()
     assert desktop.locator("#msg").is_enabled()
@@ -92,6 +100,15 @@ with sync_playwright() as pw:
         mobile.locator("#policy-" + key).check()
     mobile.get_by_role("button", name="확인하고 계속하기").click()
     mobile.get_by_role("heading", name="AI 교육시키기").wait_for()
+    mobile.get_by_role("button", name="메뉴 열기").click()
+    mobile.locator(".app-sidebar").get_by_role("button", name="통합 상담함").click()
+    mobile.get_by_role("heading", name="통합 상담함").wait_for()
+    assert mobile.locator(".inbox-entry").count() >= 8
+    mobile.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
+    mobile.get_by_text("메시지 22개").wait_for()
+    assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    mobile.locator(".inbox-conversation").scroll_into_view_if_needed()
+    mobile.screenshot(path=str(OUT / "live_inbox_samples_mobile.png"))
     mobile.get_by_role("button", name="메뉴 열기").click()
     mobile.locator(".app-sidebar").get_by_role("button", name="채팅창 미리보기").click()
     mobile.get_by_role("heading", name="채팅창 미리보기").wait_for()

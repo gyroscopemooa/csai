@@ -80,6 +80,8 @@ async def guard(req,call_next):
 def session_response(owner,verified_email=None):
     with db(True) as c:
         w=workspace(c,owner)
+        if DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and owner.startswith('demo:') and os.getenv('SEED_UI_SAMPLES')=='1':
+            demo_samples.seed_samples(c,w['id'])
         if owner.startswith('google:') and verified_email:
             c.execute('UPDATE workspace SET owner_email=? WHERE id=?',(verified_email.lower(),w['id']))
         t=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(t,w['id'],now()+86400*7))
@@ -123,7 +125,7 @@ def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(a
 @app.get('/api/me')
 def me(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws)}
+        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws),'sample_tools':DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and w['owner'].startswith('demo:')}
 @app.patch('/api/settings')
 def settings(body:dict,ws=Depends(ident)):
     with db(True) as c:
@@ -407,7 +409,7 @@ def inbox(kind:str='',q:str='',ws=Depends(ident)):
     q=bounded(q,100).lower()
     with db() as c:
         w=getw(c,ws);cutoff=history_cutoff(w)
-        sql='SELECT id,kind,status,manual,created,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))'
+        sql='SELECT id,kind,status,manual,created,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))'
         args=[cutoff,ws,cutoff,cutoff]
         if kind:sql+=' AND kind=?';args.append(kind)
         if q:
@@ -424,11 +426,12 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.post('/api/inbox/{i}')
 def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
+        require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 읽기 전용입니다.',409)
         if 'manual' in body:c.execute('UPDATE thread SET manual=? WHERE id=?',(int(bool(body['manual'])),i))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
         if body.get('reply'):
@@ -604,6 +607,7 @@ import message_notifications
 import custom_integration
 import policies
 policies.register(app,ident,require)
+import demo_samples
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

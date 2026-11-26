@@ -50,6 +50,7 @@ def init():
         CREATE TABLE IF NOT EXISTS visitor(token TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),expires INTEGER NOT NULL,kind TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS thread(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),visitor TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',manual INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL, UNIQUE(ws,visitor));
         CREATE TABLE IF NOT EXISTS message(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),thread TEXT NOT NULL REFERENCES thread(id),role TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS demo_sample(thread TEXT PRIMARY KEY REFERENCES thread(id),ws TEXT NOT NULL REFERENCES workspace(id));
         CREATE INDEX IF NOT EXISTS message_history ON message(ws,thread,created);
         CREATE INDEX IF NOT EXISTS thread_history ON thread(ws,created);
         CREATE TABLE IF NOT EXISTS usage(ws TEXT NOT NULL REFERENCES workspace(id),period TEXT NOT NULL,n INTEGER NOT NULL DEFAULT 0 CHECK(n>=0),PRIMARY KEY(ws,period));
