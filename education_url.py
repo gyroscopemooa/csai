@@ -99,8 +99,12 @@ def url_import(body:dict,ws=Depends(ident)):
     except (ValueError,OSError,http.client.HTTPException,UnicodeError) as exc:fail(422,'웹페이지 수집 실패: '+str(exc)[:150])
     sha=hashlib.sha256(text.encode()).hexdigest()
     with db(True) as c:
+        from branding import owned_agent
+        agent=body.get('agent','');owned_agent(c,getw(c,ws),agent)
+        if agent:sha=hashlib.sha256((agent+':'+sha).encode()).hexdigest()
         old=one(c,'SELECT id FROM file WHERE ws=? AND sha=?',(ws,sha))
         if old:return {'id':old['id'],'duplicate':True}
         require(one(c,'SELECT count(*) n FROM file WHERE ws=?',(ws,))['n']<50,'파일 최대 50개',422)
         i=uid();c.execute('INSERT INTO file VALUES(?,?,?,?,?,?,?)',(i,ws,'웹페이지: '+host,sha,text,'[]',now()))
+        if agent:c.execute('INSERT INTO file_brand VALUES(?,?,?)',(i,ws,agent))
     return {'id':i,'chars':len(text),'estimate':ai.estimate(text,[])}

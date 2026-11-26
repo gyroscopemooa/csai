@@ -34,7 +34,12 @@ def normalize_addons(a):
 def quote(body):
     kind=body.get('kind');require(kind in ['subscription','education','message'],'상품 유형 오류',422)
     if kind=='subscription':
-        plan=body.get('plan');require(plan in PLAN and plan!='free','유료 요금제 선택 필요',422);a,n=normalize_addons(body.get('addons',[]));return kind,{'plan':plan,'addons':a},PLAN[plan]['price']+n
+        plan=body.get('plan');require(plan in PLAN and plan!='free','유료 요금제 선택 필요',422);a,n=normalize_addons(body.get('addons',[]))
+        count=body.get('brand_quantity',1 if 'extra_agent' in a else 0)
+        require(type(count) is int and 0<=count<=MAX_EXTRA_BRANDS and bool(count)==('extra_agent' in a),'추가 브랜드 수량 오류',422)
+        items={'plan':plan,'addons':a}
+        if count>1:items['brand_quantity']=count
+        return kind,items,PLAN[plan]['price']+n+max(0,count-1)*ADD['extra_agent']['price']
     if kind=='education':
         q=next((x for x in CAT['education'] if x['id']==body.get('sku') and x['price']>0),None);require(q,'교육 상품 오류',422);return kind,{'sku':q['id'],'quantity':q['quantity']},q['price']
     q=next((x for x in CAT['messages'] if x['name']==body.get('name') and x['quantity']==body.get('quantity')),None);require(q,'메시지 상품 오류',422);return kind,{'name':q['name'],'quantity':q['quantity']},q['price']
@@ -50,7 +55,7 @@ def checkout_quote(body:dict,ws=Depends(ident)):
         with db() as c:
             w=getw(c,ws);sub=one(c,'SELECT * FROM subscription WHERE ws=? AND period_end>?',(ws,now()))
             previous=one(c,"SELECT amount FROM checkout_order WHERE id=? AND ws=? AND status='paid'",(sub['order_id'],ws)) if sub else None
-            old=previous['amount'] if previous else (PLAN[w['plan']]['price']+normalize_addons(loads(w['addons']))[1] if w['plan']!='free' else 0)
+            old=previous['amount'] if previous else (PLAN[w['plan']]['price']+normalize_addons(loads(w['addons']))[1]+max(0,brand_quantity(w)-1)*ADD['extra_agent']['price'] if w['plan']!='free' else 0)
             delta=n-old
             remaining=max(0,sub['period_end']-now()) if sub else 0
             duration=max(1,sub['period_end']-sub['period_start']) if sub else 1
@@ -83,7 +88,7 @@ def checkout_confirm(i:str,ws=Depends(ident)):
                 # Preserve current UTC-month usage for first migration from legacy local test plan.
                 u=one(c,'SELECT n FROM usage WHERE ws=? AND period=?',(ws,month()))
                 if not sub and u:c.execute('INSERT OR IGNORE INTO usage VALUES(?,?,?)',(ws,'sub:'+str(start),u['n']))
-            c.execute('INSERT INTO subscription VALUES(?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_end=0,order_id=excluded.order_id',(ws,start,end,0,i));c.execute('UPDATE workspace SET plan=?,addons=? WHERE id=?',(x['plan'],dump(x['addons']),ws))
+            c.execute('INSERT INTO subscription VALUES(?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_end=0,order_id=excluded.order_id',(ws,start,end,0,i));settings=loads(w['settings']);settings['_extra_brand_quantity']=x.get('brand_quantity',1 if 'extra_agent' in x['addons'] else 0);c.execute('UPDATE workspace SET plan=?,addons=?,settings=? WHERE id=?',(x['plan'],dump(x['addons']),dump(settings),ws))
         elif r['kind']=='education':
             # Purchased packs credit the ordinary wallet; operator/trial safety caps are separate.
             c.execute('UPDATE workspace SET credits=credits+? WHERE id=?',(x['quantity'],ws));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education',x['quantity'],i,now()))

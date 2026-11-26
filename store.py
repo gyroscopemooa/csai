@@ -122,6 +122,13 @@ def entitlements(w):
         if i in PACK:a.update(PACK[i]['includes'])
     if 'channels' in a:a.update(['naver','kakao'])
     return a if w['plan']!='free' else set()
+MAX_EXTRA_BRANDS=1000  # checkout safety ceiling, not a per-product single-brand restriction
+def brand_quantity(w):
+    if 'extra_agent' not in entitlements(w):return 0
+    if is_operator(w):return MAX_EXTRA_BRANDS
+    value=loads(w['settings']).get('_extra_brand_quantity',1)
+    return value if type(value) is int and 1<=value<=MAX_EXTRA_BRANDS else 1
+
 # Provisional access windows only. No automatic deletion before the retention policy is approved.
 BASE_HISTORY_DAYS=max(1,int(os.getenv('BASE_HISTORY_DAYS','90')))
 EXTENDED_HISTORY_DAYS=max(BASE_HISTORY_DAYS,int(os.getenv('EXTENDED_HISTORY_DAYS','1825')))

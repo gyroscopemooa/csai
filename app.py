@@ -1,3 +1,4 @@
+import hashlib
 import base64,copy,io,json,os,re,secrets,math,time,threading
 from collections import defaultdict,deque
 from datetime import datetime,timedelta,timezone
@@ -145,7 +146,7 @@ def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(a
 @app.get('/api/me')
 def me(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);local_demo=DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and bool(re.fullmatch(r'demo:[A-Za-z0-9_-]+(?::(?:free|subscriber|subscriber_agent|developer))?',w['owner']));return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws),'sample_tools':local_demo,'demo_view':w['owner'].rsplit(':',1)[-1] if local_demo and w['owner'].count(':')==2 else ('legacy' if local_demo else None)}
+        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);local_demo=DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and bool(re.fullmatch(r'demo:[A-Za-z0-9_-]+(?::(?:free|subscriber|subscriber_agent|developer))?',w['owner']));return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'brand_quantity':brand_quantity(w),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws),'sample_tools':local_demo,'demo_view':w['owner'].rsplit(':',1)[-1] if local_demo and w['owner'].count(':')==2 else ('legacy' if local_demo else None)}
 @app.patch('/api/settings')
 def settings(body:dict,ws=Depends(ident)):
     with db(True) as c:
@@ -263,7 +264,7 @@ def listfaq(ws=Depends(ident)):
 def faq(body:dict,ws=Depends(ident)):
     q=bounded(body.get('q',''),500);a=bounded(body.get('a',''),2000);require(q and a,'질문과 답변을 입력하세요.',422)
     with db(True) as c:
-        w=getw(c,ws);unknown_id=body.get('unknown');u=one(c,"SELECT u.id,v.agent FROM unknown u JOIN thread t ON t.id=u.thread JOIN visitor v ON v.token=t.visitor WHERE u.ws=? AND u.id=? AND u.status='open'",(ws,unknown_id)) if unknown_id else None;require(not unknown_id or u,'미학습 질문 없음',404);agent_id=(u.get('agent') or '') if u else ''
+        w=getw(c,ws);unknown_id=body.get('unknown');u=one(c,"SELECT u.id,v.agent FROM unknown u JOIN thread t ON t.id=u.thread JOIN visitor v ON v.token=t.visitor WHERE u.ws=? AND u.id=? AND u.status='open'",(ws,unknown_id)) if unknown_id else None;require(not unknown_id or u,'미학습 질문 없음',404);agent_id=(u.get('agent') or '') if u else body.get('agent','');branding.owned_agent(c,w,agent_id)
         if unknown_id:require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown' AND id=?",(ws,unknown_id)),'샘플 질문은 교육할 수 없습니다.',409)
         if agent_id:require('extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
         text=ai.clean(q+' => '+a);estimate=ai.estimate(text,[]);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',estimate,0,dump({'text':text,'images':[],'unknown':unknown_id,'agent':agent_id}),None,now()))
@@ -274,31 +275,36 @@ def delete_faq(i:str,ws=Depends(ident)):
     with db(True) as c:c.execute('DELETE FROM faq WHERE ws=? AND id=?',(ws,i))
     return {'ok':True}
 @app.get('/api/files')
-def files(ws=Depends(ident)):
-    with db() as c:return rows(c,'SELECT id,name,created,length(content) AS chars FROM file WHERE ws=? ORDER BY created DESC',(ws,))
+def files(agent:str='',ws=Depends(ident)):
+    with db() as c:
+        branding.owned_agent(c,getw(c,ws),agent);return rows(c,"SELECT id,name,created,length(content) AS chars FROM file WHERE ws=? AND COALESCE((SELECT agent FROM file_brand WHERE file=file.id AND ws=file.ws),'')=? ORDER BY created DESC",(ws,agent))
 @app.post('/api/files')
 def upload(body:dict,ws=Depends(ident)):
     try:
         name=bounded(body['name'],200);raw=base64.b64decode(body['data'],validate=True);t,ims,sha=ai.extract(name,raw)
     except Exception as e:fail(422,'파일 분석 실패: '+str(e)[:200])
     with db(True) as c:
+        agent=body.get('agent','');branding.owned_agent(c,getw(c,ws),agent)
+        if agent:sha=hashlib.sha256((agent+':'+sha).encode()).hexdigest()
         old=one(c,'SELECT id FROM file WHERE ws=? AND sha=?',(ws,sha))
         if old:return {'id':old['id'],'duplicate':True}
         require((one(c,'SELECT count(*) AS n FROM file WHERE ws=?',(ws,)))['n']<50,'파일 최대 50개',422)
         i=uid();c.execute('INSERT INTO file VALUES(?,?,?,?,?,?,?)',(i,ws,name,sha,t,dump(ims),now()))
+        if agent:c.execute('INSERT INTO file_brand VALUES(?,?,?)',(i,ws,agent))
     return {'id':i,'chars':len(t),'images':len(ims),'estimate':ai.estimate(t,ims)}
 @app.delete('/api/files/{i}')
-def delete_file(i:str,ws=Depends(ident)):
-    with db(True) as c:c.execute('DELETE FROM file WHERE ws=? AND id=?',(ws,i))
+def delete_file(i:str,agent:str='',ws=Depends(ident)):
+    with db(True) as c:
+        branding.owned_agent(c,getw(c,ws),agent);f=one(c,"SELECT id FROM file WHERE ws=? AND id=? AND COALESCE((SELECT agent FROM file_brand WHERE file=file.id AND ws=file.ws),'')=?",(ws,i,agent));require(f,'파일 없음',404);c.execute('DELETE FROM file_brand WHERE ws=? AND file=?',(ws,i));c.execute('DELETE FROM file WHERE ws=? AND id=?',(ws,i))
     return {'ok':True}
 @app.post('/api/training/estimate')
 def estimate(body:dict,ws=Depends(ident)):
     guidance=bounded(body.get('text',''),30000);conversation=bounded(body.get('conversation',''),30000);text=('기존 고객 상담 기록 (고객 발화는 질문, 업체 답변은 응대 예시):\n'+conversation) if conversation else '';images=[];ids=body.get('files',[]);require(isinstance(ids,list) and len(ids)<=10,'최대 10개 파일',422)
     with db(True) as c:
         w=getw(c,ws);agent_id=body.get('agent','');require(isinstance(agent_id,str),'상담원 형식 오류',422)
-        if agent_id:require('extra_agent' in entitlements(w) and one(c,'SELECT id FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)),'추가 상담원 권한 또는 정보 없음',403)
+        branding.owned_agent(c,w,agent_id)
         for i in dict.fromkeys(ids):
-            f=one(c,'SELECT * FROM file WHERE id=? AND ws=?',(i,ws));require(f,'파일 없음',404);text+='\n'+f['name']+'\n'+f['content'];images+=loads(f['images'])
+            f=one(c,"SELECT * FROM file WHERE id=? AND ws=? AND COALESCE((SELECT agent FROM file_brand WHERE file=file.id AND ws=file.ws),'')=?",(i,ws,agent_id));require(f,'파일 없음',404);text+='\n'+f['name']+'\n'+f['content'];images+=loads(f['images'])
         require((guidance or text.strip() or images) and len(guidance)+len(text)<=60000 and len(images)<=8,'교육 자료 없음 또는 한도 초과',422)
         text=ai.clean(text);guidance=ai.clean(guidance);n=ai.estimate(guidance+'\n'+text,images);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',n,0,dump({'text':text,'guidance':guidance,'images':images,'agent':agent_id}),None,now()))
         t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
@@ -308,10 +314,10 @@ def train(i:str,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state']=='estimated' and j['created']>now()-1800,'유효한 교육 견적 필요',409)
         source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
-        if agent_id:require(agent and 'extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
+        if agent_id:require(branding.agent_allowed(w,agent),'추가 브랜드 상담원 권한 필요',403)
         try:reserve_education(c,w,j['estimate'],i)
         except ValueError as e:fail(402,str(e))
-        c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {})
+        c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));s=branding.brand_settings(w,agent)
     try:
         result,n=ai.train(source['text'],source['images'],s,source.get('guidance',''));require(type(n)==int and 0<=n<=j['estimate'],'교육 비용 상한 초과 또는 형식 오류',409)
     except Exception as e:
@@ -330,7 +336,7 @@ def publish(i:str,body:dict,ws=Depends(ident)):
         j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state'] in ['review','published'],'승인할 결과 없음',409)
         if j['state']=='published':return {'ok':True}
         result=loads(j['result']);w=getw(c,ws);source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
-        if agent_id:require(agent and 'extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
+        if agent_id:require(branding.agent_allowed(w,agent),'추가 브랜드 상담원 권한 필요',403)
         old=loads(agent['published'] if agent else w['published'])
         if body.get('replace'):merged=result
         else:merged={'style':result.get('style',old.get('style','')),'rules':list(dict.fromkeys(old.get('rules',[])+result.get('rules',[])))[-100:],'faq':list({x['q']:x for x in old.get('faq',[])+result.get('faq',[])}.values())[-200:],'conflicts':result.get('conflicts',[])}
@@ -347,7 +353,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and w['enabled'],'상담이 비활성화되었습니다.',404);s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {});return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':not agent and 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if not agent and k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -355,12 +361,12 @@ def create_session(body:dict,req:Request):
     limit('session:'+str(req.client.host if req.client else 'unknown'),60)
     with db(True) as c:
         if kind=='test':
-            token=req.cookies.get('csai_session','');s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(token,now()));require(s,'로그인 필요',401);w=getw(c,s['ws'])
+            token=req.cookies.get('csai_session','');s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(token,now()));require(s,'로그인 필요',401);w=getw(c,s['ws']);agent=branding.owned_agent(c,w,body.get('agent',''))
         else:
-            w,agent=branding.resolve(c,body.get('slug'));require(public_access(w) and w['enabled'],'상담 비활성화',404);require(not domains.current_ws.get() or w['id']==domains.current_ws.get(),'다른 업체의 상담입니다.',404)
+            w,agent=branding.resolve(c,body.get('slug'));require(public_access(w) and (agent or w['enabled']),'상담 비활성화',404);require(not domains.current_ws.get() or w['id']==domains.current_ws.get(),'다른 업체의 상담입니다.',404)
         token=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,w['id'],now()+86400,kind));
         if agent:c.execute('UPDATE visitor SET agent=? WHERE token=?',(agent['id'],token))
-        i=uid();staff=kind=='public' and loads(w['settings']).get('consultation_mode')=='staff'
+        i=uid();staff=kind=='public' and branding.brand_settings(w,agent).get('consultation_mode')=='staff'
         c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(i,w['id'],token,kind,now(),int(staff)))
     return {'token':token,'thread':i}
 @app.get('/api/session/{token}/messages')
@@ -388,7 +394,7 @@ def chat(body:dict):
             if prior['state']=='done':return loads(prior['result'])
             if prior['state']=='running':fail(409,'이미 처리 중입니다.')
             c.execute('DELETE FROM request WHERE ws=? AND thread=? AND client=?',key)
-        require(v['kind']=='test' or (w['enabled'] and public_access(w)),'상담 비활성화')
+        require(v['kind']=='test' or ((agent or w['enabled']) and public_access(w)),'상담 비활성화')
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
         if t['manual']:
             r={'reply':'담당자가 확인 중입니다.','manual':True,'remaining':remaining(c,w)}
@@ -398,7 +404,7 @@ def chat(body:dict):
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
-        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w)
+        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking','quote','tasks','complaints','crm','leads'} if agent else set())
         quote_catalog=rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1 ORDER BY name LIMIT 100',(ws,)) if 'quote' in adds else []
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
@@ -418,7 +424,7 @@ def chat(body:dict):
         with db(True) as c:
             for role,body in [('user',msg),('assistant',r['reply'])]:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,now()))
             if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
-            if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
+            if v['kind']!='test' and not agent:customer_ops.capture_lead(c,ws,tid,msg,r)
             if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
             if r.get('unknown'):
                 if v['kind']!='test':ops.event(c,ws,'unknown','미학습 질문 접수',tid)
@@ -434,13 +440,16 @@ def chat(body:dict):
         fail(502,'상담 저장 실패. 사용량은 복구되었습니다.')
     return r
 @app.get('/api/inbox')
-def inbox(kind:str='',q:str='',ws=Depends(ident)):
+def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
     require(kind in ('','public','test','naver','kakao'),'채널 필터 오류',422)
     q=bounded(q,100).lower()
     with db() as c:
         w=getw(c,ws);cutoff=history_cutoff(w)
-        sql='SELECT id,kind,status,manual,created,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))'
+        sql="SELECT COALESCE((SELECT v.agent FROM visitor v WHERE v.token=thread_outer.visitor AND v.ws=thread_outer.ws),'') AS agent,id,kind,status,manual,created,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))"
         args=[cutoff,ws,cutoff,cutoff]
+        if agent!='all':
+            branding.owned_agent(c,w,agent)
+            sql+=" AND COALESCE((SELECT v.agent FROM visitor v WHERE v.token=thread_outer.visitor AND v.ws=thread_outer.ws),'')=?";args.append(agent)
         if kind:sql+=' AND kind=?';args.append(kind)
         if q:
             pattern='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
@@ -456,7 +465,7 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.get('/api/inbox/{i}/education-source')
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:
@@ -473,7 +482,8 @@ def staff_education_source(i:str,ws=Depends(ident)):
         text=ai.clean('\n\n'.join(pairs))
         require(bool(text),'담당자가 직접 답변한 고객 질문이 없습니다.',422)
         require(len(text)<=30000,'교육 자료가 30,000자를 초과합니다. 기간 또는 내용을 나누어 등록하세요.',422)
-        return {'text':text,'pairs':len(pairs),'chars':len(text)}
+        v=one(c,'SELECT agent FROM visitor WHERE ws=? AND token=(SELECT visitor FROM thread WHERE ws=? AND id=?)',(ws,ws,i));agent=(v or {}).get('agent','');branding.owned_agent(c,w,agent)
+        return {'text':text,'pairs':len(pairs),'chars':len(text),'agent':agent}
 @app.delete('/api/inbox/{i}')
 def delete_test_thread(i:str,ws=Depends(ident)):
     with db(True) as c:
@@ -543,11 +553,11 @@ def booking_view(b,secret=False):
 @app.get('/api/booking/form/{token}')
 def form(token:str):
     with db() as c:
-        v=visitor(c,token);w=getw(c,v['ws']);s=loads(w['settings']);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));return {k:s[k] for k in ['fields','template_version','timezone','duration','open','close','payment_required']}|{'resources':s.get('resources',[{'id':'default','name':'기본 담당자'}])}
+        v=visitor(c,token);require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);s=loads(w['settings']);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));return {k:s[k] for k in ['fields','template_version','timezone','duration','open','close','payment_required']}|{'resources':s.get('resources',[{'id':'default','name':'기본 담당자'}])}
 @app.post('/api/booking/availability')
 def availability(body:dict):
     with db() as c:
-        v=visitor(c,body.get('token',''));w=getw(c,v['ws']);require('calendar' in entitlements(w) and (v['kind']=='test' or w['enabled']));s=loads(w['settings'])
+        v=visitor(c,body.get('token',''));require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);require('calendar' in entitlements(w) and (v['kind']=='test' or w['enabled']));s=loads(w['settings'])
         try:date=datetime.strptime(body['date'],'%Y-%m-%d').date()
         except Exception:fail(422,'날짜 형식 오류')
         resource=resource_id(s,body);start=datetime.fromisoformat(f'{date}T{s["open"]}');close=datetime.fromisoformat(f'{date}T{s["close"]}');out=[]
@@ -560,13 +570,13 @@ def availability(body:dict):
 @app.post('/api/booking/draft')
 def draft(body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''));w=getw(c,v['ws']);s=loads(w['settings']);t=trial(c,w);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));require(v['kind']=='public','관리자 테스트에서는 실제 예약을 생성하지 않습니다.',409)
+        v=visitor(c,body.get('token',''));require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);s=loads(w['settings']);t=trial(c,w);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));require(v['kind']=='public','관리자 테스트에서는 실제 예약을 생성하지 않습니다.',409)
         if t:require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
         require(body.get('version')==s['template_version'],'양식 변경됨. 다시 확인하세요.',409);data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,v['ws'],a,b,buffer=s['buffer'],resource=resource),'선택한 시간이 이미 예약되었습니다.',409);i=uid();t=uid();c.execute("UPDATE booking SET status='superseded' WHERE ws=? AND visitor=? AND status='draft'",(v['ws'],v['token']));c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,v['ws'],v['token'],a,b,resource,dump(data),s['template_version'],dump(s['fields']),'draft',0,0,t,now()));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)),True)
 @app.post('/api/booking/{i}/confirm')
 def confirm(i:str,body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''));w=getw(c,v['ws']);s=loads(w['settings']);b=one(c,'SELECT * FROM booking WHERE id=? AND ws=? AND visitor=?',(i,v['ws'],v['token']));require(b and secrets.compare_digest(b['token'],str(body.get('confirmation',''))),'예약 확인 권한 없음');require('calendar' in entitlements(w) and w['enabled'] and s['modes'].get('booking')!='off')
+        v=visitor(c,body.get('token',''));require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);s=loads(w['settings']);b=one(c,'SELECT * FROM booking WHERE id=? AND ws=? AND visitor=?',(i,v['ws'],v['token']));require(b and secrets.compare_digest(b['token'],str(body.get('confirmation',''))),'예약 확인 권한 없음');require('calendar' in entitlements(w) and w['enabled'] and s['modes'].get('booking')!='off')
         require(b['status']!='superseded','이전 양식은 변경되었습니다. 최신 양식을 확인하세요.',409)
         if b['status']!='draft':return booking_view(b)
         if trial(c,w):require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)

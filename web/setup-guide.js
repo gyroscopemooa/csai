@@ -50,13 +50,13 @@ const CSAISetup=(()=>{
  let state=null,verified=null,pendingKey='',failedKey='',serial=0;
  const storageKey=()=> 'csai-setup-v1:'+me.slug;
  const all=()=>index(cfg.catalog);
- function save(){if(!state)return;try{sessionStorage.setItem(storageKey(),JSON.stringify({plan:selectedPlan,ids:[...selectedAdd],receipt:state.receipt,guide:state.guide,dismissed:[...state.dismissed],seen:[...state.seen],messages:state.messages.slice(-20)}));}catch{}}
+ function save(){if(!state)return;try{sessionStorage.setItem(storageKey(),JSON.stringify({plan:selectedPlan,ids:[...selectedAdd],brandCount:selectedBrandCount,receipt:state.receipt,guide:state.guide,dismissed:[...state.dismissed],seen:[...state.seen],messages:state.messages.slice(-20)}));}catch{}}
  function initialize(){
   if(state?.slug===me.slug)return;
   serial++;verified=null;pendingKey='';failedKey='';
   state={slug:me.slug,receipt:false,guide:false,dismissed:new Set(),seen:new Set(),messages:[]};
-  selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);
-  try{const d=JSON.parse(sessionStorage.getItem(storageKey())||'null');if(d){if(cfg.catalog.plans.some(p=>p.id===d.plan&&p.price>0))selectedPlan=d.plan;if(Array.isArray(d.ids))selectedAdd=new Set(d.ids.filter(k=>Object.hasOwn(all(),k)));state.receipt=!!d.receipt;state.guide=!!d.guide;state.dismissed=new Set(d.dismissed||[]);state.seen=new Set(d.seen||[]);state.messages=Array.isArray(d.messages)?d.messages.filter(m=>['user','guide'].includes(m.role)&&typeof m.text==='string').slice(-20):[];}}catch{}
+  selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);selectedBrandCount=me.brand_quantity||1;
+  try{const d=JSON.parse(sessionStorage.getItem(storageKey())||'null');if(d){if(cfg.catalog.plans.some(p=>p.id===d.plan&&p.price>0))selectedPlan=d.plan;if(Array.isArray(d.ids))selectedAdd=new Set(d.ids.filter(k=>Object.hasOwn(all(),k)));if(Number.isInteger(d.brandCount)&&d.brandCount>=1&&d.brandCount<=1000)selectedBrandCount=d.brandCount;state.receipt=!!d.receipt;state.guide=!!d.guide;state.dismissed=new Set(d.dismissed||[]);state.seen=new Set(d.seen||[]);state.messages=Array.isArray(d.messages)?d.messages.filter(m=>['user','guide'].includes(m.role)&&typeof m.text==='string').slice(-20):[];}}catch{}
  }
  function current(){return normalize(cfg.catalog,[...selectedAdd]);}
  function plan(){return cfg.catalog.plans.find(p=>p.id===selectedPlan)||cfg.catalog.plans.find(p=>p.id==='lite');}
@@ -76,15 +76,15 @@ const CSAISetup=(()=>{
  function receipt(){
   const el=document.getElementById('setup-receipt');if(!el)return;
   let result;try{result=current();}catch(err){el.innerHTML='<p>'+escape(err.message)+'</p>';return;}
-  const p=plan(),amount=p.price+result.amount,by=all(),old=cfg.catalog.plans.find(x=>x.id===me.plan),oldAmount=(old?.price||0)+(me.plan==='free'?0:normalize(cfg.catalog,me.addons||[]).amount),delta=amount-oldAmount;
-  const key=JSON.stringify([p.id,result.keys]),matched=verified?.key===key;
+  const p=plan(),by=all(),brandExtra=result.keys.includes('extra_agent')?(selectedBrandCount-1)*by.extra_agent.price:0,amount=p.price+result.amount+brandExtra,old=cfg.catalog.plans.find(x=>x.id===me.plan),oldAmount=(old?.price||0)+(me.plan==='free'?0:normalize(cfg.catalog,me.addons||[]).amount+Math.max(0,(me.brand_quantity||0)-1)*by.extra_agent.price),delta=amount-oldAmount;
+  const key=JSON.stringify([p.id,result.keys,selectedBrandCount]),matched=verified?.key===key;
   const recommendation=cheaper(cfg.catalog,result.keys);
   let content='<div class="setup-receipt-head"><strong>나의 구독 구성</strong><span>예상 월 <b>'+won(matched?verified.amount:amount)+'</b></span>'+button(state.receipt?'접기':'구성표 보기','receipt')+'</div>';
   if(state.receipt){
    content+='<div class="setup-receipt-body"><p class="muted">선택한 상품만 반영됩니다. 아직 결제되지 않았습니다.</p><label>기본 상담 요금제<select data-setup-plan>'+cfg.catalog.plans.map(x=>'<option value="'+escape(x.id)+'" '+(p.id===x.id?'selected':'')+'>'+escape(x.name+' · '+x.quantity.toLocaleString()+'회 · '+won(x.price))+'</option>').join('')+'</select></label>'+line(p.name+' 기본 상담',won(p.price));
-   content+=result.keys.length?result.keys.map(k=>line(by[k].name,won(by[k].price),button('제외','remove',k))).join(''):'<p class="muted">추가한 기능이 없습니다.</p>';
+   content+=result.keys.length?result.keys.map(k=>line(by[k].name+(k==='extra_agent'?' × '+selectedBrandCount:''),won(by[k].price*(k==='extra_agent'?selectedBrandCount:1)),button('제외','remove',k))).join(''):'<p class="muted">추가한 기능이 없습니다.</p>';
    if(result.discount)content+=line('채널 묶음 할인','-'+won(result.discount));
-   content+='<div class="setup-total">'+line('추가 기능 합계',won(result.amount))+line('예상 월 구독료',won(matched?verified.amount:amount))+'</div>';
+   content+='<div class="setup-total">'+line('추가 기능 합계',won(result.amount+brandExtra))+line('예상 월 구독료',won(matched?verified.amount:amount))+'</div>';
    if(me.plan!=='free')content+=line('현재 구성의 카탈로그 기준 요금',won(oldAmount))+line('예상 차액',(delta>0?'+':delta<0?'-':'')+won(Math.abs(delta)))+'<small>실제 기존 청구액·일할 계산과 다를 수 있습니다.</small>';
    content+='<small>교육 크레딧, 이전 이용권, 문자 충전 별도 · '+(!p.price?'무료 요금제 · 추가 기능은 유료 요금제 필요':matched?'서버 견적 확인 완료':failedKey===key?'서버 견적 확인 실패. 다시 시도해 주세요.':'서버 견적 확인 중 또는 미확인')+'</small>';
    if(recommendation)content+='<div class="setup-suggestion"><b>패키지 적용 시 월 '+won(recommendation.saving)+' 절약 가능</b><small>선택한 기능을 모두 유지하는 구성입니다. 준비 중 기능의 실제 제공 여부는 별도 확인하세요.</small>'+button('절약 구성 확인·적용','optimize')+'</div>';
@@ -94,9 +94,9 @@ const CSAISetup=(()=>{
  }
  function quote(){
   const p=plan(),r=current();if(!p.price)return;
-  const key=JSON.stringify([p.id,r.keys]);if(verified?.key===key||pendingKey===key||failedKey===key)return;
+  const key=JSON.stringify([p.id,r.keys,selectedBrandCount]);if(verified?.key===key||pendingKey===key||failedKey===key)return;
   const request=++serial;pendingKey=key;
-  api('/api/billing/quote',{kind:'subscription',plan:p.id,addons:r.keys}).then(q=>{if(request!==serial||JSON.stringify([plan().id,current().keys])!==key)return;verified={key,amount:q.amount};}).catch(()=>{if(request===serial&&JSON.stringify([plan().id,current().keys])===key)failedKey=key;}).finally(()=>{if(request!==serial)return;pendingKey='';receipt();if(state?.receipt)quote();});
+  api('/api/billing/quote',{kind:'subscription',plan:p.id,addons:r.keys,brand_quantity:r.keys.includes('extra_agent')?selectedBrandCount:0}).then(q=>{if(request!==serial||JSON.stringify([plan().id,current().keys,selectedBrandCount])!==key)return;verified={key,amount:q.amount};}).catch(()=>{if(request===serial&&JSON.stringify([plan().id,current().keys,selectedBrandCount])===key)failedKey=key;}).finally(()=>{if(request!==serial)return;pendingKey='';receipt();if(state?.receipt)quote();});
  }
  function guide(){
   const el=document.getElementById('setup-guide');if(!el)return;
@@ -151,6 +151,6 @@ const CSAISetup=(()=>{
   el=document.getElementById('setup-guide');if(!el){el=document.createElement('aside');el.id='setup-guide';el.setAttribute('aria-label','설정 도우미');main.append(el);el.addEventListener('click',event);}
   redraw();
  }
- function afterPurchase(){if(!state||state.slug!==me.slug)return;selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);verified=null;failedKey='';pendingKey='';serial++;save();}
+ function afterPurchase(){if(!state||state.slug!==me.slug)return;selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);selectedBrandCount=me.brand_quantity||1;verified=null;failedKey='';pendingKey='';serial++;save();}
  return {normalize,cheaper,mount,add,preview,afterPurchase,initialize};
 })();
