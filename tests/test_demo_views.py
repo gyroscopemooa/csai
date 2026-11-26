@@ -55,3 +55,25 @@ def test_demo_view_rejects_non_demo_identity_and_bad_mode():
     other=TestClient(app,base_url='http://127.0.0.1:3000')
     other.cookies.set('csai_session',token)
     assert other.post('/api/demo/view',json={'mode':'developer'}).status_code==403
+
+
+def test_test_conversation_can_be_removed_without_refunding_usage():
+    client=local_client()
+    switch(client,'subscriber')
+    session=client.post('/api/session',json={'test':True}).json()
+    answer=client.post('/api/chat',json={'token':session['token'],'message':'가격이 궁금해요','clientMessageId':'one'})
+    assert answer.status_code==200,answer.text
+    remaining=client.get('/api/me').json()['remaining']
+    assert client.get('/api/inbox?kind=test').json()[0]['id']==session['thread']
+    deleted=client.delete('/api/inbox/'+session['thread'])
+    assert deleted.status_code==200,deleted.text
+    assert client.get('/api/inbox?kind=test').json()==[]
+    assert client.get('/api/me').json()['remaining']==remaining
+    assert client.delete('/api/inbox/'+session['thread']).status_code==404
+    with db(True) as connection:
+        ws=one(connection,'SELECT id FROM workspace WHERE slug=?',(client.get('/api/me').json()['slug'],))['id']
+        visitor_id=uid()
+        customer_thread=uid()
+        connection.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(visitor_id,ws,now()+3600,'public'))
+        connection.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(customer_thread,ws,visitor_id,'public',now()))
+    assert client.delete('/api/inbox/'+customer_thread).status_code==409

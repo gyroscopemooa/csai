@@ -444,6 +444,21 @@ def history_policy(ws=Depends(ident)):
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
         w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+@app.delete('/api/inbox/{i}')
+def delete_test_thread(i:str,ws=Depends(ident)):
+    with db(True) as c:
+        t=one(c,'SELECT id,visitor,kind FROM thread WHERE ws=? AND id=?',(ws,i))
+        require(t,'상담 기록 없음',404)
+        require(t['kind']=='test','실제 고객 상담은 이 화면에서 삭제할 수 없습니다.',409)
+        require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 샘플만 지우기에서 삭제하세요.',409)
+        require(not one(c,'SELECT id FROM booking WHERE ws=? AND visitor=?',(ws,t['visitor'])),'연결된 예약이 있어 상담 기록을 삭제할 수 없습니다.',409)
+        require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'상담 응답 처리 중입니다.',409)
+        c.execute('DELETE FROM unknown WHERE ws=? AND thread=?',(ws,i))
+        c.execute('DELETE FROM request WHERE ws=? AND thread=?',(ws,i))
+        c.execute('DELETE FROM message WHERE ws=? AND thread=?',(ws,i))
+        c.execute('DELETE FROM thread WHERE ws=? AND id=?',(ws,i))
+        c.execute('DELETE FROM visitor WHERE ws=? AND token=?',(ws,t['visitor']))
+    return {'ok':True}
 @app.post('/api/inbox/{i}')
 def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
