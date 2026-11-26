@@ -38,7 +38,7 @@ function phone(s,test=false,preview=false){
   <div class="messages" id="messages" role="log" aria-live="polite">${welcomeMarkup(s)}${chatMessages.map(m=>bubble(m.role,m.body)).join('')}</div>
   <div class="chat-bottom"><div class="chat-suggestions" aria-label="추천 질문">${suggestions}</div>
    <div class="mention-wrap"><div id="mention-picker" class="mention-picker" role="listbox" aria-label="상담 주제 선택" hidden></div><form class="compose" onsubmit="event.preventDefault();sendChat()"><textarea id="msg" rows="1" maxlength="2000" placeholder="메시지를 입력하세요 · @로 상담 주제 선택" aria-label="메시지 입력" aria-controls="mention-picker" oninput="resizeCompose(this);updateMentionPicker(this)" onkeydown="if(handleMentionKey(event))return;if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();sendChat()}"></textarea><button class="primary" id="send" type="submit" aria-label="전송">${uiIcon('send-horizontal')}</button></form></div>
-   ${publicMode?`<div class="chat-actions">${btn('상담 평가','rateConsultation()')}${s.calendar?btn('내 예약 확인','customerBookings()'):''}${s.requests?.length?btn('업무 요청','customerRequest()'):''}</div>`:''}
+   ${publicMode?`<div class="chat-actions">${btn('담당자 연결 요청','requestStaffHandoff()')}${btn('상담 마치기·평가','rateConsultation()')}${s.calendar?btn('내 예약 확인','customerBookings()'):''}${s.requests?.length?btn('업무 요청','customerRequest()'):''}</div>`:''}
    <div class="phone-foot">${s.unbrand?'AI 상담':'AI 상담원이 응대하고 있습니다.'}${cfg.demo?' · 로컬 검증용':''}${publicMode?'':'<span class="resize-note"> · 오른쪽 아래 모서리를 끌어 크기 조절</span>'}</div>
   </div></section>`
 }
@@ -86,8 +86,8 @@ async function sendChat(){
  try{
   const token=await getChatSession();
   const result=await api('/api/chat',{token,message:text,clientMessageId:crypto.randomUUID()});
-  chatMessages.push({role:'user',body:text},{role:'assistant',body:result.reply});delivered=true;
-  if(waiting?.isConnected)await streamReply(waiting,result.reply);
+  chatMessages.push({role:'user',body:text});if(!result.manual)chatMessages.push({role:'assistant',body:result.reply});delivered=true;
+  if(waiting?.isConnected){if(result.manual){waiting.remove();showHandoffStatus(result.reply);}else await streamReply(waiting,result.reply);}
   if(result.booking)await bookingForm(token,result.bookingData||{});
   if(result.workDraft&&publicMode)showWorkDraft(result.workDraft);
   if($('#messages'))$('#messages').scrollTop=$('#messages').scrollHeight;
@@ -243,11 +243,28 @@ async function alerts(){let u=await api('/api/unknown');return pageTop('알림 �
 function localDate(iso){let d=new Date(iso),z=me?.settings.timezone||'Asia/Seoul';return new Intl.DateTimeFormat('sv-SE',{timeZone:z,year:'numeric',month:'2-digit',day:'2-digit'}).format(d)}
 function localTime(iso){return new Intl.DateTimeFormat('ko-KR',{timeZone:me?.settings.timezone||'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso))}
 function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
-let calFilter='confirmed';
-async function calendar(){if(!has('calendar'))return pageTop('일정표 보기','업체 맞춤 일정 양식 및 승인 관리')+locked('calendar','자체 일정표, 수동 관리, 맞춤 양식 설정을 이용할 수 있습니다.');let bs=await api('/api/bookings'),y=calendarMonth.getFullYear(),m=calendarMonth.getMonth(),first=new Date(y,m,1).getDay(),n=new Date(y,m+1,0).getDate();let day=selectedDate||dateKey(y,m,1);let filtered=bs.filter(b=>calFilter==='all'||calFilter==='pending'&&['pending','pending_payment'].includes(b.status)||b.status===calFilter),sample=bs.find(b=>b.sample&&b.status==='confirmed');return pageTop('일정표 보기','확정된 일정만 기본 표시합니다.')+(sample?card('샘플 · 상담에서 확정된 예약',`<p>자동 확정 설정을 켠 뒤 고객이 예약 양식을 확인하면 일정표에 등록되는 예시입니다. 실제 예약이나 상담 사용량에는 포함되지 않습니다.</p>${btn('샘플 확정 일정 보기',`jumpSampleBooking('${sample.start}')`,'primary')}${btn('연결된 상담 보기',`openSampleThread('${sample.sample_thread}')`)}`):me.sample_tools?card('예약 흐름 샘플 보기',`<p>상담부터 확정 일정, 담당자 알림까지 연결된 가상 기록을 넣어 확인하세요.</p>${btn('연결 샘플 넣기','addDemoSamples()','primary')}`):'')+`<div class="row tab">${btn('맞춤 일정 양식',"go('fields')")}${btn('직접 일정 등록','manualBooking()','primary')}${btn('예약 설정',"go('booking-settings')")}${btn('담당자 관리','resourceModal()')}</div><div class="grid">${card(`${y}년 ${m+1}월`,`<div class="row between">${btn('이전','moveMonth(-1)')}${btn('다음','moveMonth(1)')}</div><div class="calendar" style="margin:12px 0">${['일','월','화','수','목','금','토'].map(d=>`<div class="muted">${d}</div>`).join('')}${Array(first).fill('<div></div>').join('')}${Array.from({length:n},(_,i)=>{let d=dateKey(y,m,i+1),cnt=filtered.filter(b=>localDate(b.start)===d).length;return `<button class="day ${day===d?'selected':''}" onclick="selectedDate='${d}';render()">${i+1}${cnt?`<span class="dot">● ${cnt}</span>`:''}</button>`}).join('')}</div><div class="row">${[['confirmed','확정'],['pending','승인·결제 대기'],['all','전체']].map(([k,v])=>btn(v,`calFilter='${k}';render()`,k===calFilter?'primary':'')).join('')}</div>`)}${card(day+' 일정',filtered.filter(b=>localDate(b.start)===day).map(b=>bookingCard(b)).join('')||'<p class="muted">표시할 일정이 없습니다.</p>')}${card('승인·결제 대기',bs.filter(b=>['pending','pending_payment'].includes(b.status)).map(b=>bookingCard(b)).join('')||'<p class="muted">대기 중인 일정이 없습니다.</p>')}</div>`}
-function jumpSampleBooking(start){calendarMonth=new Date(start);selectedDate=localDate(start);calFilter='confirmed';render()}
+let calFilter='confirmed',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='';
+function calendarRangeContains(date){return !!calendarRange&&date>=calendarRange.start&&date<=calendarRange.end}
+function calendarRangeSet(start,end){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||start>end){toast('시작일과 종료일을 확인하세요.');return;}
+ calendarRange={start,end};calendarRangeAnchor='';calendarRangeMode=true;selectedDate=start;
+ const [y,m]=start.split('-').map(Number);calendarMonth=new Date(y,m-1,1);render();
+}
+function calendarRangeToggle(){calendarRangeMode=!calendarRangeMode;calendarRangeAnchor='';calendarRange=null;render()}
+function calendarDayPick(date){
+ if(!calendarRangeMode){selectedDate=date;render();return;}
+ if(!calendarRangeAnchor){calendarRangeAnchor=date;calendarRange={start:date,end:date};selectedDate=date;render();return;}
+ const start=calendarRangeAnchor<date?calendarRangeAnchor:date,end=calendarRangeAnchor<date?date:calendarRangeAnchor;
+ calendarRange={start,end};calendarRangeAnchor='';selectedDate=date;render();
+}
+function calendarRangeToolbar(day){
+ return '<section class="calendar-range-control" aria-label="일정 조회 기간"><div class="row between"><strong>조회 기간</strong>'+btn(calendarRangeMode?'하루 보기':'기간 선택','calendarRangeToggle()',calendarRangeMode?'primary':'')+'</div>'+
+ (calendarRangeMode?'<p class="muted" role="status">'+(calendarRangeAnchor?'종료일을 선택하세요.':'달력에서 시작일과 종료일을 선택하거나 직접 입력하세요.')+'</p><form class="calendar-range-fields" onsubmit="event.preventDefault();calendarRangeSet(val(\'range-start\'),val(\'range-end\'))">'+label('시작일',input('range-start',calendarRange?.start||day,'date'))+label('종료일',input('range-end',calendarRange?.end||day,'date'))+'<button type="submit" class="primary">조회</button></form>':'')+'</section>';
+}
+async function calendar(){if(!has('calendar'))return pageTop('일정표 보기','업체 맞춤 일정 양식 및 승인 관리')+locked('calendar','자체 일정표, 수동 관리, 맞춤 양식 설정을 이용할 수 있습니다.');let bs=await api('/api/bookings'),y=calendarMonth.getFullYear(),m=calendarMonth.getMonth(),first=new Date(y,m,1).getDay(),n=new Date(y,m+1,0).getDate();let day=selectedDate||dateKey(y,m,1),rangeActive=calendarRangeMode&&calendarRange;let filtered=bs.filter(b=>calFilter==='all'||calFilter==='pending'&&['pending','pending_payment'].includes(b.status)||b.status===calFilter),sample=bs.find(b=>b.sample&&b.status==='confirmed');return pageTop('일정표 보기','하루 또는 기간을 선택해 일정을 확인하세요.')+calendarRangeToolbar(day)+(sample?card('샘플 · 상담에서 확정된 예약',`<p>자동 확정 설정을 켠 뒤 고객이 예약 양식을 확인하면 일정표에 등록되는 예시입니다. 실제 예약이나 상담 사용량에는 포함되지 않습니다.</p>${btn('샘플 확정 일정 보기',`jumpSampleBooking('${sample.start}')`,'primary')}${btn('연결된 상담 보기',`openSampleThread('${sample.sample_thread}')`)}`):me.sample_tools?card('예약 흐름 샘플 보기',`<p>상담부터 확정 일정, 담당자 알림까지 연결된 가상 기록을 넣어 확인하세요.</p>${btn('연결 샘플 넣기','addDemoSamples()','primary')}`):'')+`<div class="row tab">${btn('맞춤 일정 양식',"go('fields')")}${btn('직접 일정 등록','manualBooking()','primary')}${btn('예약 설정',"go('booking-settings')")}${btn('담당자 관리','resourceModal()')}</div><div class="grid">${card(`${y}년 ${m+1}월`,`<div class="row between">${btn('이전','moveMonth(-1)')}${btn('다음','moveMonth(1)')}</div><div class="calendar" style="margin:12px 0">${['일','월','화','수','목','금','토'].map(d=>`<div class="muted">${d}</div>`).join('')}${Array(first).fill('<div></div>').join('')}${Array.from({length:n},(_,i)=>{let d=dateKey(y,m,i+1),cnt=filtered.filter(b=>localDate(b.start)===d).length;let inRange=rangeActive&&calendarRangeContains(d),edge=inRange&&(d===calendarRange.start||d===calendarRange.end);return `<button class="day ${!rangeActive&&day===d?'selected':''} ${inRange?'range-day':''} ${edge?'range-edge':''}" aria-label="${d} · 일정 ${cnt}건" aria-pressed="${!!(inRange||(!rangeActive&&day===d))}" onclick="calendarDayPick('${d}')">${i+1}${cnt?`<span class="dot">● ${cnt}</span>`:''}</button>`}).join('')}</div><div class="row">${[['confirmed','확정'],['pending','승인·결제 대기'],['all','전체']].map(([k,v])=>btn(v,`calFilter='${k}';render()`,k===calFilter?'primary':'')).join('')}</div>`)}${card((rangeActive?calendarRange.start+' ~ '+calendarRange.end:day)+' 일정',filtered.filter(b=>rangeActive?calendarRangeContains(localDate(b.start)):localDate(b.start)===day).map(b=>bookingCard(b)).join('')||'<p class="muted">표시할 일정이 없습니다.</p>')}${card('승인·결제 대기',bs.filter(b=>['pending','pending_payment'].includes(b.status)&&(!rangeActive||calendarRangeContains(localDate(b.start)))).map(b=>bookingCard(b)).join('')||'<p class="muted">대기 중인 일정이 없습니다.</p>')}</div>`}
+function jumpSampleBooking(start){calendarRange=null;calendarRangeMode=false;calendarRangeAnchor='';calendarMonth=new Date(start);selectedDate=localDate(start);calFilter='confirmed';render()}
 function openSampleThread(id){threadId=id;inboxKind='customer';inboxQuery='';go('inbox')}
-function moveMonth(x){calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+x,1);selectedDate=null;render()}
+function moveMonth(x){calendarMonth=new Date(calendarMonth.getFullYear(),calendarMonth.getMonth()+x,1);if(!calendarRangeMode)selectedDate=null;render()}
 function bookingCard(b){return `<div class="line">${b.sample?'<span class="sample-tag">샘플 · 읽기 전용</span>':''}<div class="row between"><strong class="blue">${e(localDate(b.start))} ${e(localTime(b.start))}–${e(localTime(b.end))}</strong><span class="status">${e(states[b.status])}</span></div>${b.fields.map(f=>b.payload[f.key]?`<div class="row between"><small>${e(f.label)}</small><span>${e(b.payload[f.key])}</span></div>`:'').join('')}<p class="muted">담당자: ${e(resources().find(r=>r.id===b.resource)?.name||b.resource)}</p><p class="muted">결제 확인: ${b.paid?'완료':'미확인 / 불필요 여부는 업체 정책 확인'}</p>${b.sample?'<p class="muted">고객 확인 후 일정표에 등록된 화면 예시입니다. 실제 일정과 분리되어 있습니다.</p>':`<div class="row">${['pending','pending_payment'].includes(b.status)?btn('확인 및 확정',`approveBooking('${b.id}',${b.status==='pending_payment'})`,'primary'):''}${['confirmed','pending','pending_payment'].includes(b.status)?btn('취소',`bookingAction('${b.id}','cancel')`):''}${b.status==='confirmed'?btn('완료',`bookingAction('${b.id}','complete')`):''}${b.status==='confirmed'&&has('change_booking')?btn('일정 변경',`changeBooking('${b.id}')`):''}${has('google_calendar')&&['confirmed','cancelled','completed'].includes(b.status)?btn('구글 일정 동기화',`syncCalendar('${b.id}')`):''}</div>`}</div>`}
 async function bookingAction(id,action){if(action==='cancel'&&!confirm('일정을 취소하시겠습니까?'))return;await act(async()=>{await api('/api/bookings/'+id,{action});render()})}
 function approveBooking(id,pay){modal('예약 확정',`<p>고객이 확인한 양식과 예약 조건을 검토하세요.</p>${pay?'<label><input class="check" id="paid-ok" type="checkbox"> 외부 결제 내역을 직접 확인했습니다.</label>':''}${btn('확정',`act(async()=>{await api('/api/bookings/${id}',{action:'approve',paid:${pay?"checked('paid-ok')":"false"}});$('.modal').remove();render()})`,'primary')}`)}
@@ -493,11 +510,26 @@ const pricedAddonsPage=addons;
 addons=()=>pricedAddonsPage()+card('추가 연동 개발 예정',`<p class="muted">아래 항목은 기획 목록입니다. 현재 구매·연결할 수 없으며 요금과 제공 시기는 미정입니다. 외부 플랫폼 권한과 정책 확인 후 개발합니다.</p>${table(['예정 기능','우선순위','검토 방식','요금'],(cfg.catalog.roadmap||[]).map(x=>[x.name,x.priority,x.method,'미정']))}`);
 
 let qualityAgent='';
-async function rateConsultation(){
- if(!chatSession){toast('상담 후 평가할 수 있습니다.');return;}
- modal('상담 만족도','<p>답변이 도움이 되었나요?</p><div class="row">'+[1,2,3,4,5].map(n=>btn(n+'점','submitRating('+n+')')).join('')+'</div>');
+const ratingLabels=['','매우 불만족','불만족','보통','만족','매우 만족'];
+function ratingGroup(kind,title,desc){
+ const star='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.5l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.52l-5.88 3.09 1.12-6.55-4.76-4.64 6.58-.96z"/></svg>';
+ return '<fieldset class="cs-rating" data-kind="'+kind+'"><legend>'+e(title)+'</legend><p class="muted">'+e(desc)+'</p><div class="cs-rating-stars">'+[1,2,3,4,5].map(n=>'<label class="cs-rating-star"><input type="radio" name="rating-'+kind+'" value="'+n+'" aria-label="'+n+'점 '+ratingLabels[n]+'" onchange="paintRating(this)">'+star+'</label>').join('')+'</div><p class="cs-rating-result" aria-live="polite">선택 안 함</p><button type="button" class="cs-rating-clear" onclick="clearRating(this)">선택 취소</button></fieldset>';
 }
-async function submitRating(score){await act(async()=>{await api('/api/customer/feedback',{token:chatSession,score});$('.modal')?.remove();toast('평가가 저장되었습니다.')})}
+function paintRating(input){
+ const group=input.closest('.cs-rating'),n=Number(input.value);
+ group.querySelectorAll('.cs-rating-star').forEach((star,i)=>{star.classList.toggle('filled',i<n);star.classList.remove('rated-pop');if(i===n-1){void star.offsetWidth;star.classList.add('rated-pop')}});
+ group.querySelector('.cs-rating-result').textContent=n+'점 · '+ratingLabels[n];
+}
+function clearRating(button){const group=button.closest('.cs-rating');group.querySelectorAll('input').forEach(x=>x.checked=false);group.querySelectorAll('.cs-rating-star').forEach(x=>x.classList.remove('filled','rated-pop'));group.querySelector('.cs-rating-result').textContent='선택 안 함'}
+async function rateConsultation(){
+ if(!chatSession||!chatMessages.some(m=>['assistant','staff'].includes(m.role))){toast('상담 답변을 받은 뒤 평가할 수 있습니다.');return;}
+ modal('이용 만족도', '<p>상담과 업체·상품에 대한 만족도를 각각 평가할 수 있습니다. 두 평가 모두 선택 사항입니다.</p>'+ratingGroup('consultation','상담 만족도','답변의 친절함과 도움 정도')+ratingGroup('business','업체·상품 만족도','실제로 이용한 업체 또는 상품에 대한 종합 평가')+'<p class="muted">평가는 업체 운영자에게 전달되며 공개 리뷰로 게시되지 않습니다. 개별 상품 리뷰가 아닌 업체 단위 평가입니다.</p>'+btn('평가 제출','submitRatings()','primary')+btn('평가 없이 마치기',"$('.modal')?.remove()"));
+}
+async function submitRatings(){
+ const consultation=Number(document.querySelector('input[name="rating-consultation"]:checked')?.value||0),business=Number(document.querySelector('input[name="rating-business"]:checked')?.value||0);
+ if(!consultation&&!business){toast('별점을 선택하거나 평가 없이 마치기를 눌러 주세요.');return;}
+ await act(async()=>{await api('/api/customer/feedback',{token:chatSession,...(consultation?{score:consultation}:{}),...(business?{business_score:business}:{})});$('.modal')?.remove();toast('평가가 저장되었습니다.')})
+}
 async function qualityHome(){
  const brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(a=>a.available):[];
  if(qualityAgent&&!brands.some(a=>a.id===qualityAgent))qualityAgent='';
@@ -508,7 +540,7 @@ async function qualityHome(){
  card('시작 체크리스트',[
  ['업종 및 업무 설정',ready,qualityAgent?'agents':'settings'],['AI 교육',r.knowledge.faq+r.knowledge.rules>0,'education'],['상담 테스트',false,'test'],['구독 및 공개 설정',me.public_access&&!!(selected?selected.enabled:me.enabled),'pricing']
  ].map(([name,done,dest])=>'<div class="row between line"><span>'+e(name)+' · '+(done?'확인 완료':'확인하기')+'</span>'+btn('이동',"qualityGo('"+dest+"')")+'</div>').join('')+btn(me.settings.onboarding_done?'시작 체크리스트 확인됨':'시작 안내 확인 완료',"act(async()=>{await api('/api/settings',{onboarding_done:true},'PATCH');await refresh();render()})"))+
- card('최근 30일 상담 개선',table(['실제 상담','완료','담당자 전환','미학습'],[[r.threads,r.resolved,r.manual,r.unknown_count+(r.unknown_count_capped?'+':'')]])+'<p>고객 평가 '+r.ratings.n+'건 · '+(r.ratings.n?Number(r.ratings.average).toFixed(1)+' / 5':'평가 없음')+'</p><p class="muted">관리자 테스트와 샘플은 제외합니다. 완료 상태는 사업주가 표시한 값이며 AI 정확도를 뜻하지 않습니다.</p>')+
+ card('최근 30일 상담 개선',table(['실제 상담','완료','담당자 전환','미학습'],[[r.threads,r.resolved,r.manual,r.unknown_count+(r.unknown_count_capped?'+':'')]])+'<p>상담 만족도 '+r.ratings.n+'건 · '+(r.ratings.n?Number(r.ratings.average).toFixed(1)+' / 5':'평가 없음')+'</p><p>업체·상품 만족도 '+r.business_ratings.n+'건 · '+(r.business_ratings.n?Number(r.business_ratings.average).toFixed(1)+' / 5':'평가 없음')+'</p><p class="muted">관리자 테스트와 샘플은 제외합니다. 완료 상태는 사업주가 표시한 값이며 AI 정확도를 뜻하지 않습니다.</p>')+
  card('반복 미학습 질문',r.suggestions.map((x,i)=>'<div class="line"><b>'+e(x.question)+'</b><p>'+x.count+'회 · 동일 문장 기준</p>'+btn('교육 후보로 선택','qualitySelectQuestion('+i+')')+'</div>').join('')||'<p class="muted">아직 미학습 질문이 없습니다.</p>')+
  card('직접 상담 일괄 교육','<p class="muted">같은 브랜드의 상담 최대 20개를 선택하고 검토하세요. AI 분석 전에는 크레딧 견적을 확인합니다.</p>'+r.staff_threads.map(t=>'<label class="line"><input class="check quality-staff" type="checkbox" value="'+e(t.id)+'"> '+e(new Date(t.created*1000).toLocaleString())+' · '+e(t.id.slice(0,8))+'</label>').join('')+btn('선택 기록 검토','qualityBatch()','primary'))+
  card('사업주 전용 비공개 메모','<p class="muted">이 메모는 AI 교육이나 고객 답변에 전달하지 않습니다. 비밀번호·API 키는 저장하지 마세요.</p>'+ta('private-note')+btn('메모 저장',"act(async()=>{await api('/api/quality/private-notes',{agent:qualityAgent,body:val('private-note')});render()})",'primary')+notes.map(n=>'<div class="line"><p>'+e(n.body)+'</p>'+btn('삭제',"act(async()=>{await api('/api/quality/private-notes/"+n.id+"',undefined,'DELETE');render()})")+'</div>').join(''));
@@ -569,3 +601,6 @@ async function brandDesign(id){await act(async()=>{
 })}
 async function saveBrandLogo(id){await act(async()=>{const f=$('#brand-logo-file').files[0];if(!f||f.size>400000){toast('400KB 이하 이미지 파일을 선택하세요.');return;}const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(f)});await api('/api/appearance',{agent:id,logo:data});$('.modal').remove();render()})}
 async function saveBrandDesign(id){await act(async()=>{await api('/api/appearance',{agent:id,theme:val('brand-theme'),color:val('brand-color'),density:val('brand-density'),bubble_radius:val('brand-radius')});$('.modal').remove();render()})}
+
+function showHandoffStatus(message){const area=$('#messages');if(!area)return;area.querySelector('.handoff-status')?.remove();const note=document.createElement('p');note.className='handoff-status muted';note.setAttribute('role','status');note.textContent=message;area.append(note);area.scrollTop=area.scrollHeight;}
+async function requestStaffHandoff(){if(sending)return;if(!confirm('AI 자동 상담을 중지하고 담당자에게 연결을 요청할까요?'))return;await act(async()=>{const token=await getChatSession();await api('/api/customer/handoff',{token});showHandoffStatus('담당자 연결을 요청했습니다. 답변은 이 창에서 확인할 수 있습니다.')});}

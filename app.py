@@ -63,7 +63,7 @@ async def guard(req,call_next):
         if not w:return Response('Unknown or inactive domain',404)
         path=req.url.path
         if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
-        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
         if not allowed:return Response('Public consultation only',404)
         allowed_origin='https://'+host
         context=domains.current_ws.set(w['id'])
@@ -373,6 +373,20 @@ def create_session(body:dict,req:Request):
         i=uid();staff=kind=='public' and branding.brand_settings(w,agent).get('consultation_mode')=='staff'
         c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(i,w['id'],token,kind,now(),int(staff)))
     return {'token':token,'thread':i}
+@app.post('/api/customer/handoff')
+def customer_handoff(body:dict):
+    token=bounded(body.get('token',''),100)
+    limit('handoff:'+token,5,60)
+    with db(True) as c:
+        v=visitor(c,token,kind='public');w=getw(c,v['ws']);_,agent=branding.merged(c,w,v)
+        require(public_access(w) and (agent or w['enabled']),'상담 비활성화',403)
+        t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(w['id'],token))
+        require(t,'상담 없음',404)
+        require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(w['id'],t['id'])),'응답 완료 후 다시 요청하세요.',409)
+        c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(w['id'],t['id']))
+        if not t['manual'] or not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='handoff' AND ref=?",(w['id'],t['id'])):
+            ops.event(c,w['id'],'handoff','고객의 담당자 연결 요청',t['id'])
+    return {'ok':True,'manual':True}
 @app.get('/api/session/{token}/messages')
 def messages(token:str):
     with db() as c:
@@ -508,10 +522,15 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 읽기 전용입니다.',409)
-        if 'manual' in body:c.execute('UPDATE thread SET manual=? WHERE id=?',(int(bool(body['manual'])),i))
+        if 'manual' in body:
+            require(type(body['manual']) is bool,'상담 방식 오류',422)
+            require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
+            c.execute('UPDATE thread SET manual=? WHERE id=?',(int(body['manual']),i))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
         if body.get('reply'):
             require(t['kind'] in ('public','test'),'외부 채널 직접 답변은 연결 승인 및 발송 검증 후 이용할 수 있습니다.',409)
+            require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 답변하세요.',409)
+            c.execute('UPDATE thread SET manual=1 WHERE ws=? AND id=?',(ws,i))
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
     return {'ok':True}
 @app.get('/api/unknown')

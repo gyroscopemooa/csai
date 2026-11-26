@@ -9,6 +9,7 @@ def init():
         c.executescript("""
         CREATE TABLE IF NOT EXISTS model_usage_brand(usage_id TEXT PRIMARY KEY,ws TEXT NOT NULL,agent TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS quality_rating(ws TEXT NOT NULL,thread TEXT NOT NULL,score INTEGER NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE TABLE IF NOT EXISTS business_rating(ws TEXT NOT NULL,thread TEXT NOT NULL,score INTEGER NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS private_brand_note(id TEXT PRIMARY KEY,ws TEXT NOT NULL,agent TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS feature_draft(ws TEXT NOT NULL,agent TEXT NOT NULL,feature TEXT NOT NULL,config TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,agent,feature));
         """)
@@ -70,7 +71,8 @@ def register(app,ident):
                     groups[key]['count']+=1
             ratings=one(c,"SELECT COUNT(*) n,AVG(r.score) average FROM quality_rating r JOIN thread t ON t.ws=r.ws AND t.id=r.thread JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE r.ws=? AND COALESCE(v.agent,'')=? AND r.created>=?",args+(since,))
             staff=rows(c,"SELECT t.id,t.created"+scope+" AND EXISTS(SELECT 1 FROM message m WHERE m.ws=t.ws AND m.thread=t.id AND m.role='staff' AND m.created>=?) ORDER BY t.created DESC LIMIT 50",args+(since,))
-            return {'days':30,'threads':counts['n'],'resolved':counts['resolved'],'manual':counts['manual'],'unknown_count':len(unknown),'unknown_count_capped':len(unknown)==1000,'suggestions':sorted(groups.values(),key=lambda x:-x['count'])[:20],'ratings':ratings,'staff_threads':staff,'knowledge':{'faq':len(pub.get('faq',[])),'rules':len(pub.get('rules',[]))}}
+            business_ratings=one(c,"SELECT COUNT(*) n,AVG(r.score) average FROM business_rating r JOIN thread t ON t.ws=r.ws AND t.id=r.thread JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE r.ws=? AND COALESCE(v.agent,'')=? AND r.created>=?",args+(since,))
+            return {'business_ratings':business_ratings,'days':30,'threads':counts['n'],'resolved':counts['resolved'],'manual':counts['manual'],'unknown_count':len(unknown),'unknown_count_capped':len(unknown)==1000,'suggestions':sorted(groups.values(),key=lambda x:-x['count'])[:20],'ratings':ratings,'staff_threads':staff,'knowledge':{'faq':len(pub.get('faq',[])),'rules':len(pub.get('rules',[]))}}
     @app.post('/api/quality/staff-source')
     def batch(body:dict,ws=Depends(ident)):
         require(body.get('consent') is True,'교육 자료 이용 확인 필요',422)
@@ -78,13 +80,14 @@ def register(app,ident):
             agent=body.get('agent','');owned(c,ws,agent);return staff_batch(c,ws,agent,body.get('threads'))
     @app.post('/api/customer/feedback')
     def feedback(body:dict):
-        score=body.get('score');require(type(score) is int and 1<=score<=5,'평가 점수 오류',422)
+        score=body.get('score');business=body.get('business_score');require(score is not None or business is not None,'평가 점수 필요',422);require(all(type(x) is int and 1<=x<=5 for x in (score,business) if x is not None),'평가 점수 오류',422)
         token=bounded(body.get('token',''),100);limit('feedback:'+token,5,60)
         with db(True) as c:
             v=visitor(c,token,kind='public');t=one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(v['ws'],token))
             require(t and one(c,"SELECT id FROM message WHERE ws=? AND thread=? AND role IN ('staff','assistant')",(v['ws'],t['id'])),'평가할 답변이 없습니다.',409)
             require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(v['ws'],t['id'])),'샘플 평가 불가',409)
-            c.execute('INSERT INTO quality_rating VALUES(?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET score=excluded.score,created=excluded.created',(v['ws'],t['id'],score,now()))
+            if score is not None:c.execute('INSERT INTO quality_rating VALUES(?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET score=excluded.score,created=excluded.created',(v['ws'],t['id'],score,now()))
+            if business is not None:c.execute('INSERT INTO business_rating VALUES(?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET score=excluded.score,created=excluded.created',(v['ws'],t['id'],business,now()))
         return {'ok':True}
     @app.get('/api/quality/training/{job}/compare')
     def training_compare(job:str,ws=Depends(ident)):
