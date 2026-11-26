@@ -1,6 +1,6 @@
-# Date range and star rating follow-up
-- Original DesignBookmark source and tokens were inaccessible in this environment. Local CSS fallback only; replace with verified source motion after obtaining HTML/CSS/JS and shared tokens/base/motion. Do not claim original spring matching.
-- Calendar: single-day or inclusive range, reverse order selection, cross-month input, existing status filter and pending list. Range is a read-only filter, not a multi-day reservation.
-- Public chat: optional consultation satisfaction and overall business/product satisfaction (not a specific SKU). Native radio inputs, reduced-motion support, separate tables, upsert per conversation, no AI charge. Private aggregate in existing improvement panel. "Finish/evaluate" does not close the thread.
-- Explicit customer handoff requests, no AI quota for manual replies; blocked while AI response is running. Owner reply switches conversation to staff mode. Actual external notifications still require validated provider.
-- Runtime/browser tests not executed here. No production deployment.
+# DesignBookmark motion integration
+User supplied full standalone HTML source for Date Range and Star Rating (https://designbookmark.com/motion).
+- Date Range: actual business dates, no demo autoplay or disabled historical days; inclusive range selection, hover/drag preview, 0.19s fade-in/out with original cubic curves, clipped endpoint circles, spring month slide (420/41), height (260/24), rollers (420/32). Preserve calendar booking counts, statuses, date filters and manual booking.
+- Star Rating: original path, fill 300/24, pop 520/13, text roll 260/22, 50ms per-star stagger, pointer hover and committed selection; separate ratings and explicit submission. Native keyboard radios, no demo autoplay.
+- Shared physics uses original semi-implicit integration and four substeps, stops at rest/unmount; reduced motion snaps. Scope styles and remove demo global theme/parent-message/autoplay code. CSAI blue for range, original yellow for ratings, existing system font and radii.
+- Browser/production verification remains required. No production deployment.

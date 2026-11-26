@@ -34,6 +34,8 @@ jobs:
       - name: Check browser scripts
         run: |
           node --check web/app.js
+          node --check web/db-motion.js
+          node tests/test_db_motion.js
           node --check web/setup-guide.js
           node --check web/memory-preview-worker.js
           node --check web/widget.js

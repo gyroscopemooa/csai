@@ -1,0 +1,22 @@
+/* Scoped DesignBookmark motion adaptation; CSAI typography and palette. */
+.db-calendar{--db-range-fill:#eaf3ff;--db-range-dot:var(--blue,#3182f6);min-width:0;padding:4px 0}
+.db-calendar-head,.db-calendar-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px;min-height:36px}
+.db-calendar-title{font-weight:700;font-size:15px}.db-calendar-nav{display:flex;gap:6px}.db-calendar-nav button{display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;border-radius:50%;background:#f2f4f6;color:var(--ink)}
+.db-calendar-nav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.db-calendar-week{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:12px;color:var(--muted);margin:12px 0 4px;height:20px}
+.db-calendar-view{position:relative;overflow:hidden;touch-action:none;user-select:none;min-width:0;will-change:height}
+.db-calendar-month{position:absolute;left:0;top:0;width:100%;will-change:transform,opacity}
+.db-calendar-layer{position:absolute;inset:0;pointer-events:none}
+.db-calendar-band{position:absolute;left:0;top:0;height:36px;background:var(--db-range-fill);will-change:transform,width,opacity}
+.db-calendar-dot{position:absolute;left:0;top:0;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:50%;background:var(--db-range-dot);color:white;display:grid;place-items:center;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;will-change:transform,clip-path;visibility:hidden}
+.db-calendar-day{position:absolute;left:0;top:0;display:flex;flex-direction:column;justify-content:center;align-items:center;height:40px;min-height:40px;padding:0;background:transparent;border:0;border-radius:0;color:var(--ink);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.1;transition:color .19s cubic-bezier(.55,.055,.675,.19)}
+.db-calendar-day.in-range{color:#236fde;transition-timing-function:cubic-bezier(.215,.61,.355,1)}.db-calendar-day small{font-size:9px;color:var(--blue);line-height:1.15}.db-calendar-day:focus-visible{outline:2px solid var(--blue);outline-offset:-2px;z-index:2}
+.db-calendar-foot{margin-top:10px;font-size:13px}.db-calendar-chip{height:28px;padding:0 12px;border-radius:999px;background:#e7f6ee;color:#16805b;font-weight:700;font-size:12px;align-items:center}
+.db-roll{display:inline-grid;overflow:hidden}.db-roll span{grid-area:1/1;white-space:nowrap;will-change:transform,opacity,filter}
+.db-rating{--db-star-yellow:#ffd23f;--db-star-empty:#e5e8eb;min-width:0;padding:22px 16px;border:0;border-radius:20px;background:#f7f8fa;text-align:center;margin:12px 0}
+.db-rating legend{font-weight:650;font-size:15px;padding:0 6px}.db-rating p{margin:0}.db-stars{display:flex;justify-content:center;gap:6px;margin:16px 0 12px}
+.db-star{width:40px;height:40px;display:grid;place-items:center;position:relative;cursor:pointer;border-radius:12px;flex:0 1 40px}
+.db-star input{position:absolute;inset:0;opacity:0;width:100%;height:100%;margin:0;padding:0;cursor:pointer}.db-star:focus-within{outline:2px solid var(--blue);outline-offset:2px}.db-star svg{width:34px;height:34px;pointer-events:none;will-change:transform}.db-star path{fill:var(--db-star-empty);stroke:none}
+.db-rating-word{height:20px;overflow:hidden}.db-rating-col{display:flex;flex-direction:column;will-change:transform}.db-rating-col b{display:block;height:20px;line-height:20px;font-size:14px;font-weight:500;color:var(--muted)}
+.db-rating-clear{display:block;margin:8px auto 0;padding:4px 8px;min-height:28px;background:transparent;font-size:12px;color:var(--muted)}.db-motion-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.db-calendar-day{transition:none}}
