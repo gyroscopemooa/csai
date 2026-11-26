@@ -264,14 +264,14 @@ def delete_file(i:str,ws=Depends(ident)):
     return {'ok':True}
 @app.post('/api/training/estimate')
 def estimate(body:dict,ws=Depends(ident)):
-    text=bounded(body.get('text',''),30000);images=[];ids=body.get('files',[]);require(isinstance(ids,list) and len(ids)<=10,'최대 10개 파일',422)
+    guidance=bounded(body.get('text',''),30000);conversation=bounded(body.get('conversation',''),30000);text=('기존 고객 상담 기록 (고객 발화는 질문, 업체 답변은 응대 예시):\n'+conversation) if conversation else '';images=[];ids=body.get('files',[]);require(isinstance(ids,list) and len(ids)<=10,'최대 10개 파일',422)
     with db(True) as c:
         w=getw(c,ws);agent_id=body.get('agent','');require(isinstance(agent_id,str),'상담원 형식 오류',422)
         if agent_id:require('extra_agent' in entitlements(w) and one(c,'SELECT id FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)),'추가 상담원 권한 또는 정보 없음',403)
         for i in dict.fromkeys(ids):
             f=one(c,'SELECT * FROM file WHERE id=? AND ws=?',(i,ws));require(f,'파일 없음',404);text+='\n'+f['name']+'\n'+f['content'];images+=loads(f['images'])
-        require((text.strip() or images) and len(text)<=60000 and len(images)<=8,'교육 자료 없음 또는 한도 초과',422)
-        text=ai.clean(text);n=ai.estimate(text,images);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',n,0,dump({'text':text,'images':images,'agent':agent_id}),None,now()))
+        require((guidance or text.strip() or images) and len(guidance)+len(text)<=60000 and len(images)<=8,'교육 자료 없음 또는 한도 초과',422)
+        text=ai.clean(text);guidance=ai.clean(guidance);n=ai.estimate(guidance+'\n'+text,images);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',n,0,dump({'text':text,'guidance':guidance,'images':images,'agent':agent_id}),None,now()))
         t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
         return {'id':i,'maxCredits':n,'credits':credits,'enough':credits>=n}
 @app.post('/api/training/{i}/run')
@@ -284,7 +284,7 @@ def train(i:str,ws=Depends(ident)):
         except ValueError as e:fail(402,str(e))
         c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));s=loads(w['settings']);s.update(loads(agent['settings']) if agent else {})
     try:
-        result,n=ai.train(source['text'],source['images'],s);require(type(n)==int and 0<=n<=j['estimate'],'교육 비용 상한 초과 또는 형식 오류',409)
+        result,n=ai.train(source['text'],source['images'],s,source.get('guidance',''));require(type(n)==int and 0<=n<=j['estimate'],'교육 비용 상한 초과 또는 형식 오류',409)
     except Exception as e:
         with db(True) as c:
             settle_education(c,ws,i,0);c.execute('UPDATE training SET state=\'failed\' WHERE id=?',(i,))

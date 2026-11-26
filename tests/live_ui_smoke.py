@@ -33,6 +33,12 @@ with sync_playwright() as pw:
         desktop.locator("#policy-" + key).check()
     desktop.get_by_role("button", name="확인하고 계속하기").click()
     desktop.get_by_role("heading", name="AI 교육시키기").wait_for()
+    desktop.get_by_role("button", name="AI 티 안 나게").click()
+    assert "AI 티가 나지 않게" in desktop.locator("#training-text").input_value()
+    desktop.locator("#training-conversation").fill("고객: 예약 가능한가요?\n나: 날짜 알려주시면 확인해드릴게요.")
+    desktop.get_by_role("button", name="교육 비용 확인").click()
+    desktop.locator("#estimate .banner").wait_for()
+    desktop.screenshot(path=str(OUT / "live_education_desktop.png"), full_page=True)
     desktop.locator(".app-sidebar").get_by_role("button", name="통합 상담함").click()
     desktop.get_by_role("heading", name="통합 상담함").wait_for()
     assert desktop.locator("#inbox-kind").count() == 1
@@ -108,6 +114,9 @@ with sync_playwright() as pw:
         mobile.locator("#policy-" + key).check()
     mobile.get_by_role("button", name="확인하고 계속하기").click()
     mobile.get_by_role("heading", name="AI 교육시키기").wait_for()
+    assert mobile.locator("#training-conversation").count() == 1
+    assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    mobile.screenshot(path=str(OUT / "live_education_mobile.png"), full_page=True)
     mobile.get_by_role("button", name="메뉴 열기").click()
     mobile.locator(".app-sidebar").get_by_role("button", name="통합 상담함").click()
     mobile.get_by_role("heading", name="통합 상담함").wait_for()

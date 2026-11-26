@@ -139,3 +139,9 @@
 .inbox-scope{margin:10px 0 0!important;color:#6b7684;font-size:12px}
 .inbox-scope button{min-height:0;padding:0;margin-left:8px;background:none;color:#3182f6;font-size:12px}
 @media(max-width:640px){.inbox-filter{grid-template-columns:1fr 80px}.inbox-filter select{grid-column:1/-1}.inbox-filter button{width:100%}}
+.training-examples{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:18px 0 10px}
+.training-examples span{width:100%;font-weight:700;color:#333d4b}
+.training-examples button{min-height:34px;padding:7px 11px;border-radius:999px;background:#edf4ff;color:#2175e3;font-size:12px}
+.training-conversation{margin:18px 0 14px;padding-top:14px;border-top:1px solid #e8edf2}
+.training-conversation textarea,#training-text{min-height:132px;resize:vertical}
+.training-conversation .muted{margin-top:7px}

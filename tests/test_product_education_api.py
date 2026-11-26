@@ -2,6 +2,7 @@ from test_app import owner, post, patch, TestClient, app, teach
 import io, zipfile, socket
 import ai
 import education_url
+from store import db, one, loads
 
 def test_paid_prompt_cannot_be_changed_directly():
     c=owner()
@@ -14,6 +15,20 @@ def test_paid_prompt_cannot_be_changed_directly():
     assert c.get('/api/me').json()['published']=={}
     post(c,'/api/training/'+q['id']+'/publish',{})
     assert c.get('/api/me').json()['published']['faq']
+
+def test_owner_guidance_and_pasted_conversation_are_separate_training_inputs():
+    c=owner()
+    job=post(c,'/api/training/estimate',{'text':'이모지 사용 금지. 짧고 자연스럽게 답해줘.','conversation':'고객: 예약 가능한가요?\n나: 날짜 알려주시면 확인해드릴게요.'})
+    with db() as d:
+        source=loads(one(d,'SELECT source FROM training WHERE id=?',(job['id'],))['source'])
+    assert source['guidance'].startswith('이모지 사용 금지')
+    assert '고객: 예약 가능한가요?' in source['text']
+    assert '이모지 사용 금지' not in source['text']
+    before=c.get('/api/me').json()['credits']
+    result=post(c,'/api/training/'+job['id']+'/run',{})
+    assert result['result']['style'].startswith('이모지 사용 금지')
+    assert c.get('/api/me').json()['credits']==before-result['cost']
+    assert c.post('/api/training/estimate',json={'conversation':'x'*30001}).status_code==422
 
 def test_additional_agent_teaching_cannot_bypass_credits():
     c=owner()
