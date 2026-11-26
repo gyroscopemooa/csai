@@ -49,7 +49,7 @@ def brand_settings(w,a):
     return s
 
 def brand_view(w,a):
-    return dict(a,settings=brand_settings(w,a),faq=loads(a['faq']),published=loads(a['published']),available=agent_allowed(w,a))
+    s=brand_settings(w,a);s.update(appearance(w,s));return dict(a,settings=s,faq=loads(a['faq']),published=loads(a['published']),available=agent_allowed(w,a))
 
 def resolve(c,slug):
     w=one(c,'SELECT * FROM workspace WHERE slug=?',(slug,))
@@ -72,13 +72,13 @@ def merged(c,w,v):
 
 def unique_slug(c,slug):return not (one(c,'SELECT id FROM workspace WHERE slug=?',(slug,)) or one(c,'SELECT alias FROM brand_alias WHERE alias=?',(slug,)) or one(c,'SELECT id FROM agent_profile WHERE slug=?',(slug,)))
 @app.get('/api/appearance')
-def get_appearance(ws=Depends(ident)):
+def get_appearance(agent:str='',ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);s=loads(w['settings']);a=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,));return appearance(w,s)|{'alias':a['alias'] if a else ''}
+        w=getw(c,ws);profile=owned_agent(c,w,agent);s=brand_settings(w,profile);a=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,)) if not profile else None;return appearance(w,s)|{'alias':a['alias'] if a else ''}
 @app.post('/api/appearance')
 def set_appearance(body:dict,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);s=loads(w['settings']);a=entitlements(w)
+        w=getw(c,ws);profile=owned_agent(c,w,body.get('agent',''));s=loads(profile['settings'] if profile else w['settings']);a=entitlements(w)
         if 'logo' in body:
             data=bounded(body['logo'],600000)
             if data:
@@ -93,11 +93,12 @@ def set_appearance(body:dict,ws=Depends(ident)):
             if key in body:require('design' in a);require(isinstance(body[key],str) and body[key] in choices,'디자인 옵션 오류',422);s[key]=body[key]
         if 'unbrand' in body:require('unbrand' in a);s['unbrand']=body['unbrand'] is True
         if 'alias' in body:
-            require('custom_url' in a);alias=bounded(body['alias'],48).lower();old=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,))
+            require(not profile,'브랜드별 별칭 연동 준비 중',409);require('custom_url' in a);alias=bounded(body['alias'],48).lower();old=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,))
             if alias:
                 require(re.fullmatch(r'[a-z0-9][a-z0-9-]{2,47}',alias),'3~48자 영문 소문자·숫자·하이픈',422);require(old and old['alias']==alias or unique_slug(c,alias),'이미 사용 중인 주소',409);c.execute('INSERT INTO brand_alias VALUES(?,?) ON CONFLICT(ws) DO UPDATE SET alias=excluded.alias',(alias,ws))
             else:c.execute('DELETE FROM brand_alias WHERE ws=?',(ws,))
-        c.execute('UPDATE workspace SET settings=? WHERE id=?',(dump(s),ws))
+        if profile:c.execute('UPDATE agent_profile SET settings=? WHERE ws=? AND id=?',(dump(s),ws,profile['id']))
+        else:c.execute('UPDATE workspace SET settings=? WHERE id=?',(dump(s),ws))
     return {'ok':True}
 @app.get('/api/agents/list')
 def agent_list(ws=Depends(ident)):
@@ -119,6 +120,8 @@ def agent_save(body:dict,ws=Depends(ident)):
         s={k:bounded(body.get(k,previous.get(k,'')),1500) for k in ['brand','tone','welcome','fallback','notice','price','location','hours']}
         s['prompt']=previous.get('prompt',DEFAULT['prompt']);require('prompt' not in body or body['prompt']==s['prompt'],'상담 지침은 AI 교육에서 변경하세요.',422);require(s['brand'] and s['welcome'],'상담원 이름 및 인사말 필요',422)
         s['emoji']=body.get('emoji',previous.get('emoji')) is True
+        for key in ('logo','color','theme','density','bubble_radius','unbrand'):
+            if key in previous:s[key]=previous[key]
         links=body.get('links',previous.get('links',[]));require(isinstance(links,list) and len(links)<=10,'판매처 최대 10개',422);s['links']=[]
         from urllib.parse import urlsplit
         for link in links:
