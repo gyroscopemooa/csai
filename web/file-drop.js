@@ -12,7 +12,7 @@
       if (!zone.isConnected) return;
       const active = zone.matches(':hover, :focus-visible, .dragging');
       state.hover.t = active ? 1 : 0;
-      state.circle.t = zone.classList.contains('success') ? 1.12 : active ? 1.08 : 1;
+      state.circle.t = zone.classList.contains('success') ? 1.16 : zone.classList.contains('selected') ? 1.1 : active ? 1.13 : 1;
       state.icon.t = zone.classList.contains('uploading') ? .8 : 1;
       state.progress.t = zone.classList.contains('uploading') ? 1 : 0;
       state.ring.t = zone.classList.contains('uploading') ? 1 : 0;
