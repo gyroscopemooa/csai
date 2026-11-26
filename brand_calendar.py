@@ -81,6 +81,10 @@ def register(app,ident):
     def edit(agent:str,i:str,body:dict,ws=Depends(ident)):
         with db(True) as c:
             w=access(c,ws,agent);b=one(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND id=?',(ws,agent,i));require(b,'일정 없음',404);s=config(c,ws,agent);action=body.get('action')
+            if action in ('approve','change'):
+                require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent)),'보관된 브랜드입니다.',409)
+                require(not trial(c,w),'초청 체험의 추가 브랜드 일정은 준비 중입니다.',409)
+                require(b['resource'] in [r['id'] for r in s['resources']],'담당자가 변경되었습니다.',409)
             if action=='approve':
                 require(b['status']=='pending_payment' and body.get('paid') is True,'외부 결제 확인 필요',409);require(b['version']==s['template_version'] and datetime.fromisoformat(b['start'])>datetime.now(timezone.utc) and available(c,ws,agent,b['start'],b['end'],s['buffer'],b['resource'],i),'일정 충돌·만료 또는 설정 변경',409)
                 c.execute("UPDATE brand_booking SET status='confirmed',paid=1 WHERE ws=? AND agent=? AND id=?",(ws,agent,i))
