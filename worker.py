@@ -6,15 +6,24 @@ from store import DEMO
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
 
 def tick_once():
-    if os.getenv('ENABLE_AUTO_MESSAGES')=='1':message_notifications.tick()
-    if os.getenv('ENABLE_AUTO_DOMAINS')=='1':domains.tick()
-    if os.getenv('ENABLE_AUTO_PUSH')=='1':push_notifications.tick()
-    if os.getenv('ENABLE_AUTO_REPORTS')=='1':reporting.tick()
-    if os.getenv('ENABLE_AUTO_EMAIL')=='1':notifications.tick()
-    if os.getenv('ENABLE_AUTO_CALENDAR')=='1':google_calendar.tick()
+    # Independent integrations must not starve the rest of the worker when one fails.
+    jobs=[
+        ('ENABLE_AUTO_MESSAGES',message_notifications.tick),
+        ('ENABLE_AUTO_DOMAINS',domains.tick),
+        ('ENABLE_AUTO_PUSH',push_notifications.tick),
+        ('ENABLE_AUTO_REPORTS',reporting.tick),
+        ('ENABLE_AUTO_EMAIL',notifications.tick),
+        ('ENABLE_AUTO_CALENDAR',google_calendar.tick),
+    ]
+    for flag,job in jobs:
+        if os.getenv(flag)!='1':continue
+        try:job()
+        except Exception as exc:logging.error('%s failed: %s',flag,type(exc).__name__)
     if channel_live.enabled():
-        for _ in range(10):
-            if not channel_live.process_one():break
+        try:
+            for _ in range(10):
+                if not channel_live.process_one():break
+        except Exception as exc:logging.error('Channel processing failed: %s',type(exc).__name__)
 
 def loop(stop=None):
     logging.info('Worker started. demo=%s auto_email=%s channels=%s',DEMO,os.getenv('ENABLE_AUTO_EMAIL')=='1',channel_live.enabled())
