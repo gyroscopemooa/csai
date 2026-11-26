@@ -23,3 +23,11 @@
 - `node --check web/app.js`: PASS.
 - `python tests/browser_check.py`: PASS, 26 captures, no page errors. The 390px mobile viewport and booking prefill path were exercised through the ASGI test bridge.
 - The Cloudflare Container project type check completed. Image deployment was not performed from this computer because Docker CLI/Desktop is not installed; production external integrations remain intentionally unverified.
+
+## 채팅·메뉴 UI 재검증 (2026-11-26)
+- 로컬 주소와 서버 허용 Origin을 모두 `http://127.0.0.1:3000`으로 맞춰 브라우저 채팅의 403 오류를 수정했습니다.
+- `python -m pytest -q`: **40 passed**. `node --check web/app.js`: PASS.
+- `python tests/browser_check.py`: PASS, 26개 화면, JavaScript 페이지 오류 0개.
+- `python tests/live_ui_smoke.py`: 실제 localhost HTTP로 데스크톱 채팅 전송, 사이드바 이동, 채팅창 크기 변경, 390px 모바일 입력, 무료 계정의 업체 이미지 업로드·표시를 확인했습니다. 결과: `live_ui_smoke.json`.
+- 다른 사이트의 Origin으로 보낸 변경 요청은 403, 허용 Origin의 미인증 요청은 401로 확인했습니다.
+- 외부 OAuth 및 Cloudflare 배포 후의 로그인·AI 응답은 이 로컬 검증 범위에 포함되지 않습니다.

@@ -1,0 +1,106 @@
+/* CS AI management and chat surfaces. The menu structure follows the reference
+   while the colors and controls use the product's existing light palette. */
+.ui-icon{display:inline-block;width:17px;height:17px;flex:none;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}
+.layout{grid-template-columns:252px minmax(0,1fr)}
+.layout .app-sidebar{position:sticky;top:12px;height:calc(100dvh - 24px);margin:12px 0 12px 12px;padding:16px 12px;background:#fff;color:#191f28;border:1px solid #e5e8eb;border-radius:20px;box-shadow:0 4px 20px #191f2808;overflow:hidden}
+.app-sidebar nav{flex:1;min-height:0;overflow-y:auto}
+.app-sidebar .sidebar-brand{color:#191f28;padding:4px 10px 14px}
+.app-sidebar .sidebar-tenant{display:block;margin:0 4px 12px;padding:12px 10px 15px;border-bottom:1px solid #edf0f2}
+.sidebar-tenant strong{font-size:13px;color:#191f28}
+.sidebar-tenant small{font-size:11px;color:#8b95a1}
+.nav-group{margin:3px 0 12px}
+.nav-title{font-size:11px;font-weight:700;color:#8b95a1;padding:8px 11px 5px}
+.app-sidebar nav button{min-height:39px;padding:9px 10px;margin:2px 0;background:transparent;color:#4e5968;border-radius:11px;font-size:12px;font-weight:600;gap:10px}
+.app-sidebar nav button:hover{background:#f4f7fa;color:#191f28}
+.app-sidebar nav button.active,.app-sidebar nav button.active:hover{background:#eaf3ff;color:#2175e3}
+.app-sidebar nav button .ui-icon{width:16px;height:16px}
+.sidebar-bottom{flex:none;background:#fff;border-top:1px solid #edf0f2;padding:12px 7px 4px}
+.usage-label{color:#6b7684;font-size:11px}
+.usage-label b{color:#191f28;font-size:11px}
+.usage-track{background:#edf1f5}
+.sidebar-trial{color:#6b7684}
+.app-sidebar .usage-link,.app-sidebar .sidebar-logout{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:36px;margin:8px 0 0;padding:7px 10px;background:#f3f5f7;border:0;border-radius:11px;color:#4e5968;font-size:11px;font-weight:650;text-align:center}
+.app-sidebar .usage-link:hover,.app-sidebar .sidebar-logout:hover{background:#e9f2ff;color:#2175e3}
+.app-sidebar .sidebar-logout{margin-top:6px}
+.app-sidebar .usage-link .ui-icon,.app-sidebar .sidebar-logout .ui-icon{width:14px;height:14px}
+.phone{width:min(100%,430px);height:680px;min-width:320px;min-height:520px;max-width:560px;max-height:880px;background:#fff;color:#191f28;border:1px solid #dde4ec;border-radius:22px;box-shadow:0 12px 34px #191f2814}
+.phone.is-resizable{resize:both}
+.phone-head{gap:11px;background:#fff;color:#191f28;padding:14px 16px;border-bottom:1px solid #edf0f2}
+.phone-head .avatar,.phone .avatar{display:grid;place-items:center;width:38px;height:38px;flex:none;border-radius:50%;background:var(--chat-color,#3182f6);color:#fff;font-size:11px;font-weight:750}
+.phone .avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.phone-identity strong{font-size:14px;font-weight:750}
+.chat-online{color:#8b95a1;font-size:11px}
+.chat-online span{background:#30c66b}
+.phone .notice{background:#fff;color:#4e5968;padding:0 15px}
+.phone .notice details{border-bottom:1px solid #edf0f2}
+.phone .notice summary{list-style:none;display:flex;align-items:center;gap:8px;padding:11px 0;font-size:12px;font-weight:650}
+.phone .notice summary::-webkit-details-marker{display:none}
+.phone .notice summary .ui-icon{margin-left:auto;width:14px;height:14px;transition:transform .2s}
+.phone .notice details[open] summary .ui-icon{transform:rotate(180deg)}
+.phone .notice p{color:#6b7684}
+.phone .notice a{color:#2175e3}
+.phone .messages{min-height:0;background:#f7f9fc;color:#191f28;padding:16px;gap:10px}
+.phone .chat-day{text-align:center;color:#9aa4af;font-size:11px;margin:0 0 8px}
+.phone .chat-author{display:none}
+.phone .bubble{background:#fff;color:#191f28;border:1px solid #e9edf2;box-shadow:0 1px 3px #191f2805;padding:10px 13px;border-radius:16px 16px 16px 5px;max-width:86%;font-size:13px;line-height:1.55}
+.phone .bubble.user{background:var(--chat-color,#3182f6);border-color:transparent;color:#fff;padding:10px 13px;border-radius:16px 16px 5px 16px;max-width:86%;margin:0 0 0 auto}
+.phone .chat-bottom{background:#fff;border-top:1px solid #edf0f2;padding:10px 12px 8px}
+.phone .chat-suggestions{display:flex;gap:6px;flex-wrap:wrap;padding:0 0 9px}
+.phone .chat-suggestions button{background:#f2f6fb;color:#4e5968;border:1px solid #e6ecf3;border-radius:999px;padding:5px 10px;min-height:28px;font-size:11px;font-weight:600}
+.phone .chat-suggestions button:hover{background:#e8f2ff;color:#2175e3}
+.phone .compose{background:transparent;border:0;padding:0;gap:8px;align-items:flex-end}
+.phone .compose textarea{display:block;flex:1;width:100%;min-width:0;min-height:43px;height:43px;max-height:100px;overflow-y:auto;resize:none;background:#f7f9fc;color:#191f28;border:1px solid #e2e8f0;border-radius:15px;padding:10px 12px;font-size:14px;line-height:21px}
+.phone .compose textarea::placeholder{color:#9aa4af}
+.phone .compose button.primary{display:grid;place-items:center;width:42px;height:42px;min-width:42px;min-height:42px;border-radius:13px;padding:0;background:var(--chat-color,#3182f6);color:#fff}
+.phone .compose button.primary:hover{filter:brightness(.95);background:var(--chat-color,#3182f6)}
+.phone .compose button .ui-icon{width:18px;height:18px}
+.phone .chat-actions{display:flex;gap:6px;flex-wrap:wrap;padding-top:8px}
+.phone .chat-actions button{min-height:31px;padding:5px 9px;font-size:11px}
+.phone .phone-foot{padding:8px 0 0;color:#9aa4af;font-size:10px}
+.phone .resize-note{color:#9aa4af}
+.phone .chat-pending{background:#fff;color:#6b7684;border:1px solid #e9edf2}
+.phone .streaming-reply{background:#fff;color:#191f28;border:1px solid #e9edf2;border-radius:16px 16px 16px 5px}
+.public{background:#f4f6f8}
+.public .phone{width:min(100%,480px);height:min(780px,calc(100dvh - 32px));max-width:none;max-height:none;resize:none}
+.channel-panel,.channel-bundle{background:#fff;border:1px solid #e5e8eb;border-radius:20px;box-shadow:0 2px 8px #191f2805;padding:23px 26px;margin-bottom:14px}
+.channel-panel h2{margin-bottom:4px}
+.channel-intro{color:#6b7684;font-size:13px;margin-bottom:14px}
+.channel-item{display:flex;align-items:center;gap:14px;min-height:79px;padding:12px 0;border-top:1px solid #edf0f2}
+.channel-icon{display:grid;place-items:center;flex:none;width:42px;height:42px;border-radius:12px;background:#edf4ff;color:#2175e3;font-weight:800;font-size:17px}
+.channel-icon.naver{background:#03c75a;color:#fff}
+.channel-icon.kakao{background:#fee500;color:#24201b}
+.channel-icon.widget,.channel-icon.google_calendar,.channel-icon.external_api{background:#f2f5f8;color:#4e5968}
+.channel-icon img{width:22px;height:22px;object-fit:contain}
+.channel-info{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
+.channel-info strong{font-size:13px;color:#191f28}
+.channel-info span{font-size:12px;color:#6b7684}
+.channel-info small{font-size:11px;color:#4e5968}
+.channel-info small.included{color:#1aa564}
+.channel-action{flex:none;min-height:34px;padding:6px 12px;border:1px solid #e1e6eb;background:#fff;color:#4e5968;border-radius:10px;font-size:11px}
+.channel-action:hover{background:#f4f7fa}
+.channel-test{margin:-8px 0 9px 56px}
+.channel-test button{min-height:29px;padding:5px 9px;font-size:11px}
+.channel-bundle strong{display:block;font-size:14px}
+.channel-bundle p{margin:4px 0 2px}
+.channel-bundle b{font-size:19px}
+.channel-bundle s{color:#9aa4af;font-size:12px;margin-left:5px}
+.channel-bundle>span{display:block;color:#6b7684;font-size:12px;margin-bottom:13px}
+.channel-bundle button{width:100%;background:#eaf3ff;color:#2175e3}
+.logo-preview img{display:block;width:64px;height:64px;object-fit:cover;border-radius:50%;border:1px solid #e5e8eb;margin:7px 0}
+@media(max-width:700px){
+ .layout{grid-template-columns:1fr}
+ .layout .app-sidebar{position:relative;top:0;height:auto;margin:0;border:0;border-bottom:1px solid #e5e8eb;border-radius:0;padding:8px 12px;box-shadow:none}
+ .app-sidebar .sidebar-brand{padding:3px 4px}
+ .app-sidebar .mobile-toggle{display:grid;place-items:center;width:36px;height:36px;min-height:36px;background:#f2f5f8;color:#4e5968;border-radius:10px;padding:0}
+ .app-sidebar .sidebar-tenant,.app-sidebar nav,.app-sidebar .sidebar-bottom{display:none}
+ .app-sidebar.open .sidebar-tenant,.app-sidebar.open nav,.app-sidebar.open .sidebar-bottom{display:block}
+ .app-sidebar.open nav{max-height:50vh;overflow-y:auto}
+ .phone,.phone.is-resizable{min-width:0;width:100%;min-height:0;height:calc(100dvh - 230px);resize:none}
+ .phone .resize-note{display:none}
+ .public{padding:0}
+ .public .phone{width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0}
+ .channel-panel,.channel-bundle{padding:18px}
+ .channel-item{gap:9px}
+ .channel-icon{width:36px;height:36px}
+}
+@media(prefers-reduced-motion:reduce){.phone .notice summary .ui-icon{transition:none}}

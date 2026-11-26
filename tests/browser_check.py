@@ -6,12 +6,12 @@ from pathlib import Path
 from datetime import date,timedelta
 from urllib.parse import urlsplit
 ROOT=Path(__file__).resolve().parents[1];OUT=ROOT/'verification';OUT.mkdir(exist_ok=True)
-os.environ.update(DATA_DIR=tempfile.mkdtemp(prefix='csai-browser-'),DEMO_MODE='1',OPENAI_API_KEY='',APP_URL='http://127.0.0.1:8000');sys.path.insert(0,str(ROOT))
+os.environ.update(DATA_DIR=tempfile.mkdtemp(prefix='csai-browser-'),DEMO_MODE='1',OPENAI_API_KEY='',APP_URL='http://127.0.0.1:3000');sys.path.insert(0,str(ROOT))
 from fastapi.testclient import TestClient
 from app import app
 from playwright.sync_api import sync_playwright
 owner=TestClient(app);visitor=TestClient(app);errors=[];screens=[]
-css=(ROOT/'web/style.css').read_text(encoding='utf-8');js=(ROOT/'web/app.js').read_text(encoding='utf-8');scramble=(ROOT/'web/scramble.js').read_text(encoding='utf-8');word_roll=(ROOT/'web/word-roll.js').read_text(encoding='utf-8');roll_links=(ROOT/'web/roll-links.js').read_text(encoding='utf-8')
+css=(ROOT/'web/style.css').read_text(encoding='utf-8')+(ROOT/'web/ui-refinement.css').read_text(encoding='utf-8');js=(ROOT/'web/app.js').read_text(encoding='utf-8');scramble=(ROOT/'web/scramble.js').read_text(encoding='utf-8');word_roll=(ROOT/'web/word-roll.js').read_text(encoding='utf-8');roll_links=(ROOT/'web/roll-links.js').read_text(encoding='utf-8')
 # The application's exact DOM/rendering code runs in Chromium; only HTTP transport and public path are test adapters.
 bridge='''const sessionStorage={data:{},getItem(k){return this.data[k]||null},setItem(k,v){this.data[k]=v},removeItem(k){delete this.data[k]}};const fetch=async(path,opts={})=>{let r=await py_api(String(path),opts.method||'GET',opts.body||null);return {ok:r.status>=200&&r.status<300,status:r.status,json:async()=>r.body}};'''
 def page_content(page,c,public_slug=None):
@@ -40,9 +40,9 @@ with sync_playwright() as pw:
     for h,title in [('features','전체 기능 비교'),('credits','AI 교육 크레딧'),('addons','추가 기능 요금표'),('settings','설정'),('style','상담 스타일 설정'),('preview','채팅창 미리보기'),('channels','외부 채널 연동'),('customers','고객·업무 관리'),('alerts','알림 및 미학습 질문'),('inbox','상담 목록'),('calendar','일정표 보기'),('fields','맞춤 일정 등록 양식'),('booking-settings','예약 설정')]:
         nav(h,title)
         if h=='preview':
-            png=base64.b64encode(owner.get('/api/qr').content).decode();pg.locator('img').evaluate('(el,s)=>el.src=s','data:image/png;base64,'+png);pg.locator('#public-link').fill('http://127.0.0.1:8000/c/'+owner.get('/api/me').json()['slug'])
+            png=base64.b64encode(owner.get('/api/qr').content).decode();pg.locator('img').evaluate('(el,s)=>el.src=s','data:image/png;base64,'+png);pg.locator('#public-link').fill('http://127.0.0.1:3000/c/'+owner.get('/api/me').json()['slug'])
         if h in ['features','addons','preview','fields','channels','settings']:shot('screen_'+h)
-    s=owner.get('/api/me').json()['slug'];mp=b.new_page(viewport={'width':390,'height':844},device_scale_factor=1);page_content(mp,visitor,s);mp.get_by_text('테스트 스냅 고객센터').wait_for(timeout=5000);shot('07_mobile_chat',mp)
+    s=owner.get('/api/me').json()['slug'];mp=b.new_page(viewport={'width':390,'height':844},device_scale_factor=1);page_content(mp,visitor,s);mp.locator('.phone-identity strong').get_by_text('테스트 스냅',exact=True).wait_for(timeout=5000);shot('07_mobile_chat',mp)
     future=(date.today()+timedelta(days=3)).isoformat();mp.locator('#msg').fill(f'{future} 14:00 예약\n고객명: 김테스트\n장소: 해운대');mp.get_by_role('button',name='전송').click();mp.locator('#booking-time').wait_for(timeout=5000);assert mp.locator('#booking-name').input_value()=='김테스트';mp.wait_for_timeout(150);print('prefill',mp.locator('#booking-time').input_value(),flush=True);assert mp.locator('#booking-time').input_value()=='14:00';mp.get_by_role('button',name='예약 내용 확인').click();mp.get_by_role('heading',name='예약 내용 최종 확인').wait_for(timeout=5000);shot('08_mobile_confirm',mp);mp.get_by_role('button',name='확정 요청').click();mp.get_by_role('heading',name='확정',exact=True).wait_for(timeout=5000);shot('09_mobile_confirmed',mp)
     nav('calendar','일정표 보기');pg.evaluate('(d)=>{selectedDate=d;calendarMonth=new Date(d+"T12:00:00");render()}',future);pg.get_by_text('김테스트',exact=True).wait_for(timeout=5000);shot('10_calendar_confirmed');assert mp.evaluate('document.documentElement.scrollWidth<=innerWidth');pg.set_viewport_size({'width':390,'height':844});nav('education','AI 교육시키기');assert pg.evaluate('document.documentElement.scrollWidth<=innerWidth');shot('11_mobile_admin');
     pg.set_viewport_size({'width':1280,'height':900})
@@ -52,7 +52,7 @@ with sync_playwright() as pw:
     mp.on('dialog',lambda d:d.accept())
     mp.get_by_role('button',name='내 예약 확인').click();mp.get_by_role('button',name='복구 코드 발급').click();mp.locator('#recovery-issued').wait_for(timeout=5000);code=mp.locator('#recovery-issued').input_value();mp.locator('#recovery-issued').evaluate('(el)=>el.value="TEST-CODE-REDACTED"');shot('19_recovery_code',mp)
     mp.get_by_role('button',name='닫기',exact=True).click()
-    other=TestClient(app);mp2=b.new_page(viewport={'width':390,'height':844});page_content(mp2,other,s);mp2.get_by_text('테스트 스냅 고객센터').wait_for(timeout=5000);mp2.get_by_role('button',name='내 예약 확인').click();mp2.get_by_role('button',name='예약 불러오기').click();mp2.locator('#recovery-code').fill(code);mp2.get_by_role('button',name='예약 불러오기',exact=True).click();mp2.get_by_text('고객명: 김테스트',exact=True).wait_for(timeout=5000);shot('20_recovered_booking',mp2)
+    other=TestClient(app);mp2=b.new_page(viewport={'width':390,'height':844});page_content(mp2,other,s);mp2.locator('.phone-identity strong').get_by_text('테스트 스냅',exact=True).wait_for(timeout=5000);mp2.get_by_role('button',name='내 예약 확인').click();mp2.get_by_role('button',name='예약 불러오기').click();mp2.locator('#recovery-code').fill(code);mp2.get_by_role('button',name='예약 불러오기',exact=True).click();mp2.get_by_text('고객명: 김테스트',exact=True).wait_for(timeout=5000);shot('20_recovered_booking',mp2)
     mp2.on('dialog',lambda d:d.accept());mp2.get_by_role('button',name='복구 코드 발급').click();mp2.locator('#recovery-issued').wait_for(timeout=5000);back=mp2.locator('#recovery-issued').input_value();mp2.close();mp.get_by_role('button',name='내 예약 확인').click();mp.get_by_role('button',name='예약 불러오기').click();mp.locator('#recovery-code').fill(back);mp.get_by_role('button',name='예약 불러오기',exact=True).click();mp.get_by_text('고객명: 김테스트',exact=True).wait_for(timeout=5000);mp.get_by_role('button',name='닫기',exact=True).click()
     mp.get_by_role('button',name='내 예약 확인').click();mp.get_by_role('button',name='취소 요청',exact=True).click();mp.get_by_role('button',name='확인 및 요청').click();mp.get_by_text('취소 요청: 승인 대기',exact=True).wait_for(timeout=5000);shot('13_customer_change',mp);mp.get_by_role('button',name='닫기',exact=True).click()
     nav('calendar','일정표 보기');pg.get_by_role('button',name='승인',exact=True).click();pg.get_by_text('승인 완료',exact=True).wait_for(timeout=5000);shot('14_change_approved')

@@ -1,0 +1,9 @@
+{
+  "result": "PASS",
+  "direct_http": "http://127.0.0.1:3000",
+  "desktop_chat": true,
+  "sidebar_navigation": true,
+  "mobile_input": true,
+  "logo_upload": true,
+  "page_errors": []
+}
