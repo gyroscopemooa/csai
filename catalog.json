@@ -508,5 +508,11 @@
     "미학습 질문 확인",
     "관리자 직접 답변",
     "기본 자동·수동 설정"
-  ]
+  ],
+  "chatgpt_import": {
+    "id": "chatgpt_import",
+    "name": "ChatGPT 이전 이용권",
+    "price": 19900,
+    "one_time": true
+  }
 }
