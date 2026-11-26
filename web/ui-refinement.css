@@ -157,6 +157,9 @@
 .training-attachments,.training-more{margin-top:18px;border-top:1px solid #e8edf2;padding-top:16px}
 .training-attachments summary,.training-more summary{cursor:pointer;color:#246bd1;font-weight:700}
 .training-attachments .line{margin-top:12px}
+.training-credit-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin:16px 0;border-radius:14px;background:#f4f8ff;color:#263b58}
+.training-credit-summary strong{margin-left:8px;color:#2477ed;font-size:18px}
+.training-credit-summary small{display:block;margin-top:3px}
 @media(max-width:640px){.training-dialogue{padding:12px;min-height:240px;max-height:420px}.training-turn{max-width:94%}}
 .agent-guide>p{color:#4e5968}
 .agent-use-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
