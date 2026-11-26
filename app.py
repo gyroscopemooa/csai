@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse,RedirectResponse,HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from store import *
 import ai
+from policy_content import business_info
 app=FastAPI(title='CS AI local development',docs_url='/api/docs')
 RATE=defaultdict(deque); RATE_LOCK=threading.Lock()
 def limit(key,maximum=30,window=60):
@@ -140,7 +141,7 @@ def logout(req:Request):
     with db(True) as c:c.execute('DELETE FROM session WHERE token=?',(req.cookies.get('csai_session',''),))
     r=Response(status_code=204);r.delete_cookie('csai_session');return r
 @app.get('/api/config')
-def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(ai.KEY),'google_configured':bool(os.getenv('GOOGLE_CLIENT_ID') and os.getenv('GOOGLE_CLIENT_SECRET')),'train_model':ai.TRAIN,'chat_model':ai.CHAT,'catalog':CAT}
+def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(ai.KEY),'google_configured':bool(os.getenv('GOOGLE_CLIENT_ID') and os.getenv('GOOGLE_CLIENT_SECRET')),'train_model':ai.TRAIN,'chat_model':ai.CHAT,'catalog':CAT,'business':business_info()}
 @app.get('/api/me')
 def me(ws=Depends(ident)):
     with db() as c:

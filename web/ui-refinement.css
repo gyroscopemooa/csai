@@ -67,6 +67,9 @@
 .policy-links{display:flex;justify-content:center;flex-wrap:wrap;gap:8px 16px}
 .policy-links a{color:#4e5968;text-decoration:none}
 .policy-links a:hover{text-decoration:underline}
+.business-identity{display:flex;flex-wrap:wrap;justify-content:center;gap:5px 14px;max-width:900px;margin:22px auto 0;padding-top:16px;border-top:1px solid #e5e8eb;text-align:left;line-height:1.6}
+.business-identity strong{color:#333d4b}
+.business-pending{margin:18px 0 0!important;color:#8b95a1}
 .policy-consent{min-height:100dvh;display:grid;place-items:center;padding:20px;background:#f4f6f8}
 .policy-consent>.card{width:min(100%,520px);background:#fff}
 .policy-consent .brand{margin-bottom:20px;font-size:22px}
@@ -225,3 +228,12 @@
 .demo-view-select select{min-height:36px;padding:7px 9px;font-size:12px}
 .demo-view-select small{display:block;margin-top:6px;font-size:10px;line-height:1.4}
 @media(max-width:700px){.app-sidebar:not(.open) .demo-view-select{display:none}.demo-view-select{margin:8px 0}}
+.education-file-drop{--upload-progress:0%;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:178px;margin:14px 0 10px;padding:20px;border:2px dashed #d7e3f4;border-radius:20px;background:#f8fbff;color:#191f28;text-align:center;cursor:pointer;outline:none;transition:background .2s,border-color .2s,box-shadow .2s}
+.education-file-drop:hover,.education-file-drop.dragging,.education-file-drop:focus-visible{border-color:#3182f6;background:#eef6ff;box-shadow:0 0 0 4px #3182f615}
+.education-file-drop strong{font-size:15px;word-break:keep-all}.education-file-drop>span:nth-of-type(2){color:#6b7684;font-size:12px;word-break:keep-all}
+.file-drop-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#e8f3ff;color:#3182f6;will-change:transform}.file-drop-icon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.file-drop-icon .file-drop-check{display:none}
+.education-file-drop.success{border-style:solid;border-color:#6cc993;background:#f3fbf6}.education-file-drop.success .file-drop-icon{background:#dff5e7;color:#19a05b}.education-file-drop.success .file-drop-icon svg:first-child{display:none}.education-file-drop.success .file-drop-icon .file-drop-check{display:block}
+.education-file-drop.error{border-color:#ec8b8b;background:#fff8f8}.education-file-drop.uploading{cursor:progress}
+.file-drop-progress{display:none;width:min(240px,90%);height:4px;margin-top:6px;border-radius:9px;background:#e0e9f5;overflow:hidden}.education-file-drop.uploading .file-drop-progress{display:block}.file-drop-progress span{display:block;width:var(--upload-progress);height:100%;border-radius:9px;background:#3182f6;transition:width .16s}.education-file-drop.uploading[style*="100%"] .file-drop-progress span{width:100%}
+.file-drop-list{display:grid;gap:4px;margin:0 0 12px;padding:0;list-style:none}.file-drop-list li{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;border-radius:10px;background:#f5f8fc;color:#333d4b;font-size:12px}.file-drop-list li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-drop-list small{flex:none;color:#8b95a1}
+@media(prefers-reduced-motion:reduce){.education-file-drop,.file-drop-progress span{transition:none}.file-drop-icon{transform:none!important}}
