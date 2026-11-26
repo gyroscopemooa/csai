@@ -70,6 +70,22 @@ with sync_playwright() as pw:
     desktop.locator(".app-sidebar").get_by_role("button", name="AI 교육시키기").click()
     desktop.get_by_role("heading", name="AI 교육시키기").wait_for()
     desktop.get_by_role("heading", name="AI와 대화하며 교육하기").wait_for()
+    assert desktop.locator(".education-methods button").count() == 4
+    desktop.locator("#training-text").fill("교육 초안 보존 확인")
+    desktop.locator('[data-education-method="file"]').click()
+    assert desktop.locator("#training-materials").is_visible()
+    desktop.locator('[data-education-method="website"]').click()
+    assert desktop.locator("#education-url").is_visible()
+    assert not desktop.locator("#training-materials").is_visible()
+    desktop.locator("#education-url").fill("https://example.com")
+    desktop.locator('[data-education-method="memory"]').click()
+    assert desktop.locator("#memory-file").is_visible()
+    assert not desktop.locator("#training-text").is_visible()
+    desktop.locator('[data-education-method="direct"]').click()
+    assert desktop.locator("#training-text").input_value() == "교육 초안 보존 확인"
+    desktop.locator('[data-education-method="website"]').click()
+    assert desktop.locator("#education-url").input_value() == "https://example.com"
+    desktop.locator('[data-education-method="direct"]').click()
     desktop.locator("#training-text").fill("AI 티가 나지 않게 짧고 자연스럽게 답해줘. 이모지는 쓰지 마.")
     desktop.locator(".training-attachments summary").click()
     desktop.locator("#training-conversation").fill("고객: 예약 가능한가요?\n나: 날짜 알려주시면 확인해드릴게요.")
