@@ -53,6 +53,20 @@ def staff_batch(c,ws,agent,ids):
     text=ai.clean('\n\n'.join(parts));require(text and len(text)<=30000,'담당자 답변이 없거나 30,000자 초과',422)
     return {'text':text,'pairs':len(parts),'agent':agent}
 DRAFT_FIELDS={'calendar':['운영 시간','소요 시간'],'auto_booking':['승인 기준','소요 시간'],'crm':['수집 항목','처리 단계'],'quote':['견적 양식','승인 기준'],'widget':['배치 위치','첫 인사'],'design':['테마','색상'],'multilingual':['지원 언어']}
+def draft_candidate(feature,config,agent):
+    # Only known typed settings may be applied. No raw notes are interpreted as commands.
+    out={}
+    if feature=='design':
+        themes={'기본':'dark','토스형':'toss','메신저형':'messenger','프리미엄형':'premium','dark':'dark','toss':'toss','messenger':'messenger','premium':'premium'}
+        theme=config.get('테마','').strip();color=config.get('색상','').strip()
+        if theme in themes:out['theme']=themes[theme]
+        if re.fullmatch(r'#[0-9a-fA-F]{6}',color):out['color']=color
+    if feature=='calendar' and not agent:
+        hours=re.fullmatch(r'\s*((?:[01]\d|2[0-3]):[0-5]\d)\s*[-~–]\s*((?:[01]\d|2[0-3]):[0-5]\d)\s*',config.get('운영 시간',''))
+        duration=re.fullmatch(r'\s*(\d{1,3})\s*(?:분)?\s*',config.get('소요 시간',''))
+        if hours and hours[1]<hours[2]:out.update({'open':hours[1],'close':hours[2]})
+        if duration and 5<=int(duration[1])<=480:out['duration']=int(duration[1])
+    return out
 def register(app,ident):
     from app import require,bounded,visitor,limit
     @app.get('/api/quality/overview')
@@ -127,6 +141,32 @@ def register(app,ident):
         with db(True) as c:
             owned(c,ws,agent);c.execute('INSERT INTO feature_draft VALUES(?,?,?,?,?) ON CONFLICT(ws,agent,feature) DO UPDATE SET config=excluded.config,updated=excluded.updated',(ws,agent,feature,dump({k:ai.clean(v) for k,v in config.items()}),now()))
         return {'ok':True,'activated':False}
+    @app.get('/api/quality/ready-drafts')
+    def ready_drafts(agent:str='',ws=Depends(ident)):
+        with db() as c:
+            owned(c,ws,agent);w=getw(c,ws);rights=entitlements(w);out=[]
+            for r in rows(c,'SELECT feature,config,updated FROM feature_draft WHERE ws=? AND agent=? ORDER BY updated DESC',(ws,agent)):
+                if r['feature'] not in rights:continue
+                config=loads(r['config']);candidate=draft_candidate(r['feature'],config,agent)
+                out.append({'feature':r['feature'],'config':config,'candidate':candidate,'updated':r['updated']})
+            return out
+    @app.post('/api/quality/feature-draft/{feature}/apply')
+    def apply_draft(feature:str,body:dict,ws=Depends(ident)):
+        require(body.get('confirmed') is True,'설정 적용 확인 필요',422);agent=body.get('agent','')
+        with db() as c:
+            owned(c,ws,agent);w=getw(c,ws);require(feature in entitlements(w),'기능 구매 필요',403)
+            r=one(c,'SELECT config,updated FROM feature_draft WHERE ws=? AND agent=? AND feature=?',(ws,agent,feature));require(r and r['updated']==body.get('updated'),'초안이 변경되었습니다. 다시 확인하세요.',409)
+            candidate=draft_candidate(feature,loads(r['config']),agent)
+            require(candidate and candidate==body.get('candidate'),'자동 적용할 수 없는 설정입니다.',422)
+        # Existing endpoint validation and entitlements remain authoritative.
+        if feature=='design':
+            from branding import set_appearance
+            set_appearance(dict(candidate,agent=agent),ws)
+        elif feature=='calendar' and not agent:
+            from app import settings
+            settings(candidate,ws)
+        else:require(False,'수동 적용 필요',409)
+        return {'ok':True,'applied':candidate}
     @app.get('/api/quality/brand-metrics')
     def brand_metrics(ws=Depends(ident)):
         with db() as c:

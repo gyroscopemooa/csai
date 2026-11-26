@@ -4,4 +4,6 @@
 - Export approved knowledge and versions as JSON, no raw transcripts or file archive. Restore through existing versions; imported backups not yet supported.
 - Additional brand archive preserves data and billing, stops public chat; explicit restore then publish.
 - Same-device, explicit opt-in anonymous conversation continuation within the existing 24-hour visitor expiration; HttpOnly brand-scoped cookie. Forget starts a new conversation, does not delete owner history. No persistent identity or cross-device recognition.
-- Incomplete: brand-scoped bookings/CRM/external integration; draft-to-live configuration activation; authenticated customer identity/long-term memory; automatic external reminders and full cross-channel policy enforcement. Do not deploy until migrations and regression tests pass.
+- After sandbox subscription confirmation, purchased feature drafts can be reviewed and confirmed. Typed design color/theme and main calendar hours/duration supported; other settings remain manual, not guessed. Existing endpoints validate all live changes.
+- Optional ENABLE_AUTO_WORKFLOW_REMINDERS worker generates one internal event per unanswered customer message after 30 minutes, with existing new-alert entitlement and provider notification routing. Default off; real provider and worker tests pending.
+- Incomplete: full brand-scoped bookings/CRM/external integration; automatic activation of all feature drafts; authenticated long-term customer identity; full cross-channel policy enforcement. Do not deploy until migrations and regression tests pass.

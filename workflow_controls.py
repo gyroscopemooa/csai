@@ -26,6 +26,7 @@ def init():
         CREATE TABLE IF NOT EXISTS archived_brand(ws TEXT NOT NULL,agent TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS answer_issue(id TEXT PRIMARY KEY,ws TEXT NOT NULL,thread TEXT NOT NULL,message TEXT NOT NULL,agent TEXT NOT NULL,note TEXT NOT NULL,state TEXT NOT NULL,created INTEGER NOT NULL,UNIQUE(ws,message));
         CREATE TABLE IF NOT EXISTS answer_context(ws TEXT NOT NULL,message TEXT NOT NULL,agent TEXT NOT NULL,context TEXT NOT NULL,PRIMARY KEY(ws,message));
+        CREATE TABLE IF NOT EXISTS workflow_reminder(ws TEXT NOT NULL,message TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,message));
         """)
 init()
 def get_policy(c,ws,agent):
@@ -146,3 +147,20 @@ def register(app,ident):
             r=one(c,'SELECT agent,context FROM answer_context WHERE ws=? AND message=?',(ws,message))
             if not r:return {'available':False}
             owner_brand(c,ws,r['agent']);return {'available':True,'context':loads(r['context'])}
+
+
+def tick_reminders():
+    """Optional worker. One internal event per unanswered customer message."""
+    import ops,branding
+    with db(True) as c:
+        candidates=rows(c,"SELECT t.ws,t.id,t.visitor,m.id AS message,m.created FROM thread t JOIN message m ON m.ws=t.ws AND m.thread=t.id WHERE t.kind<>'test' AND t.status<>'resolved' AND m.role='user' AND m.created>=? AND m.created<=? AND m.rowid=(SELECT MAX(last.rowid) FROM message last WHERE last.ws=t.ws AND last.thread=t.id) AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id) AND NOT EXISTS(SELECT 1 FROM workflow_reminder r WHERE r.ws=t.ws AND r.message=m.id) ORDER BY m.created LIMIT 100",(now()-86400,now()-1800))
+        for r in candidates:
+            w=getw(c,r['ws'])
+            if not w or not public_access(w) or 'new_alert' not in entitlements(w):continue
+            v=one(c,'SELECT agent FROM visitor WHERE ws=? AND token=?',(r['ws'],r['visitor']))
+            if v and v['agent']:
+                a=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(r['ws'],v['agent']))
+                if not branding.agent_allowed(w,a) or not a['enabled']:continue
+            elif not w['enabled']:continue
+            cur=c.execute('INSERT INTO workflow_reminder VALUES(?,?,?) ON CONFLICT(ws,message) DO NOTHING',(r['ws'],r['message'],now()))
+            if cur.rowcount:ops.event(c,r['ws'],'unanswered','30분 이상 고객 답변 대기',r['id'])

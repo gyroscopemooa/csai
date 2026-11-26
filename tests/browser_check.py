@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app import app
 from playwright.sync_api import sync_playwright
 owner=TestClient(app);visitor=TestClient(app);errors=[];screens=[]
-css=(ROOT/'web/style.css').read_text(encoding='utf-8')+(ROOT/'web/ui-refinement.css').read_text(encoding='utf-8');js=(ROOT/'web/app.js').read_text(encoding='utf-8');scramble=(ROOT/'web/scramble.js').read_text(encoding='utf-8');word_roll=(ROOT/'web/word-roll.js').read_text(encoding='utf-8');roll_links=(ROOT/'web/roll-links.js').read_text(encoding='utf-8')
+css='\n'.join((ROOT/'web'/p).read_text(encoding='utf-8') for p in ['style.css','ui-refinement.css','setup-guide.css','db-motion.css']);js='\n'.join((ROOT/'web'/p).read_text(encoding='utf-8') for p in ['setup-guide.js','db-motion.js','app.js']);scramble=(ROOT/'web/scramble.js').read_text(encoding='utf-8');word_roll=(ROOT/'web/word-roll.js').read_text(encoding='utf-8');roll_links=(ROOT/'web/roll-links.js').read_text(encoding='utf-8')
 # The application's exact DOM/rendering code runs in Chromium; only HTTP transport and public path are test adapters.
 bridge='''const sessionStorage={data:{},getItem(k){return this.data[k]||null},setItem(k,v){this.data[k]=v},removeItem(k){delete this.data[k]}};const fetch=async(path,opts={})=>{let r=await py_api(String(path),opts.method||'GET',opts.body||null);return {ok:r.status>=200&&r.status<300,status:r.status,json:async()=>r.body}};'''
 def page_content(page,c,public_slug=None):

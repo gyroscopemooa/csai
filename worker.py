@@ -1,13 +1,14 @@
 """Single-process worker. Run separately or via the optional FastAPI lifespan, not both."""
 import time,os,logging
 import app
-import notifications,channel_live,google_calendar,reporting,push_notifications,domains,message_notifications
+import notifications,channel_live,google_calendar,reporting,push_notifications,domains,message_notifications,workflow_controls
 from store import DEMO
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
 
 def tick_once():
     # Independent integrations must not starve the rest of the worker when one fails.
     jobs=[
+        ('ENABLE_AUTO_WORKFLOW_REMINDERS',workflow_controls.tick_reminders),
         ('ENABLE_AUTO_MESSAGES',message_notifications.tick),
         ('ENABLE_AUTO_DOMAINS',domains.tick),
         ('ENABLE_AUTO_PUSH',push_notifications.tick),

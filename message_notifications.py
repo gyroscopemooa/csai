@@ -12,7 +12,7 @@ from fastapi import Depends,Request
 from app import app,ident,require,require_operator,limit
 from store import *
 
-EVENTS={'new':'new_alert','unknown':'unknown_alert','booking':'booking_alert','report':'report'}
+EVENTS={'handoff':'new_alert','handoff_urgent':'new_alert','unanswered':'new_alert','new':'new_alert','unknown':'unknown_alert','booking':'booking_alert','report':'report'}
 KINDS=('SMS','알림톡')
 BODY='[CS AI] 새 업무 알림이 있습니다. 관리자 페이지에서 확인해 주세요.'
 def init():

@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from app import app,ident,require
 from store import *
 
-EVENT_RIGHTS={'new':'new_alert','unknown':'unknown_alert','booking':'booking_alert','report':'report','work':'tasks'}
+EVENT_RIGHTS={'handoff':'new_alert','handoff_urgent':'new_alert','unanswered':'new_alert','new':'new_alert','unknown':'unknown_alert','booking':'booking_alert','report':'report','work':'tasks'}
 HOSTS={'fcm.googleapis.com','updates.push.services.mozilla.com','web.push.apple.com'}
 
 def init_push():
