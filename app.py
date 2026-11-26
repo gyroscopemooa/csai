@@ -63,7 +63,7 @@ async def guard(req,call_next):
         if not w:return Response('Unknown or inactive domain',404)
         path=req.url.path
         if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
-        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue','/api/customer/resume') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
         if not allowed:return Response('Public consultation only',404)
         allowed_origin='https://'+host
         context=domains.current_ws.set(w['id'])
@@ -373,6 +373,32 @@ def create_session(body:dict,req:Request):
         i=uid();staff=kind=='public' and branding.brand_settings(w,agent).get('consultation_mode')=='staff'
         c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(i,w['id'],token,kind,now(),int(staff)))
     return {'token':token,'thread':i}
+@app.post('/api/customer/resume')
+def customer_resume(body:dict,req:Request,response:Response):
+    # Explicit same-device opt-in. Reuse the existing 24-hour anonymous session.
+    import hashlib
+    slug=bounded(body.get('slug',''),100);action=body.get('action','load')
+    require(action in ('load','remember','forget'),'상담 기억 요청 오류',422)
+    limit('resume:'+str(req.client.host if req.client else 'unknown'),60)
+    cookie='csai_resume_'+hashlib.sha256(slug.encode()).hexdigest()[:24]
+    path='/api/customer/resume'
+    if action=='forget':
+        response.delete_cookie(cookie,path=path)
+        return {'remembered':False}
+    with db() as c:
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담 비활성화',404)
+        require(not domains.current_ws.get() or w['id']==domains.current_ws.get(),'다른 업체의 상담입니다.',404)
+        token=bounded(body.get('token',''),100) if action=='remember' else req.cookies.get(cookie,'')
+        v=one(c,"SELECT * FROM visitor WHERE token=? AND ws=? AND kind='public' AND expires>?",(token,w['id'],now())) if token else None
+        valid=v and (v.get('agent','') or '')==(agent['id'] if agent else '')
+        if action=='remember':
+            require(valid,'현재 업체의 유효한 상담이 없습니다.',403)
+            response.set_cookie(cookie,token,max_age=max(1,min(86400,v['expires']-now())),path=path,httponly=True,secure=(req.url.scheme=='https' or APP_URL.startswith('https://')),samesite='lax')
+            return {'remembered':True}
+        if not valid:
+            response.delete_cookie(cookie,path=path)
+            return {'remembered':False}
+        return {'remembered':True,'token':token}
 @app.post('/api/customer/handoff')
 def customer_handoff(body:dict):
     token=bounded(body.get('token',''),100)
@@ -414,6 +440,7 @@ def chat(body:dict):
             c.execute('DELETE FROM request WHERE ws=? AND thread=? AND client=?',key)
         require(v['kind']=='test' or ((agent or w['enabled']) and public_access(w)),'상담 비활성화')
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
+        require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
         route_mode,route_reason=workflow_controls.decision(workflow_controls.get_policy(c,ws,v.get('agent','')),msg,s)
         if t['manual'] or route_mode!='auto':
             staff=bool(t['manual'] or route_mode=='staff')
@@ -422,9 +449,10 @@ def chat(body:dict):
                 ops.event(c,ws,'handoff_urgent' if route_reason=='urgent' else 'handoff','담당자 확인 필요',tid)
             r={'reply':'담당자가 확인 중입니다.' if staff else '해당 업무는 자동 상담으로 제공하지 않습니다.','manual':staff,'policyBlocked':not staff,'remaining':remaining(c,w)}
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));
+            if staff:c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
+            else:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'assistant',r['reply'],now()))
             if v['kind']!='test' and not one(c,'SELECT id FROM event_log WHERE ws=? AND kind=? AND ref=?',(ws,'new',tid)):ops.event(c,ws,'new','신규 고객 상담',tid)
             return r
-        require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
         c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking','quote','tasks','complaints','crm','leads'} if agent else set())

@@ -1,6 +1,7 @@
 # Workflow follow-up (development)
 - Independent brand-level owner-approved task permissions, manually checked education readiness, keyword-based restricted/urgent routing and business-time schedule. Existing entitlement/policy guards stay authoritative. Keywords are imperfect; no claim of autonomous urgent detection.
-- Direct handoff, unanswered customer queue, customer/owner last-answer issue report and explicit issue resolution; no automatic training. Owner views stored model input candidates or exact lookup sources; candidate sources are not model citations.
+- Direct handoff, unanswered customer queue, customer/owner last-answer issue report and explicit issue resolution; no automatic training. Corrected answers can populate an education draft, then use existing credit/approval flow. Owner views stored model input candidates or exact lookup sources; candidate sources are not model citations.
 - Export approved knowledge and versions as JSON, no raw transcripts or file archive. Restore through existing versions; imported backups not yet supported.
-- Additional brand archive preserves data and billing, stops public chat; explicit restore then publish. 
-- Incomplete: brand-scoped bookings/CRM/external integration; draft-to-live configuration activation; persistent authenticated customer identity/long-term memory; automatic external reminders; full cross-channel policy enforcement; issue-to-corrected training automation. Do not deploy until migrations and regression tests pass.
+- Additional brand archive preserves data and billing, stops public chat; explicit restore then publish.
+- Same-device, explicit opt-in anonymous conversation continuation within the existing 24-hour visitor expiration; HttpOnly brand-scoped cookie. Forget starts a new conversation, does not delete owner history. No persistent identity or cross-device recognition.
+- Incomplete: brand-scoped bookings/CRM/external integration; draft-to-live configuration activation; authenticated customer identity/long-term memory; automatic external reminders and full cross-channel policy enforcement. Do not deploy until migrations and regression tests pass.

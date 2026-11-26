@@ -124,6 +124,16 @@ def register(app,ident):
             t=one(c,'SELECT id,visitor FROM thread WHERE ws=? AND id=?',(ws,body.get('thread')));require(t,'상담 없음',404)
             v=one(c,'SELECT * FROM visitor WHERE ws=? AND token=?',(ws,t['visitor']));require(v,'상담 없음',404);owner_brand(c,ws,v.get('agent',''))
             return create_issue(c,v,t,ai.clean(bounded(body.get('note',''),500)))
+    @app.get('/api/workflow/answer-issue/{i}/education')
+    def issue_education(i:str,ws=Depends(ident)):
+        with db() as c:
+            w=getw(c,ws);r=one(c,'SELECT * FROM answer_issue WHERE ws=? AND id=?',(ws,i))
+            require(r and thread_accessible(c,w,r['thread']),'신고 없음 또는 보관 범위 초과',404);owner_brand(c,ws,r['agent'])
+            m=one(c,"SELECT rowid AS sequence,body FROM message WHERE ws=? AND id=? AND thread=? AND role='assistant'",(ws,r['message'],r['thread']))
+            require(m,'기존 답변 없음',404)
+            q=one(c,"SELECT body FROM message WHERE ws=? AND thread=? AND role='user' AND rowid<? ORDER BY rowid DESC LIMIT 1",(ws,r['thread'],m['sequence']))
+            require(q,'질문 없음',404)
+            return {'agent':r['agent'],'question':ai.clean(q['body']),'previous':ai.clean(m['body']),'note':r['note']}
     @app.post('/api/workflow/answer-issue/{i}/resolve')
     def resolve_issue(i:str,ws=Depends(ident)):
         with db(True) as c:
