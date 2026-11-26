@@ -316,6 +316,9 @@ def train(i:str,ws=Depends(ident)):
         w=getw(c,ws);j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state']=='estimated' and j['created']>now()-1800,'유효한 교육 견적 필요',409)
         source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
         if agent_id:require(branding.agent_allowed(w,agent),'추가 브랜드 상담원 권한 필요',403)
+        if source.get('memory_order'):
+            o=one(c,"SELECT items FROM checkout_order WHERE ws=? AND id=? AND kind='memory_import' AND status='paid'",(ws,source['memory_order']))
+            require(DEMO and sandbox_allowed(c,w) and o and loads(o['items']).get('agent','')==agent_id,'유효한 기억 이전 이용권 필요',403)
         try:reserve_education(c,w,j['estimate'],i)
         except ValueError as e:fail(402,str(e))
         c.execute('UPDATE training SET state=\'running\' WHERE id=?',(i,));s=branding.brand_settings(w,agent)
@@ -323,7 +326,7 @@ def train(i:str,ws=Depends(ident)):
         result,n=ai.train(source['text'],source['images'],s,source.get('guidance',''));require(type(n)==int and 0<=n<=j['estimate'],'교육 비용 상한 초과 또는 형식 오류',409)
     except Exception as e:
         with db(True) as c:
-            settle_education(c,ws,i,0);c.execute('UPDATE training SET state=\'failed\' WHERE id=?',(i,))
+            settle_education(c,ws,i,0);c.execute('UPDATE training SET state=\'failed\',source=? WHERE id=?',(dump({'agent':agent_id,'unknown':source.get('unknown'),'memory_order':source.get('memory_order')}),i))
         fail(502,'교육에 실패했습니다. 예약된 크레딧은 정산되었습니다.')
     with db(True) as c:
         settle_education(c,ws,i,n);record_usage(c,ws,'training',ai.TRAIN,result,agent_id);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown'),'agent':agent_id}),i))

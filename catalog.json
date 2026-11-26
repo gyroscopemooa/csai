@@ -1,4 +1,5 @@
 {
+  "memory_import": {"name": "외부 AI 기억 이전 이용권", "price": 19900, "max_batches": 120},
   "plans": [
     {
       "id": "free",

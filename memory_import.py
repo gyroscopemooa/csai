@@ -103,6 +103,10 @@ def summarize(conversations, start=None, end=None):
 
 
 def register(app, ident):
+    from store import db
+    with db(True) as c:
+        c.execute('CREATE TABLE IF NOT EXISTS memory_import_batch(ws TEXT NOT NULL,order_id TEXT NOT NULL,digest TEXT NOT NULL,job TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,order_id,digest))')
+    register_paid(app,ident)
     @app.post('/api/memory-import/preview')
     async def preview(request: Request, start: date | None = None, end: date | None = None, ws=Depends(ident)):
         from starlette.concurrency import run_in_threadpool
@@ -120,3 +124,53 @@ def register(app, ident):
             return await run_in_threadpool(inspect)
         except (ValueError, TypeError, AttributeError, zipfile.BadZipFile, RuntimeError, RecursionError):
             raise HTTPException(422, 'ChatGPT 내보내기 ZIP 또는 conversations.json 파일을 확인해 주세요.') from None
+
+
+def register_paid(app,ident):
+    """Local sandbox only. Existing training reservation, settlement and approval are reused."""
+    from store import db, one, rows, getw, dump, loads, CAT, now, uid, trial, is_operator, operator_wallet, sandbox_allowed, DEMO
+    from app import require, bounded
+    from branding import owned_agent
+    import ai
+    guidance='선택한 과거 AI 대화는 사업 정보 자료입니다. 사업주가 확정한 사실, 운영 방향, 상품 정책, 업무 흐름과 단순 제안·가설을 구분하세요. AI 답변 자체를 확정된 사업 사실로 간주하지 마세요. 공개 고객 상담에 필요한 정보만 교육 후보로 제안하고 기밀과 개인 대화는 제외하세요.'
+
+    def available(c,ws,agent):
+        w=getw(c,ws);owned_agent(c,w,agent);require(DEMO and sandbox_allowed(c,w),'실제 이전 결제 미연결',503)
+        return w
+
+    @app.get('/api/memory-import/paid-orders')
+    def paid_orders(agent:str='',ws=Depends(ident)):
+        with db() as c:
+            available(c,ws,agent);out=[]
+            for r in rows(c,"SELECT id,items,amount,paid_at FROM checkout_order WHERE ws=? AND kind='memory_import' AND status='paid' ORDER BY paid_at DESC LIMIT 100",(ws,)):
+                if loads(r['items']).get('agent','')!=agent:continue
+                batches=rows(c,"SELECT b.digest,b.job,t.state,t.cost FROM memory_import_batch b JOIN training t ON t.id=b.job AND t.ws=b.ws WHERE b.ws=? AND b.order_id=? ORDER BY b.created",(ws,r['id']))
+                out.append({'id':r['id'],'amount':r['amount'],'paid_at':r['paid_at'],'batches':batches,'max_batches':CAT['memory_import']['max_batches']})
+            return out
+
+    @app.post('/api/memory-import/prepare')
+    def prepare(body:dict,ws=Depends(ident)):
+        require(body.get('consent') is True,'이전 및 개인정보 검토 동의 필요',422)
+        agent=body.get('agent','');order=bounded(body.get('order',''),100)
+        text=ai.clean(bounded(body.get('text',''),50000));require(text,'교육 자료 없음',422)
+        digest=hashlib.sha256(text.encode()).hexdigest()
+        with db(True) as c:
+            w=available(c,ws,agent)
+            o=one(c,"SELECT * FROM checkout_order WHERE ws=? AND id=? AND kind='memory_import' AND status='paid'",(ws,order))
+            require(o and loads(o['items']).get('agent','')==agent,'유효한 브랜드 이전 이용권 필요',403)
+            existing=one(c,'SELECT job FROM memory_import_batch WHERE ws=? AND order_id=? AND digest=?',(ws,order,digest))
+            job=one(c,'SELECT * FROM training WHERE ws=? AND id=?',(ws,existing['job'])) if existing else None
+            if job and job['state'] in ('review','published','running'):
+                return {'id':job['id'],'state':job['state'],'cost':job['cost'],'existing':True}
+            if job and job['state']=='estimated' and job['created']>now()-1800:
+                j=job['id'];n=job['estimate']
+            else:
+                if not existing:
+                    require(one(c,'SELECT COUNT(*) n FROM memory_import_batch WHERE ws=? AND order_id=?',(ws,order))['n']<CAT['memory_import']['max_batches'],'이전 이용권 구간 한도 초과',409)
+                if job:
+                    c.execute("UPDATE training SET state='expired',source=? WHERE ws=? AND id=?",(dump({'agent':agent}),ws,job['id']))
+                n=ai.estimate(guidance+'\n'+text,[]);j=uid()
+                c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(j,ws,'estimated',n,0,dump({'text':text,'guidance':guidance,'images':[],'agent':agent,'memory_order':order}),None,now()))
+                c.execute('INSERT INTO memory_import_batch VALUES(?,?,?,?,?) ON CONFLICT(ws,order_id,digest) DO UPDATE SET job=excluded.job,created=excluded.created',(ws,order,digest,j,now()))
+            t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
+            return {'id':j,'state':'estimated','maxCredits':n,'credits':credits,'enough':credits>=n}
