@@ -32,7 +32,9 @@ def normalize_addons(a):
     return sorted(a),price
 
 def quote(body):
-    kind=body.get('kind');require(kind in ['subscription','education','message'],'상품 유형 오류',422)
+    kind=body.get('kind');require(kind in ['subscription','education','message','chatgpt_import'],'상품 유형 오류',422)
+    if kind=='chatgpt_import':
+        require(DEMO and not SHARED_TEST,'실제 이전 결제 미연결',503);return kind,{'sku':'chatgpt_import','one_time':True},CAT['chatgpt_import']['price']
     if kind=='subscription':
         plan=body.get('plan');require(plan in PLAN and plan!='free','유료 요금제 선택 필요',422);a,n=normalize_addons(body.get('addons',[]));return kind,{'plan':plan,'addons':a},PLAN[plan]['price']+n
     if kind=='education':
@@ -53,6 +55,8 @@ def checkout_create(body:dict,ws=Depends(ident)):
         old=one(c,'SELECT * FROM checkout_order WHERE ws=? AND client=?',(ws,client))
         if old:
             require(old['kind']==k and old['items']==dump(i),'동일 요청 ID에 다른 상품',409);return order_view(old)
+        if k=='chatgpt_import':
+            require(not one(c,"SELECT id FROM checkout_order WHERE ws=? AND kind='chatgpt_import' AND status='paid'",(ws,)),'이미 이전 이용권을 보유하고 있습니다.',409)
         j=uid();c.execute('INSERT INTO checkout_order VALUES(?,?,?,?,?,?,?,?,?)',(j,ws,k,dump(i),n,'pending',now(),None,client));return order_view(one(c,'SELECT * FROM checkout_order WHERE id=?',(j,)))
 @app.post('/api/billing/orders/{i}/sandbox-confirm')
 def checkout_confirm(i:str,ws=Depends(ident)):
@@ -71,6 +75,9 @@ def checkout_confirm(i:str,ws=Depends(ident)):
                 u=one(c,'SELECT n FROM usage WHERE ws=? AND period=?',(ws,month()))
                 if not sub and u:c.execute('INSERT OR IGNORE INTO usage VALUES(?,?,?)',(ws,'sub:'+str(start),u['n']))
             c.execute('INSERT INTO subscription VALUES(?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_end=0,order_id=excluded.order_id',(ws,start,end,0,i));c.execute('UPDATE workspace SET plan=?,addons=? WHERE id=?',(x['plan'],dump(x['addons']),ws))
+        elif r['kind']=='chatgpt_import':
+            require(not SHARED_TEST,'공유 테스트 결제 불가',403)
+            require(not one(c,"SELECT id FROM checkout_order WHERE ws=? AND kind='chatgpt_import' AND status='paid'",(ws,)),'이미 이전 이용권을 보유하고 있습니다.',409)
         elif r['kind']=='education':charge_credit(c,w,-x['quantity'],i)
         else:c.execute('INSERT INTO message_balance VALUES(?,?,?) ON CONFLICT(ws,kind) DO UPDATE SET n=n+excluded.n',(ws,x['name'],x['quantity']))
         c.execute("UPDATE checkout_order SET status='paid',paid_at=? WHERE id=?",(now(),i));return order_view(one(c,'SELECT * FROM checkout_order WHERE id=?',(i,)))
