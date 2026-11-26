@@ -5,6 +5,14 @@
 .mention-option strong{min-width:48px;color:#3182f6}
 .mention-option span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .mention-option.active,.mention-option:hover{background:#eaf3ff}
+.invite-reveal{animation:invite-settle .4s cubic-bezier(.2,.9,.25,1) both}
+.invite-reveal small{display:block;margin-top:12px;color:#6b7684}
+.invite-badges{display:flex;padding:10px 0 6px 9px}
+.invite-badges span{display:grid;place-items:center;width:48px;height:48px;margin-left:-9px;border:3px solid #fff;border-radius:50%;background:#eaf3ff;color:#2175e3;font-size:11px;font-weight:750;box-shadow:0 3px 12px #1b31531c;animation:invite-pop .4s cubic-bezier(.2,.9,.25,1) both}
+.invite-badges span:nth-child(2){background:#3182f6;color:#fff;animation-delay:60ms}
+.invite-badges span:nth-child(3){background:#e9f7f0;color:#16805b;animation-delay:120ms}
+@keyframes invite-settle{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes invite-pop{from{opacity:0;transform:translateY(10px) scale(.5)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes mention-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .dust-layer{position:fixed;z-index:1000;pointer-events:none;overflow:visible}
 .dust-tile{position:absolute;inset:0;pointer-events:none;animation:dust-scatter .62s cubic-bezier(.16,.7,.3,1) both}
@@ -13,4 +21,4 @@
 @keyframes bite-pop{from{opacity:0;transform:scale(.2)}35%{opacity:1;transform:scale(1.1)}to{opacity:0;transform:scale(.8)}}
 @keyframes crumb-fly{from{opacity:1;transform:translate(0,0) scale(1)}to{opacity:0;transform:translate(var(--x),var(--y)) scale(.3)}}
 @keyframes dust-scatter{0%{opacity:1;transform:translate(0,0) rotate(0);filter:blur(0)}40%{opacity:.9}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(5deg);filter:blur(2px)}}
-@media(prefers-reduced-motion:reduce){.mention-picker{animation:none}.dust-tile{animation:none}}
+@media(prefers-reduced-motion:reduce){.mention-picker,.dust-tile,.invite-reveal,.invite-badges span,.cookie-bite,.cookie-bite i{animation:none}}
