@@ -36,13 +36,13 @@ MODEL_RATES={
     'gpt-6.2-sol':(1.0,5.0,0.05),
     'gpt-6-luna':(0.05,0.25,0.005),
 }
-def record_usage(c,ws,kind,model,result):
+def record_usage(c,ws,kind,model,result,agent=''):
     # Real Responses usage is attached by the adapter when available; demo events are never revenue.
     u=result.pop('_usage',{}) if isinstance(result,dict) else {}
     inp=int(u.get('input_tokens',0) or 0);cached=int(u.get('cached_input_tokens',u.get('input_tokens_details',{}).get('cached_tokens',0)) or 0);out=int(u.get('output_tokens',0) or 0)
     prefix='TRAIN' if kind=='training' else 'CHAT';ri,ro,rc=MODEL_RATES.get(model,(0.0,0.0,0.0))
     ri=float(os.getenv(prefix+'_INPUT_USD_PER_M',str(ri)));ro=float(os.getenv(prefix+'_OUTPUT_USD_PER_M',str(ro)));rc=float(os.getenv(prefix+'_CACHED_USD_PER_M',str(rc)));cost=(max(0,inp-cached)*ri+cached*rc+out*ro)/1_000_000
-    c.execute('INSERT INTO model_usage VALUES(?,?,?,?,?,?,?,?,?,?)',(uid(),ws,kind,model,'actual' if u and ai.KEY else ('local_rule' if ai.KEY else 'simulation'),inp,cached,out,cost,now()))
+    usage_id=uid();c.execute('INSERT INTO model_usage VALUES(?,?,?,?,?,?,?,?,?,?)',(usage_id,ws,kind,model,'actual' if u and ai.KEY else ('local_rule' if ai.KEY else 'simulation'),inp,cached,out,cost,now()));c.execute('INSERT INTO model_usage_brand VALUES(?,?,?)',(usage_id,ws,agent or ''))
 def ident(req:Request):
     with db() as c:
         s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(req.cookies.get('csai_session',''),now()))
@@ -160,6 +160,7 @@ def settings(body:dict,ws=Depends(ident)):
                 values=body[key]
                 require(isinstance(values,list) and len(values)<=30 and all(isinstance(x,str) and 0<len(x.strip())<=80 for x in values),'복수 선택 항목 형식 오류',422)
                 s[key]=list(dict.fromkeys(x.strip() for x in values))
+        if 'onboarding_done' in body:require(type(body['onboarding_done']) is bool,'온보딩 상태 오류',422);s['onboarding_done']=body['onboarding_done']
         if 'consultation_mode' in body:
             require(body['consultation_mode'] in ('ai','staff'),'상담 방식 오류',422)
             s['consultation_mode']=body['consultation_mode']
@@ -325,7 +326,7 @@ def train(i:str,ws=Depends(ident)):
             settle_education(c,ws,i,0);c.execute('UPDATE training SET state=\'failed\' WHERE id=?',(i,))
         fail(502,'교육에 실패했습니다. 예약된 크레딧은 정산되었습니다.')
     with db(True) as c:
-        settle_education(c,ws,i,n);record_usage(c,ws,'training',ai.TRAIN,result);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown'),'agent':agent_id}),i))
+        settle_education(c,ws,i,n);record_usage(c,ws,'training',ai.TRAIN,result,agent_id);c.execute('UPDATE training SET state=\'review\',cost=?,result=?,source=? WHERE id=?',(n,dump(result),dump({'unknown':source.get('unknown'),'agent':agent_id}),i))
     return {'id':i,'cost':n,'result':result}
 @app.get('/api/training')
 def jobs(ws=Depends(ident)):
@@ -430,7 +431,7 @@ def chat(body:dict):
                 if v['kind']!='test':ops.event(c,ws,'unknown','미학습 질문 접수',tid)
                 c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(uid(),ws,tid,msg,'open',now()));c.execute('UPDATE thread SET status=\'pending\' WHERE id=?',(tid,))
             c.execute('UPDATE thread SET booking_context=? WHERE id=?',(dump(r.get('bookingData',{})),tid))
-            r['remaining']=remaining(c,getw(c,ws));r['demo']=not bool(ai.KEY);record_usage(c,ws,'chat',ai.CHAT,r);c.execute('UPDATE request SET state=\'done\',result=? WHERE ws=? AND thread=? AND client=?',(dump(r),*key))
+            r['remaining']=remaining(c,getw(c,ws));r['demo']=not bool(ai.KEY);record_usage(c,ws,'chat',ai.CHAT,r,v.get('agent',''));c.execute('UPDATE request SET state=\'done\',result=? WHERE ws=? AND thread=? AND client=?',(dump(r),*key))
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Chat persistence failed')
@@ -683,6 +684,8 @@ policies.register(app,ident,require)
 import memory_import
 memory_import.register(app, ident)
 import demo_samples
+import product_progress
+product_progress.register(app,ident)
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

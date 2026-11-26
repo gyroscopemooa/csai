@@ -8,6 +8,8 @@ TRAIN_EFFORT=os.getenv('TRAIN_EFFORT','low'); CHAT_EFFORT=os.getenv('CHAT_EFFORT
 Image.MAX_IMAGE_PIXELS=16000000
 
 def clean(s):
+    s=re.sub(r'(?i)\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sb_secret_[A-Za-z0-9_-]{12,})\b','[비밀 키 제거]',s)
+    s=re.sub(r'(?im)((?:api[_ -]?key|password|secret|비밀번호|비밀키)\s*[:=]\s*)[^\s,;]+',r'\1[비밀정보 제거]',s)
     s=re.sub(r'(?<!\d)\d{6}-[1-4]\d{6}(?!\d)','[개인정보 제거]',s)
     s=re.sub(r'(?<!\d)01[016789][- ]?\d{3,4}[- ]?\d{4}(?!\d)','[전화번호 제거]',s)
     return re.sub(r'[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}','[이메일 제거]',s)

@@ -20,7 +20,8 @@ def summarize(c,ws,start,end):
     b=rows(c,"SELECT b.status,COUNT(*) n FROM booking b WHERE b.ws=? AND b.created>=? AND b.created<? AND b.status NOT IN ('draft','superseded') AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id) GROUP BY b.status",(ws,start,end))
     work=rows(c,"SELECT w.kind,w.status,COUNT(*) n FROM work w WHERE w.ws=? AND w.created>=? AND w.created<? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=w.ws AND d.kind='work' AND d.id=w.id) GROUP BY w.kind,w.status",(ws,start,end))
     public=[r for r in t if r['kind']!='test']
-    return {'threads':sum(x['n'] for x in public),'resolved':sum(x['n'] for x in public if x['status']=='resolved'),'unknown':u,'messages':sum(x['n'] for x in m),'channels':public,'roles':m,'bookings':b,'work':work}
+    ratings=one(c,"SELECT COUNT(*) n,AVG(score) average FROM quality_rating WHERE ws=? AND created>=? AND created<?",(ws,start,end))
+    return {'ratings':ratings,'threads':sum(x['n'] for x in public),'resolved':sum(x['n'] for x in public if x['status']=='resolved'),'unknown':u,'messages':sum(x['n'] for x in m),'channels':public,'roles':m,'bookings':b,'work':work}
 
 def periods(ws,c,freq):
     s=loads(getw(c,ws)['settings'])
