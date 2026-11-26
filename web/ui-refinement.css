@@ -133,7 +133,9 @@
  .channel-icon{width:36px;height:36px}
 }
 @media(prefers-reduced-motion:reduce){.phone .notice summary .ui-icon{transition:none}}
-.inbox-filter{display:grid;grid-template-columns:minmax(150px,190px) minmax(180px,1fr) auto;gap:10px;align-items:end;margin-top:18px}
-.inbox-filter .label{margin-bottom:6px}
-.inbox-filter button{min-height:42px}
-@media(max-width:640px){.inbox-filter{grid-template-columns:1fr}.inbox-filter button{width:100%}}
+.inbox-toolbar{padding:16px 20px}
+.inbox-filter{display:grid;grid-template-columns:minmax(150px,190px) minmax(0,1fr) 86px;gap:10px;align-items:center;margin:0}
+.inbox-filter input,.inbox-filter select,.inbox-filter button{height:44px;min-height:44px;margin:0}
+.inbox-scope{margin:10px 0 0!important;color:#6b7684;font-size:12px}
+.inbox-scope button{min-height:0;padding:0;margin-left:8px;background:none;color:#3182f6;font-size:12px}
+@media(max-width:640px){.inbox-filter{grid-template-columns:1fr 80px}.inbox-filter select{grid-column:1/-1}.inbox-filter button{width:100%}}

@@ -40,6 +40,8 @@ with sync_playwright() as pw:
     desktop.locator(".inbox-entry").first.wait_for()
     assert desktop.locator(".inbox-entry").count() >= 8
     assert desktop.locator(".sample-tag").count() >= 8
+    desktop.wait_for_timeout(500)
+    desktop.screenshot(path=str(OUT / "live_inbox_toolbar_desktop.png"))
     desktop.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
     desktop.get_by_text("메시지 22개").wait_for()
     assert desktop.locator(".inbox-conversation").evaluate("el => el.scrollHeight > el.clientHeight")
@@ -57,6 +59,12 @@ with sync_playwright() as pw:
     desktop.wait_for_function("document.querySelectorAll('#messages .bubble').length >= 3")
     desktop.wait_for_function("!document.querySelector('#messages .streaming-reply')")
     assert desktop.locator("#messages .bubble").count() >= 3
+    desktop.get_by_role("button", name="로컬 상담 계속 테스트").click()
+    desktop.get_by_text("로컬 테스트 구독을 적용했습니다.").wait_for()
+    desktop.locator("#msg").fill("예약 문의")
+    desktop.get_by_role("button", name="전송").click()
+    desktop.locator("#messages .bubble.user").get_by_text("예약 문의").wait_for()
+    desktop.wait_for_function("document.querySelectorAll('#messages .bubble').length >= 5")
     assert desktop.get_by_role("heading", name="채팅창 미리보기").is_visible()
     desktop.locator(".phone").evaluate(
         "(el) => { el.style.width='500px'; el.style.height='700px' }"
