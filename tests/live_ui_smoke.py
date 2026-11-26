@@ -45,6 +45,10 @@ with sync_playwright() as pw:
     desktop.get_by_role("heading", name="AI 교육 비용 확인").wait_for()
     desktop.locator(".modal").get_by_text("최대", exact=False).wait_for()
     desktop.locator(".modal").get_by_role("button", name="닫기").click()
+    desktop.locator(".app-sidebar").get_by_role("button", name="AI 상담원 관리").click()
+    desktop.get_by_role("heading", name="언제 추가 상담원이 필요한가요?").wait_for()
+    desktop.get_by_text("기본 상담원 한 명으로 하나의 업체를 상담한다면 추가하지 않아도 됩니다.", exact=False).wait_for()
+    desktop.screenshot(path=str(OUT / "live_extra_agent_guide_desktop.png"))
     desktop.locator(".app-sidebar").get_by_role("button", name="통합 상담함").click()
     desktop.get_by_role("heading", name="통합 상담함").wait_for()
     assert desktop.locator("#inbox-kind").count() == 1
@@ -73,6 +77,7 @@ with sync_playwright() as pw:
     assert desktop.locator("#messages .bubble").count() >= 3
     desktop.get_by_role("button", name="로컬 상담 계속 테스트").click()
     desktop.get_by_text("로컬 테스트 구독을 적용했습니다.").wait_for()
+    desktop.get_by_role("button", name="로컬 상담 계속 테스트").wait_for(state="detached")
     desktop.locator("#msg").fill("예약 문의")
     desktop.get_by_role("button", name="전송").click()
     desktop.locator("#messages .bubble.user").get_by_text("예약 문의").wait_for()
@@ -123,6 +128,11 @@ with sync_playwright() as pw:
     assert mobile.locator("#training-conversation").count() == 1
     assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
     mobile.screenshot(path=str(OUT / "live_education_mobile.png"), full_page=True)
+    mobile.get_by_role("button", name="메뉴 열기").click()
+    mobile.locator(".app-sidebar").get_by_role("button", name="AI 상담원 관리").click()
+    mobile.get_by_role("heading", name="언제 추가 상담원이 필요한가요?").wait_for()
+    assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    mobile.screenshot(path=str(OUT / "live_extra_agent_guide_mobile.png"), full_page=True)
     mobile.get_by_role("button", name="메뉴 열기").click()
     mobile.locator(".app-sidebar").get_by_role("button", name="통합 상담함").click()
     mobile.get_by_role("heading", name="통합 상담함").wait_for()

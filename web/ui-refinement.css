@@ -145,3 +145,9 @@
 .training-conversation{margin:18px 0 14px;padding-top:14px;border-top:1px solid #e8edf2}
 .training-conversation textarea,#training-text{min-height:132px;resize:vertical}
 .training-conversation .muted{margin-top:7px}
+.agent-guide>p{color:#4e5968}
+.agent-use-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:15px 0}
+.agent-use-grid>div{padding:16px;background:#f5f8fc;border-radius:14px}
+.agent-use-grid strong{display:block;margin-bottom:7px;color:#191f28}
+.agent-use-grid p{margin:0;color:#4e5968;font-size:13px;line-height:1.65}
+@media(max-width:700px){.agent-use-grid{grid-template-columns:1fr}}
