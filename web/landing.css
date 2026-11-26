@@ -39,3 +39,28 @@
 .unify-cta{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:26px 0 0}.unify-cta span{font-size:18px;font-weight:700;letter-spacing:-.03em}.unify-cta button{min-height:46px;padding:12px 22px}
 @media(max-width:700px){.landing-unify{padding:64px 18px 72px}.unify-paths{grid-template-columns:1fr}.unify-path{padding:24px;border-radius:20px}.unify-path h3{font-size:21px}.unify-summary{padding:22px}.unify-summary strong{font-size:18px}}
 @media(max-width:700px){.unify-cta button{width:100%}}
+
+/* The reasons read as an editorial list; the Roll Links motion lives in the headings. */
+.landing-benefit-grid{display:block;border-top:1px solid #e5e8eb}
+.landing-benefit,.landing-benefit:nth-child(1){display:grid;grid-template-columns:54px minmax(0,1fr);gap:12px;background:transparent;border:0;border-bottom:1px solid #e5e8eb;border-radius:0;padding:32px 0}
+.landing-benefit-number{margin:7px 0 0;font-size:12px}
+.landing-benefit-content{min-width:0}
+.landing-benefit h3{font-size:clamp(25px,3vw,35px);line-height:1.28;margin:0 0 18px;cursor:default}
+.landing-benefit ul{display:grid;grid-template-columns:1fr;gap:7px;max-width:850px}
+.landing-benefit li{padding:0 0 0 15px;color:#394150;font-size:15px;line-height:1.7}
+.landing-benefit li:before{top:11px;width:4px;height:4px}
+.landing-benefit .roll-letters{display:inline-flex;white-space:pre-wrap;flex-wrap:wrap}
+.landing-benefit .roll-letter{display:inline-block;height:1.28em;overflow:hidden;white-space:pre}
+.landing-benefit .roll-letter-inner{display:flex;flex-direction:column;will-change:transform}
+.landing-benefit .roll-letter-inner i{height:1.28em;font-style:normal}
+.landing-benefit-grid.hot .landing-benefit h3{color:#8b95a1}
+.landing-benefit-grid.hot .landing-benefit.on h3{color:#236fde}
+.landing-benefits-cta{background:transparent;color:#191f28;border-radius:0;border-bottom:1px solid #e5e8eb;margin-top:0;padding:32px 0;gap:16px}
+.landing-benefits-cta h3{font-size:22px;margin:0 0 4px}
+.landing-benefits-cta p{color:#6b7684}
+.landing-benefits-cta button{background:transparent;color:#236fde;border:0;padding:8px 0;border-radius:0;font-size:16px;white-space:nowrap}
+.landing-benefits-cta button:hover{text-decoration:underline}
+.landing-benefits-cta button span{display:inline-block;transition:transform .18s ease}
+.landing-benefits-cta button:hover span{transform:translate(3px,-3px)}
+@media(max-width:700px){.landing-benefit,.landing-benefit:nth-child(1){grid-template-columns:1fr;gap:2px;padding:26px 0}.landing-benefit-number{margin:0 0 8px}.landing-benefit ul{grid-template-columns:1fr;gap:9px}.landing-benefit h3{font-size:25px}.landing-benefits-cta{padding:28px 0}.landing-benefits-cta button{width:auto;text-align:left}}
+@media(prefers-reduced-motion:reduce){.landing-benefit .roll-letter-inner{transform:none!important}.landing-benefit-grid.hot .landing-benefit h3{color:inherit}.landing-benefits-cta button span{transition:none}}

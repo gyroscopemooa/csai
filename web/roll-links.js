@@ -60,6 +60,72 @@
     }
     requestAnimationFrame(frame);
   }
-  new MutationObserver(mount).observe(document.getElementById('app'), { childList: true });
-  mount();
+  let benefitsActive = null;
+  function mountBenefits() {
+    const grid = document.querySelector('.landing-benefit-grid');
+    if (!grid || grid === benefitsActive) return;
+    benefitsActive = grid;
+    const entries = [...grid.querySelectorAll('.landing-benefit')].map(article => {
+      const title = article.querySelector('.landing-roll-title');
+      const label = title.textContent;
+      title.textContent = '';
+      title.setAttribute('aria-label', label);
+      title.tabIndex = 0;
+      const letters = document.createElement('span');
+      letters.className = 'roll-letters';
+      letters.setAttribute('aria-hidden', 'true');
+      const cells = [...label].map(ch => {
+        const shell = document.createElement('span'); shell.className = 'roll-letter';
+        const inner = document.createElement('span'); inner.className = 'roll-letter-inner';
+        for (let i = 0; i < 2; i++) { const glyph = document.createElement('i'); glyph.textContent = ch; inner.append(glyph); }
+        shell.append(inner); letters.append(shell);
+        return { inner, s: spring(), at: 0 };
+      });
+      title.append(letters);
+      return { article, title, cells, on: false };
+    });
+    let pointer = false, visible = false, auto = 0, autoAt = performance.now() + 800, last = performance.now();
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(events => {
+        visible = events[0].isIntersecting;
+        if (visible) autoAt = performance.now() + 800;
+        else {
+          grid.classList.remove('hot');
+          entries.forEach(item => {
+            item.on = false; item.article.classList.remove('on');
+            item.cells.forEach(cell => { cell.s.x = 0; cell.s.v = 0; cell.s.t = 0; });
+          });
+        }
+      }, { threshold: 0.12 });
+      observer.observe(grid);
+    } else visible = true;
+    function select(entry) {
+      const now = performance.now();
+      entries.forEach(item => {
+        item.on = item === entry;
+        item.article.classList.toggle('on', item.on);
+        item.cells.forEach((cell, i) => { cell.at = now + i * 30; cell.s.t = item.on ? 1 : 0; });
+      });
+      grid.classList.add('hot');
+    }
+    entries.forEach(entry => {
+      entry.article.addEventListener('pointerenter', () => { pointer = true; select(entry); });
+      entry.title.addEventListener('focus', () => { pointer = true; select(entry); });
+      entry.title.addEventListener('blur', () => { pointer = false; autoAt = performance.now() + 900; });
+      entry.title.addEventListener('click', () => { select(entry); autoAt = performance.now() + 1800; });
+    });
+    grid.addEventListener('pointerleave', () => { pointer = false; autoAt = performance.now() + 900; });
+    function frame(now) {
+      if (!grid.isConnected) return;
+      const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
+      if (visible && !pointer && now >= autoAt) { select(entries[auto]); auto = (auto + 1) % entries.length; autoAt = now + 1450; }
+      if (visible && !reduced.matches) for (let k = 0; k < 4; k++) entries.forEach(item => item.cells.forEach(cell => { if (now >= cell.at) step(cell.s, dt / 4); }));
+      entries.forEach(item => item.cells.forEach(cell => { cell.inner.style.transform = `translateY(${-cell.s.x * 50}%)`; }));
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  const mountAll = () => { mount(); mountBenefits(); };
+  new MutationObserver(mountAll).observe(document.getElementById('app'), { childList: true, subtree: true });
+  mountAll();
 })();

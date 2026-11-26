@@ -17,10 +17,15 @@ with sync_playwright() as pw:
     desktop.on("pageerror", lambda exc: errors.append(str(exc)))
     desktop.goto(BASE, wait_until="networkidle")
     assert desktop.locator(".landing-benefit").count() == 4
+    assert desktop.locator(".landing-roll-title .roll-letter-inner").count() > 40
+    desktop.screenshot(path=str(OUT / "live_landing_desktop.png"), full_page=True)
+    desktop.locator(".landing-benefit").nth(1).hover()
+    desktop.wait_for_function("document.querySelector('.landing-benefit:nth-child(2) .roll-letter-inner').style.transform !== 'translateY(0%)'")
+    assert desktop.get_by_text("퇴직금·해고 및 퇴직 절차").count() == 1
+    assert "직원을 고용하는 편이 더 쌀 수도 있습니다." in desktop.locator(".landing-benefits .landing-lead").inner_text()
     assert desktop.locator(".unify-path").count() == 2
     desktop.locator(".unify-cta button").wait_for()
     desktop.locator(".landing-benefits-cta button").wait_for()
-    desktop.screenshot(path=str(OUT / "live_landing_desktop.png"), full_page=True)
     desktop.goto(BASE + "/auth/demo", wait_until="networkidle")
     desktop.get_by_role("heading", name="서비스 정책 확인").wait_for()
     desktop.screenshot(path=str(OUT / "live_policy_desktop.png"), full_page=True)
@@ -74,6 +79,7 @@ with sync_playwright() as pw:
     mobile.on("pageerror", lambda exc: errors.append(str(exc)))
     mobile.goto(BASE, wait_until="networkidle")
     assert mobile.locator(".landing-benefit").count() == 4
+    assert mobile.locator(".landing-roll-title").count() == 4
     assert mobile.locator(".unify-path").count() == 2
     assert mobile.locator(".unify-cta button").is_visible()
     assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
