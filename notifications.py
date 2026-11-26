@@ -13,7 +13,7 @@ def dispatch(ws, batch=10):
     if not DEMO and not live_enabled():return []
     with db(True) as c:
         w=getw(c,ws);a=entitlements(w);cfg=one(c,'SELECT * FROM notification_config WHERE ws=? AND enabled=1',(ws,))
-        if not cfg or 'email' not in a or loads(w['settings'])['modes'].get('email')=='off':return []
+        if not cfg or (not DEMO and (w.get('owner_email') or '').lower()!=cfg['email'].lower()) or 'email' not in a or loads(w['settings'])['modes'].get('email')=='off':return []
         pending=rows(c,"SELECT e.* FROM event_log e LEFT JOIN delivery d ON d.ws=e.ws AND d.event=e.id WHERE e.ws=? AND d.id IS NULL AND e.created>? ORDER BY e.rowid LIMIT 200",(ws,now()-86400))
         pending=[x for x in pending if ALLOWED.get(x['kind']) in a][:batch]
         for x in pending:c.execute('INSERT INTO delivery VALUES(?,?,?,?,?,?)',(uid(),ws,x['id'],'sending','',now()))
@@ -25,7 +25,7 @@ def dispatch(ws, batch=10):
                 # Recheck entitlement and recipient in case settings changed while queued.
                 with db() as c:
                     w=getw(c,ws);latest=one(c,'SELECT * FROM notification_config WHERE ws=? AND enabled=1',(ws,))
-                    if not latest or latest['email']!=cfg['email'] or not {'email',ALLOWED[x['kind']]}.issubset(entitlements(w)) or loads(w['settings'])['modes'].get('email')=='off':raise RuntimeError('알림 설정 변경')
+                    if not latest or latest['email']!=cfg['email'] or (w.get('owner_email') or '').lower()!=cfg['email'].lower() or not {'email',ALLOWED[x['kind']]}.issubset(entitlements(w)) or loads(w['settings'])['modes'].get('email')=='off':raise RuntimeError('알림 설정 변경')
                 subject='CS AI 업무 알림';body='새로운 업무 알림이 있습니다.\n관리자 페이지에서 확인: '+APP_URL
                 if x['kind']=='report':
                     with db() as c:report=one(c,'SELECT summary,period FROM report_history WHERE ws=? AND id=?',(ws,x['ref']))
