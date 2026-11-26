@@ -55,6 +55,26 @@ def test_workspace_isolation():
 def test_unknown_and_manual():
     c=owner();post(c,'/api/demo/billing',{'plan':'lite'});patch(c,{'enabled':True});u,t=public(c);p={'token':t,'message':'새로운 질문','clientMessageId':'a'};r=post(u,'/api/chat',p);assert r['unknown'];q=c.get('/api/unknown').json()[0];teach(c,q['q'],'직접 교육 답변',q['id']);r=post(u,'/api/chat',p|{'clientMessageId':'b'});assert r['reply']=='직접 교육 답변';post(c,'/api/inbox/'+q['thread'],{'manual':True,'reply':'담당자가 답변합니다.'});assert any(x['role']=='staff' for x in u.get('/api/session/'+t+'/messages').json())
 
+
+def test_unified_inbox_filters_search_and_external_reply_boundary():
+    from store import db,one,uid,now
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite'});patch(c,{'enabled':True})
+    u,token=public(c);post(u,'/api/chat',{'token':token,'message':'촬영 문의 특별단어','clientMessageId':'search-one'})
+    slug=c.get('/api/me').json()['slug']
+    with db(True) as conn:
+        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(slug,))['id']
+        visitor_id=uid();external_thread=uid()
+        conn.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(visitor_id,ws,now()+86400,'public'))
+        conn.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(external_thread,ws,visitor_id,'naver',now()))
+        conn.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,external_thread,'user','네이버 교환 요청',now()))
+    assert len(c.get('/api/inbox?kind=public').json())==1
+    assert [x['id'] for x in c.get('/api/inbox?kind=naver&q=교환').json()]==[external_thread]
+    assert c.get('/api/inbox?kind=naver&q=특별단어').json()==[]
+    assert c.get('/api/inbox?q=%25').json()==[]
+    assert c.get('/api/inbox?kind=other').status_code==422
+    assert c.post('/api/inbox/'+external_thread,json={'reply':'답변 전송'}).status_code==409
+    assert c.get('/api/inbox/'+external_thread).json()['messages'][0]['body']=='네이버 교환 요청'
+
 def test_booking_race_and_idempotent():
     c=setup_booking();a,t=public(c);b,u=public(c);x=draft(a,t);y=draft(b,u)
     with concurrent.futures.ThreadPoolExecutor(2) as ex:r=list(ex.map(lambda z:confirm(*z),[(a,t,x),(b,u,y)]))

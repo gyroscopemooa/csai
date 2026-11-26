@@ -3,6 +3,8 @@
   "direct_http": "http://127.0.0.1:3000",
   "desktop_chat": true,
   "landing_benefit_cards": 4,
+  "unification_paths": 2,
+  "inbox_channel_filter": true,
   "landing_mobile_no_overflow": true,
   "sidebar_navigation": true,
   "mobile_input": true,

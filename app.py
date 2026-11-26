@@ -398,10 +398,19 @@ def chat(body:dict):
         fail(502,'상담 저장 실패. 사용량은 복구되었습니다.')
     return r
 @app.get('/api/inbox')
-def inbox(ws=Depends(ident)):
+def inbox(kind:str='',q:str='',ws=Depends(ident)):
+    require(kind in ('','public','test','naver','kakao'),'채널 필터 오류',422)
+    q=bounded(q,100).lower()
     with db() as c:
         w=getw(c,ws);cutoff=history_cutoff(w)
-        return rows(c,'SELECT id,kind,status,manual,created,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?)) ORDER BY created DESC',(cutoff,ws,cutoff,cutoff))
+        sql='SELECT id,kind,status,manual,created,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))'
+        args=[cutoff,ws,cutoff,cutoff]
+        if kind:sql+=' AND kind=?';args.append(kind)
+        if q:
+            pattern='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
+            sql+=" AND EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=? AND lower(m.body) LIKE ? ESCAPE '\\')"
+            args.extend((cutoff,pattern))
+        return rows(c,sql+' ORDER BY created DESC',tuple(args))
 @app.get('/api/history-policy')
 def history_policy(ws=Depends(ident)):
     with db() as c:
@@ -418,7 +427,9 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         if 'manual' in body:c.execute('UPDATE thread SET manual=? WHERE id=?',(int(bool(body['manual'])),i))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
-        if body.get('reply'):c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
+        if body.get('reply'):
+            require(t['kind'] in ('public','test'),'외부 채널 직접 답변은 연결 승인 및 발송 검증 후 이용할 수 있습니다.',409)
+            c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
     return {'ok':True}
 @app.get('/api/unknown')
 def unknown(ws=Depends(ident)):
