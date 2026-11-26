@@ -104,11 +104,11 @@ def convert_work(i:str,body:dict,ws=Depends(ident)):
 @app.get('/api/notifications')
 def notification_status(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);require('email' in entitlements(w));return {'settings':one(c,'SELECT email,enabled FROM notification_config WHERE ws=?',(ws,)) or {'email':'','enabled':0},'configured':bool(os.getenv('RESEND_API_KEY') and os.getenv('RESEND_FROM')),'auto_enabled':os.getenv('ENABLE_AUTO_EMAIL')=='1','live_enabled':not DEMO and os.getenv('ENABLE_LIVE_EMAIL')=='1' and bool(os.getenv('RESEND_API_KEY') and os.getenv('RESEND_FROM')),'deliveries':rows(c,'SELECT * FROM delivery WHERE ws=? ORDER BY rowid DESC LIMIT 50',(ws,))}
+        w=getw(c,ws);require('email' in entitlements(w));return {'verified_email':w.get('owner_email') or '', 'settings':one(c,'SELECT email,enabled FROM notification_config WHERE ws=?',(ws,)) or {'email':'','enabled':0},'configured':bool(os.getenv('RESEND_API_KEY') and os.getenv('RESEND_FROM')),'auto_enabled':os.getenv('ENABLE_AUTO_EMAIL')=='1','live_enabled':not DEMO and os.getenv('ENABLE_LIVE_EMAIL')=='1' and bool(os.getenv('RESEND_API_KEY') and os.getenv('RESEND_FROM')),'deliveries':rows(c,'SELECT * FROM delivery WHERE ws=? ORDER BY rowid DESC LIMIT 50',(ws,))}
 @app.post('/api/notifications')
 def notification_settings(body:dict,ws=Depends(ident)):
     with db(True) as c:
-        require('email' in entitlements(getw(c,ws)));email=bounded(body.get('email',''),254);require(bool(re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email)),'이메일 형식 오류',422);c.execute('INSERT INTO notification_config VALUES(?,?,?) ON CONFLICT(ws) DO UPDATE SET email=excluded.email,enabled=excluded.enabled',(ws,email,int(body.get('enabled') is True)))
+        w=getw(c,ws);require('email' in entitlements(w));email=bounded(body.get('email',''),254).lower();require(bool(re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email)),'이메일 형식 오류',422);require(DEMO or not body.get('enabled') or (w.get('owner_email') or '').lower()==email,'실제 발송은 확인된 Google 로그인 이메일로만 가능합니다.',403);c.execute('INSERT INTO notification_config VALUES(?,?,?) ON CONFLICT(ws) DO UPDATE SET email=excluded.email,enabled=excluded.enabled',(ws,email,int(body.get('enabled') is True)))
     return {'ok':True}
 @app.post('/api/notifications/dispatch')
 def dispatch_events(ws=Depends(ident)):
