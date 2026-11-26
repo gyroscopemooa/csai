@@ -291,3 +291,19 @@ async function cancelCustomJob(id){await act(async()=>{await api('/api/custom-jo
 
 async function sandboxFail(id){if(!confirm('테스트 주문을 결제 실패 상태로 변경할까요?'))return;await act(async()=>{await api('/api/billing/orders/'+id+'/sandbox-fail',{});await refresh();render()})}
 async function sandboxRefund(id){if(!confirm('실제 돈은 환불되지 않습니다. 테스트 주문의 이용 권한이나 잔액을 회수할까요?'))return;await act(async()=>{await api('/api/billing/orders/'+id+'/sandbox-refund',{confirmed:true});await refresh();render()})}
+
+/* Versioned policy drafts: separate required acknowledgements and automation risk check. */
+const policyLinks=()=>`<nav class="policy-links" aria-label="서비스 정책"><a href="/policies/terms" target="_blank">이용약관</a><a href="/policies/privacy" target="_blank">개인정보처리방침</a><a href="/policies/ai" target="_blank">AI 이용 안내</a><a href="/policies/dpa" target="_blank">처리위탁 조건</a><a href="/policies/automation" target="_blank">자동화 책임 안내</a></nav>`;
+const oldHome=home;
+home=()=>oldHome()+`<footer class="site-policy-footer"><b>CS AI</b><p>정책 문서는 개발용 초안이며 출시 전 법률 및 운영 검토가 필요합니다.</p>${policyLinks()}</footer>`;
+const oldShell=shell;
+shell=body=>oldShell(body).replace('</main>',`<footer class="app-policy-footer">${policyLinks()}</footer></main>`);
+const oldPhone=phone;
+phone=(s,test=false,preview=false)=>oldPhone(s,test,preview).replace('</header>','</header><div class="ai-disclosure"><b>AI 상담 안내</b> · 답변에 오류가 있을 수 있습니다. 예약·결제·환불 조건은 업체 담당자에게 확인해 주세요. <a href="/policies/ai" target="_blank">AI 이용 안내</a> · <a href="/policies/privacy" target="_blank">개인정보 안내</a></div>');
+const policySettingsBase=settings;
+settings=async()=> (await policySettingsBase())+card('AI 자동화 위험 확인',`<p class="muted">예약 자동 확정은 별도 확인 후 사용할 수 있습니다. 견적 확정·실제 환불·보상 약속은 담당자 승인이 필요합니다.</p><p><a href="/policies/automation" target="_blank">자동화 및 책임 정책 보기</a></p>${['errors|AI 답변과 처리 결과에 오류가 생길 수 있음을 확인합니다.','accuracy|등록한 가격·예약 정보와 정책을 정확히 관리합니다.','approval|계약·결제·환불·보상 결정은 담당자가 승인합니다.'].map(x=>{let [k,v]=x.split('|');return `<label class="policy-check"><input type="checkbox" id="auto-${k}"> ${e(v)}</label>`}).join('')}${btn(me.policy?.automation_accepted?'확인 기록 갱신':'자동화 위험 확인 저장','saveAutomationAck()','primary')}`);
+async function saveAutomationAck(){await act(async()=>{await api('/api/policies/automation-ack',{version:me.policy.version,errors:checked('auto-errors'),accuracy:checked('auto-accuracy'),approval:checked('auto-approval')});await refresh();toast('자동화 위험 확인을 기록했습니다.');render()})}
+function consentScreen(){let items=[['terms','서비스 이용약관'],['privacy','개인정보처리방침 확인'],['ai','AI 이용 및 책임 안내'],['dpa','개인정보 처리위탁 조건']];return `<div class="policy-consent"><section class="card"><div class="brand"><b>CS</b> AI</div><h1>서비스 정책 확인</h1><p class="muted">${me.policy?.draft?'개발용 초안입니다. 정식 출시 전 법률 검토와 운영 정보 확정이 필요합니다.':'서비스를 사용하려면 아래 내용을 각각 확인해 주세요.'}</p>${items.map(([k,n])=>`<label class="policy-check"><input type="checkbox" id="policy-${k}"><span>[필수] ${e(n)} <a href="/policies/${k}" target="_blank" onclick="event.stopPropagation()">내용 보기</a></span></label>`).join('')}<p class="muted">마케팅 수신 동의는 실제 운영 방식이 정해진 뒤 별도로 요청합니다.</p>${btn('확인하고 계속하기','savePolicyConsent()','primary')} ${btn('로그아웃','logout()')}</section></div>`}
+async function savePolicyConsent(){await act(async()=>{await api('/api/policies/accept',{version:me.policy.version,...Object.fromEntries(['terms','privacy','ai','dpa'].map(k=>[k,checked('policy-'+k)]))});await refresh();render()})}
+const oldRender=render;
+render=async function(){if(me&&!me.policy?.accepted){$('#app').innerHTML=consentScreen();return}return oldRender()};

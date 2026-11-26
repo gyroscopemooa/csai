@@ -44,6 +44,8 @@ def record_usage(c,ws,kind,model,result):
 def ident(req:Request):
     with db() as c:
         s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(req.cookies.get('csai_session',''),now()))
+        if s and policies.ENFORCED and req.url.path not in ('/api/me','/api/policies/status','/api/policies/accept','/api/logout'):
+            require(policies.status(c,s['ws'])['accepted'],'서비스 정책 확인이 필요합니다.',403)
     if not s:fail(401,'로그인이 필요합니다.')
     return s['ws']
 @app.middleware('http')
@@ -59,7 +61,7 @@ async def guard(req,call_next):
         if not w:return Response('Unknown or inactive domain',404)
         path=req.url.path
         if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
-        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover') or path.startswith('/assets/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
         if not allowed:return Response('Public consultation only',404)
         allowed_origin='https://'+host
         context=domains.current_ws.set(w['id'])
@@ -121,7 +123,7 @@ def config():return {'demo':DEMO,'shared_test':SHARED_TEST,'ai_connected':bool(a
 @app.get('/api/me')
 def me(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None)}
+        w=getw(c,ws);t=trial(c,w);op=is_operator(w);credits=(10000-operator_wallet(c,w)['credit_used']) if op else (t['credit_limit']-t['credit_used'] if t else w['credits']);return {'slug':w['slug'],'settings':loads(w['settings']),'plan':w['plan'],'credits':credits,'remaining':remaining(c,w),'quota':10000 if op else t['chat_limit'] if t else PLAN[w['plan']]['quantity'],'public_access':public_access(w),'sandbox_allowed':sandbox_allowed(c,w),'addons':loads(w['addons']),'entitlements':sorted(entitlements(w)),'enabled':bool(w['enabled']),'published':loads(w['published']),'operator':op,'trial':({'expires':t['expires'],'bookings_remaining':trial_bookings_remaining(c,w)} if t else None),'policy':policies.status(c,ws)}
 @app.patch('/api/settings')
 def settings(body:dict,ws=Depends(ident)):
     with db(True) as c:
@@ -137,6 +139,8 @@ def settings(body:dict,ws=Depends(ident)):
         if 'modes' in body:
             for k,v in body['modes'].items():
                 if k in s['modes'] and v in ['auto','manual','off']:s['modes'][k]=v
+            if s['modes'].get('booking')=='auto':
+                require(policies.status(c,ws)['automation_accepted'],'예약 자동 확정 위험 안내를 먼저 확인하세요.',403)
         if any(k in body for k in ['fields','open','close','duration','buffer','closed_days','payment_required','timezone','resources']):require('calendar' in entitlements(w))
         if 'resources' in body:
             rs=body['resources'];require(isinstance(rs,list) and 1<=len(rs)<=20,'담당자는 1~20명',422);out=[];seen=set()
@@ -598,6 +602,8 @@ import push_notifications
 import domains
 import message_notifications
 import custom_integration
+import policies
+policies.register(app,ident,require)
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

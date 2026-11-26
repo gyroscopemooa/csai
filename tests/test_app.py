@@ -23,7 +23,7 @@ def patch(c,body):
     r=c.patch('/api/settings',json=body);assert r.status_code==200,r.text
 
 def setup_booking(auto=True,payment=False):
-    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':['auto_booking','change_booking']});patch(c,{'enabled':True,'fields':[{'key':'name','label':'고객명','type':'text','required':True}], 'modes':{'booking':'auto' if auto else 'manual'},'payment_required':payment});return c
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':['auto_booking','change_booking']});policy=c.get('/api/policies/status').json();post(c,'/api/policies/automation-ack',{'version':policy['version'],'errors':True,'accuracy':True,'approval':True});patch(c,{'enabled':True,'fields':[{'key':'name','label':'고객명','type':'text','required':True}], 'modes':{'booking':'auto' if auto else 'manual'},'payment_required':payment});return c
 
 def public(c):
     slug=c.get('/api/me').json()['slug'];u=TestClient(app);t=post(u,'/api/session',{'slug':slug})['token'];return u,t

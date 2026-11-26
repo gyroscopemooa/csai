@@ -68,6 +68,8 @@ def init():
         CREATE TABLE IF NOT EXISTS trial_access(ws TEXT PRIMARY KEY REFERENCES workspace(id),invite_id TEXT UNIQUE REFERENCES trial_invite(id),chat_limit INTEGER NOT NULL,chat_used INTEGER NOT NULL DEFAULT 0,credit_limit INTEGER NOT NULL,credit_used INTEGER NOT NULL DEFAULT 0,booking_limit INTEGER NOT NULL DEFAULT 10,expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS operator_wallet(ws TEXT PRIMARY KEY REFERENCES workspace(id),period TEXT NOT NULL,chat_used INTEGER NOT NULL DEFAULT 0,credit_used INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS model_usage(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),kind TEXT NOT NULL,model TEXT NOT NULL,mode TEXT NOT NULL,input_tokens INTEGER NOT NULL DEFAULT 0,cached_input_tokens INTEGER NOT NULL DEFAULT 0,output_tokens INTEGER NOT NULL DEFAULT 0,estimated_cost_usd REAL NOT NULL DEFAULT 0,created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS policy_acceptance(ws TEXT NOT NULL REFERENCES workspace(id),version TEXT NOT NULL,terms INTEGER NOT NULL,privacy INTEGER NOT NULL,ai INTEGER NOT NULL,dpa INTEGER NOT NULL,marketing INTEGER NOT NULL DEFAULT 0,accepted INTEGER NOT NULL,PRIMARY KEY(ws,version));
+        CREATE TABLE IF NOT EXISTS automation_ack(ws TEXT PRIMARY KEY REFERENCES workspace(id),version TEXT NOT NULL,accepted INTEGER NOT NULL);
         ''')
         if 'booking_context' not in [r[1] for r in c.execute('PRAGMA table_info(thread)')]:c.execute("ALTER TABLE thread ADD COLUMN booking_context TEXT NOT NULL DEFAULT '{}'")
         if 'days' not in [r[1] for r in c.execute('PRAGMA table_info(trial_invite)')]:c.execute('ALTER TABLE trial_invite ADD COLUMN days INTEGER NOT NULL DEFAULT 14')
