@@ -506,6 +506,19 @@
       "price": 29900
     }
   ],
+  "roadmap": [
+    {"name":"홈페이지 회원정보 연동","priority":"매우 높음","method":"업체 회원 식별·권한 연동 검토"},
+    {"name":"인스타그램 DM","priority":"매우 높음","method":"비즈니스 계정 공식 연동 검토"},
+    {"name":"이메일 수신·답변","priority":"매우 높음","method":"업체 수신함 연결 검토"},
+    {"name":"LINE 공식 계정","priority":"높음","method":"공식 계정 연동 검토"},
+    {"name":"텔레그램 봇","priority":"높음","method":"봇 연동 검토"},
+    {"name":"페이스북 메신저","priority":"보통","method":"비즈니스 계정 연동 검토"},
+    {"name":"Android 앱 SDK","priority":"보통","method":"모바일 SDK 검토"},
+    {"name":"iOS 앱 SDK","priority":"보통","method":"모바일 SDK 검토"},
+    {"name":"전화 상담 연동","priority":"추후","method":"전화 채널 연동 검토"},
+    {"name":"위챗","priority":"추후","method":"공식 계정 연동 검토"},
+    {"name":"AI 전화 상담","priority":"추후","method":"음성 상담·통화 정책 검토"}
+  ],
   "basic": [
     "AI 상담원 1명",
     "전용 링크·QR",

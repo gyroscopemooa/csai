@@ -307,3 +307,6 @@ function consentScreen(){let items=[['terms','서비스 이용약관'],['privacy
 async function savePolicyConsent(){await act(async()=>{await api('/api/policies/accept',{version:me.policy.version,...Object.fromEntries(['terms','privacy','ai','dpa'].map(k=>[k,checked('policy-'+k)]))});await refresh();render()})}
 const oldRender=render;
 render=async function(){if(me&&!me.policy?.accepted){$('#app').innerHTML=consentScreen();return}return oldRender()};
+
+const pricedAddonsPage=addons;
+addons=()=>pricedAddonsPage()+card('추가 연동 개발 예정',`<p class="muted">아래 항목은 기획 목록입니다. 현재 구매·연결할 수 없으며 요금과 제공 시기는 미정입니다. 외부 플랫폼 권한과 정책 확인 후 개발합니다.</p>${table(['예정 기능','우선순위','검토 방식','요금'],(cfg.catalog.roadmap||[]).map(x=>[x.name,x.priority,x.method,'미정']))}`);

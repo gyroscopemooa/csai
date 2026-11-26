@@ -65,6 +65,10 @@ with sync_playwright() as pw:
         desktop.locator(".phone .avatar img").wait_for()
     else:
         desktop.get_by_text("유료 상담 구독 후 로고 설정 가능").wait_for()
+    desktop.locator(".app-sidebar").get_by_role("button", name="추가 기능").click()
+    desktop.get_by_role("heading", name="추가 연동 개발 예정").wait_for()
+    assert desktop.get_by_role("row", name="인스타그램 DM 매우 높음 비즈니스 계정 공식 연동 검토 미정").count() == 1
+    assert desktop.get_by_text("현재 구매·연결할 수 없으며 요금과 제공 시기는 미정").count() == 1
 
     mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
     mobile.on("pageerror", lambda exc: errors.append(str(exc)))
