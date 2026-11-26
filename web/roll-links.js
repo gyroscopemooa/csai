@@ -105,7 +105,7 @@
       }, { threshold: 0.12 });
       observer.observe(grid);
     } else visible = true;
-    function select(entry, shouldScroll = false) {
+    function select(entry) {
       const now = performance.now();
       entries.forEach(item => {
         item.on = item === entry;
@@ -113,10 +113,6 @@
         item.cells.forEach((cell, i) => { cell.at = now + i * 30; cell.s.t = item.on ? 1 : 0; });
       });
       grid.classList.toggle('hot', !!entry);
-      if (entry && shouldScroll && !reduced.matches) {
-        const target = entry.article.offsetTop - grid.offsetTop - (grid.clientHeight - entry.article.offsetHeight) / 2;
-        grid.scrollTo({ top: target, behavior: 'smooth' });
-      }
     }
     entries.forEach(entry => {
       entry.article.addEventListener('pointerenter', () => { pointer = true; select(entry); });
@@ -129,8 +125,14 @@
       if (!grid.isConnected) { observer?.disconnect(); return; }
       const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
       if (visible && !pointer && now >= autoAt) {
-        if (autoOn) { select(null); autoOn = false; auto = (auto + 1) % entries.length; autoAt = now + 350; }
-        else { const entry = entries[auto]; select(entry, true); autoOn = true; autoAt = now + Math.max(1100, entry.cells.length * 30 + 500); }
+        if (autoOn) { select(null); autoOn = false; auto = (auto + 1) % entries.length; autoAt = now + 550; }
+        else {
+          const inView = item => { const r = item.article.getBoundingClientRect(); return r.bottom > 60 && r.top < innerHeight - 60; };
+          if (!inView(entries[auto])) { const next = entries.findIndex(inView); if (next >= 0) auto = next; }
+          const entry = entries[auto];
+          if (inView(entry)) { select(entry); autoOn = true; autoAt = now + Math.max(2300, entry.cells.length * 40 + 900); }
+          else autoAt = now + 500;
+        }
       }
       if (visible && !reduced.matches) for (let k = 0; k < 4; k++) entries.forEach(item => item.cells.forEach(cell => { if (now >= cell.at) step(cell.s, dt / 4); }));
       entries.forEach(item => item.cells.forEach(cell => { cell.inner.style.transform = `translateY(${-cell.s.x * 50}%)`; }));
