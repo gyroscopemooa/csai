@@ -51,6 +51,7 @@ def init():
         CREATE TABLE IF NOT EXISTS thread(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),visitor TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',manual INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL, UNIQUE(ws,visitor));
         CREATE TABLE IF NOT EXISTS message(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),thread TEXT NOT NULL REFERENCES thread(id),role TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS demo_sample(thread TEXT PRIMARY KEY REFERENCES thread(id),ws TEXT NOT NULL REFERENCES workspace(id));
+        CREATE TABLE IF NOT EXISTS demo_sample_entity(ws TEXT NOT NULL REFERENCES workspace(id),kind TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(ws,kind,id));
         CREATE INDEX IF NOT EXISTS message_history ON message(ws,thread,created);
         CREATE INDEX IF NOT EXISTS thread_history ON thread(ws,created);
         CREATE TABLE IF NOT EXISTS usage(ws TEXT NOT NULL REFERENCES workspace(id),period TEXT NOT NULL,n INTEGER NOT NULL DEFAULT 0 CHECK(n>=0),PRIMARY KEY(ws,period));
@@ -88,7 +89,7 @@ def trial_bookings_remaining(c,w):
     t=trial(c,w)
     if not t:return None
     x=one(c,'SELECT used_at FROM trial_invite WHERE id=?',(t['invite_id'],))
-    used=one(c,"SELECT count(*) n FROM booking WHERE ws=? AND created>=? AND status NOT IN ('draft','superseded')",(w['id'],x['used_at'] or 0 if x else 0))['n']
+    used=one(c,"SELECT count(*) n FROM booking b WHERE b.ws=? AND b.created>=? AND b.status NOT IN ('draft','superseded') AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id)",(w['id'],x['used_at'] or 0 if x else 0))['n']
     return max(0,t['booking_limit']-used)
 def sandbox_allowed(c,w):
     # Shared public demo must not grant arbitrary paid access. Local sandbox is for regression tests.

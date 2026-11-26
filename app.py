@@ -106,6 +106,8 @@ def demo_view(req:Request,body:dict,ws=Depends(ident)):
         plan='free' if mode=='free' else 'lite'
         addons=sorted(x['id'] for x in CAT['addons'] if x.get('local')) if mode=='developer' else (['extra_agent'] if mode=='subscriber_agent' else [])
         c.execute('UPDATE workspace SET plan=?,addons=?,enabled=CASE WHEN ?=\'free\' THEN 0 ELSE enabled END WHERE id=?',(plan,dump(addons),plan,target['id']))
+        if mode=='developer' and os.getenv('SEED_UI_SAMPLES')=='1':
+            demo_samples.seed_samples(c,target['id'])
         for acceptance in rows(c,'SELECT version,terms,privacy,ai,dpa,marketing,accepted FROM policy_acceptance WHERE ws=?',(ws,)):
             c.execute('INSERT INTO policy_acceptance VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(ws,version) DO NOTHING',(target['id'],acceptance['version'],acceptance['terms'],acceptance['privacy'],acceptance['ai'],acceptance['dpa'],acceptance['marketing'],acceptance['accepted']))
         token=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(token,target['id'],now()+86400*7))
@@ -166,7 +168,7 @@ def settings(body:dict,ws=Depends(ident)):
             for r in rs:
                 require(isinstance(r,dict),'담당자 형식',422);k=bounded(r.get('id',''),60);n=bounded(r.get('name',''),100);require(re.fullmatch(r'[a-zA-Z0-9_-]+',k) and k not in seen and n,'담당자 정보 오류',422);seen.add(k);out.append({'id':k,'name':n})
             require('default' in seen,'기본 담당자는 유지해야 합니다.',422)
-            for existing in rows(c,"SELECT DISTINCT resource FROM booking WHERE ws=? AND status IN ('confirmed','pending','pending_payment') AND start>?",(ws,datetime.now(timezone.utc).isoformat())):require(existing['resource'] in seen,'예정 예약이 있는 담당자는 삭제할 수 없습니다.',409)
+            for existing in rows(c,"SELECT DISTINCT b.resource FROM booking b WHERE b.ws=? AND b.status IN ('confirmed','pending','pending_payment') AND b.start>? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id)",(ws,datetime.now(timezone.utc).isoformat())):require(existing['resource'] in seen,'예정 예약이 있는 담당자는 삭제할 수 없습니다.',409)
             s['resources']=out
             if old.get('resources')!=out:s['template_version']+=1
         if 'fields' in body:
@@ -253,6 +255,7 @@ def faq(body:dict,ws=Depends(ident)):
     q=bounded(body.get('q',''),500);a=bounded(body.get('a',''),2000);require(q and a,'질문과 답변을 입력하세요.',422)
     with db(True) as c:
         w=getw(c,ws);unknown_id=body.get('unknown');u=one(c,"SELECT u.id,v.agent FROM unknown u JOIN thread t ON t.id=u.thread JOIN visitor v ON v.token=t.visitor WHERE u.ws=? AND u.id=? AND u.status='open'",(ws,unknown_id)) if unknown_id else None;require(not unknown_id or u,'미학습 질문 없음',404);agent_id=(u.get('agent') or '') if u else ''
+        if unknown_id:require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown' AND id=?",(ws,unknown_id)),'샘플 질문은 교육할 수 없습니다.',409)
         if agent_id:require('extra_agent' in entitlements(w),'추가 상담원 권한 필요',403)
         text=ai.clean(q+' => '+a);estimate=ai.estimate(text,[]);i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'estimated',estimate,0,dump({'text':text,'images':[],'unknown':unknown_id,'agent':agent_id}),None,now()))
         t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
@@ -472,7 +475,7 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
     return {'ok':True}
 @app.get('/api/unknown')
 def unknown(ws=Depends(ident)):
-    with db() as c:return rows(c,'SELECT id,thread,q,status,created FROM unknown WHERE ws=? ORDER BY created DESC',(ws,))
+    with db() as c:return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown' AND id=?",(ws,r['id'])))} for r in rows(c,'SELECT id,thread,q,status,created FROM unknown WHERE ws=? ORDER BY created DESC',(ws,))]
 @app.get('/api/qr')
 def qr(ws=Depends(ident)):
     with db() as c:w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요');url=APP_URL+'/c/'+w['slug']
@@ -489,7 +492,7 @@ def resource_id(s,body):
     k=body.get('resource','default');require(k in [r['id'] for r in s.get('resources',[{'id':'default','name':'기본 담당자'}])],'담당자 선택 오류',422);return k
 def available(c,ws,start,end,exclude='',buffer=0,resource='default'):
     t0=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).isoformat();t1=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).isoformat()
-    return not one(c,'SELECT id FROM booking WHERE ws=? AND resource=? AND status=\'confirmed\' AND start<? AND end>? AND id<>?',(ws,resource,t1,t0,exclude)) and not google_calendar.busy_conflict(c,ws,t0,t1)
+    return not one(c,"SELECT b.id FROM booking b WHERE b.ws=? AND b.resource=? AND b.status='confirmed' AND b.start<? AND b.end>? AND b.id<>? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id)",(ws,resource,t1,t0,exclude)) and not google_calendar.busy_conflict(c,ws,t0,t1)
 def validate_fields(s,data):
     require(isinstance(data,dict),'양식 오류',422);out={}
     for f in s['fields']:
@@ -546,7 +549,7 @@ def confirm(i:str,body:dict):
 @app.get('/api/bookings')
 def bookings(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);require('calendar' in entitlements(w));return [booking_view(b) for b in rows(c,'SELECT * FROM booking WHERE ws=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,))]
+        w=getw(c,ws);require('calendar' in entitlements(w));return [booking_view(b)|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id']))),'sample_thread':(one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(ws,b['visitor'])) or {}).get('id') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id'])) else None} for b in rows(c,'SELECT * FROM booking WHERE ws=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,))]
 @app.post('/api/bookings')
 def manual_booking(body:dict,ws=Depends(ident)):
     with db(True) as c:
@@ -556,7 +559,7 @@ def manual_booking(body:dict,ws=Depends(ident)):
 @app.post('/api/bookings/{i}')
 def booking_admin(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);s=loads(w['settings']);require('calendar' in entitlements(w));b=one(c,'SELECT * FROM booking WHERE id=? AND ws=?',(i,ws));require(b,'일정 없음',404);act=body.get('action')
+        w=getw(c,ws);s=loads(w['settings']);require('calendar' in entitlements(w));b=one(c,'SELECT * FROM booking WHERE id=? AND ws=?',(i,ws));require(b,'일정 없음',404);require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,i)),'샘플 일정은 변경할 수 없습니다.',409);act=body.get('action')
         if act=='approve':
             require(b['status'] in ['pending','pending_payment'] and b['customer_ok'],'확정할 수 없는 일정',409);require(b['version']==s['template_version'],'양식 또는 정책 변경. 신규 예약 요청 필요.',409);paid=bool(b['paid'] or body.get('paid'));require(not s['payment_required'] or paid,'결제 확인 필요',409);require(available(c,ws,b['start'],b['end'],i,s['buffer'],b['resource']) and datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'예약 시간 충돌 또는 만료',409);c.execute('UPDATE booking SET paid=?,status=\'confirmed\' WHERE id=?',(int(paid),i));ops.event(c,ws,'booking','예약 확정',i)
         elif act=='cancel':require(b['status'] in ['confirmed','pending','pending_payment'],'취소 불가',409);c.execute('UPDATE booking SET status=\'cancelled\' WHERE id=?',(i,));ops.event(c,ws,'booking','관리자 예약 취소',i)
@@ -568,7 +571,7 @@ def booking_admin(i:str,body:dict,ws=Depends(ident)):
 @app.get('/api/work')
 def work_list(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);a=entitlements(w);return [r for r in rows(c,'SELECT * FROM work WHERE ws=? ORDER BY created DESC',(ws,)) if r['kind'] in a]
+        w=getw(c,ws);a=entitlements(w);return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,r['id']))),'sample_thread':(one(c,'SELECT thread FROM work_link WHERE ws=? AND work=?',(ws,r['id'])) or {}).get('thread') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,r['id'])) else None} for r in rows(c,'SELECT * FROM work WHERE ws=? ORDER BY created DESC',(ws,)) if r['kind'] in a]
 @app.post('/api/work')
 def work_add(body:dict,ws=Depends(ident)):
     with db(True) as c:
@@ -577,12 +580,12 @@ def work_add(body:dict,ws=Depends(ident)):
 @app.post('/api/work/{i}')
 def work_done(i:str,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w));c.execute('UPDATE work SET status=\'resolved\' WHERE id=?',(i,))
+        w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w));require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 변경할 수 없습니다.',409);c.execute('UPDATE work SET status=\'resolved\' WHERE id=?',(i,))
     return {'ok':True}
 @app.get('/api/stats')
 def stats(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);require('stats' in entitlements(w));return {'threads':one(c,'SELECT count(*) n FROM thread WHERE ws=?',(ws,))['n'],'unknown':one(c,'SELECT count(*) n FROM unknown WHERE ws=? AND status=\'open\'',(ws,))['n'],'messages':one(c,'SELECT count(*) n FROM message WHERE ws=?',(ws,))['n'],'remaining':remaining(c,w)}
+        w=getw(c,ws);require('stats' in entitlements(w));return {'threads':one(c,'SELECT count(*) n FROM thread t WHERE t.ws=? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)',(ws,))['n'],'unknown':one(c,"SELECT count(*) n FROM unknown u WHERE u.ws=? AND u.status='open' AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=u.ws AND d.kind='unknown' AND d.id=u.id)",(ws,))['n'],'messages':one(c,'SELECT count(*) n FROM message m WHERE m.ws=? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=m.ws AND d.thread=m.thread)',(ws,))['n'],'remaining':remaining(c,w)}
 @app.get('/api/export')
 def export(ws=Depends(ident)):
     from openpyxl import Workbook
@@ -598,16 +601,16 @@ def export(ws=Depends(ident)):
     b=Workbook();b.remove(b.active)
     with db() as c:
         w=getw(c,ws);a=entitlements(w);require('export' in a)
-        rr=rows(c,'SELECT m.thread,m.role,m.body,m.created FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND t.kind<>? AND m.created>=? ORDER BY m.created',(ws,'test',history_cutoff(w)))
+        rr=rows(c,'SELECT m.thread,m.role,m.body,m.created FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND t.kind<>? AND m.created>=? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id) ORDER BY m.created',(ws,'test',history_cutoff(w)))
         require(len(rr)<=50000,'상담 기록이 너무 많습니다. 관리자에게 문의하세요.',422)
         add_sheet(b,'상담 기록',['상담 ID','역할','본문','일시 UTC'],[(r['thread'],r['role'],r['body'],datetime.fromtimestamp(r['created'],timezone.utc).isoformat()) for r in rr])
         if 'crm' in a:
             contacts=rows(c,'SELECT id,name,email,phone,notes FROM crm_contact WHERE ws=? ORDER BY updated DESC',(ws,))
             add_sheet(b,'고객',['고객 ID','이름','이메일','전화번호','메모'],[tuple(r[k] for k in ('id','name','email','phone','notes')) for r in contacts])
         if 'calendar' in a:
-            reservations=rows(c,"SELECT id,start,end,status FROM booking WHERE ws=? AND status NOT IN ('draft','superseded') ORDER BY start",(ws,))
+            reservations=rows(c,"SELECT b.id,b.start,b.end,b.status FROM booking b WHERE b.ws=? AND b.status NOT IN ('draft','superseded') AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id) ORDER BY b.start",(ws,))
             add_sheet(b,'예약',['예약 ID','시작 UTC','종료 UTC','상태'],[tuple(r[k] for k in ('id','start','end','status')) for r in reservations])
-        work=rows(c,'SELECT kind,title,details,status FROM work WHERE ws=? ORDER BY created',(ws,))
+        work=rows(c,"SELECT w.kind,w.title,w.details,w.status FROM work w WHERE w.ws=? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=w.ws AND d.kind='work' AND d.id=w.id) ORDER BY w.created",(ws,))
         add_sheet(b,'업무',['구분','제목','내용','상태'],[tuple(r[k] for k in ('kind','title','details','status')) for r in work if r['kind'] in a])
     o=io.BytesIO();b.save(o);return Response(o.getvalue(),media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':'attachment; filename=consultations.xlsx'})
 @app.get('/widget/{slug}')

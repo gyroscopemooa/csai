@@ -47,7 +47,7 @@ def review(i:str,body:dict,ws=Depends(ident)):
 
 @app.get('/api/events')
 def events(ws=Depends(ident)):
-    with db() as c:return rows(c,'SELECT * FROM event_log WHERE ws=? ORDER BY rowid DESC LIMIT 200',(ws,))
+    with db() as c:return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='event' AND id=?",(ws,r['id'])))} for r in rows(c,'SELECT * FROM event_log WHERE ws=? ORDER BY rowid DESC LIMIT 200',(ws,))]
 @app.post('/api/events/read')
 def read_events(ws=Depends(ident)):
     with db(True) as c:c.execute('UPDATE event_log SET seen=1 WHERE ws=?',(ws,))
@@ -148,11 +148,13 @@ def customer_request(body:dict):
 @app.patch('/api/work/{i}')
 def edit_work(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
+        require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 변경할 수 없습니다.',409)
         w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w),'업무 없음 또는 권한 없음',404);title=bounded(body.get('title',r['title']),200);details=bounded(body.get('details',r['details']),2000);status=body.get('status',r['status']);require(title and status in ['open','pending','resolved'],'업무 상태 오류',422);c.execute('UPDATE work SET title=?,details=?,status=? WHERE id=?',(title,details,status,i))
     return {'ok':True}
 
 @app.delete('/api/work/{i}')
 def remove_work(i:str,ws=Depends(ident)):
     with db(True) as c:
+        require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 삭제할 수 없습니다.',409)
         w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w),'업무 없음 또는 권한 없음',404);c.execute('DELETE FROM work_link WHERE ws=? AND work=?',(ws,i));c.execute('DELETE FROM work WHERE ws=? AND id=?',(ws,i))
     return {'ok':True}

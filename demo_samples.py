@@ -1,8 +1,10 @@
 """Opt-in, removable sample conversations for isolated local demo workspaces."""
 from fastapi import Depends
 from urllib.parse import urlsplit
+from datetime import datetime, timedelta, time as clock_time
+from zoneinfo import ZoneInfo
 from app import app, ident, require
-from store import APP_URL, DEMO, SHARED_TEST, db, getw, one, rows, now, uid
+from store import APP_URL, DEMO, SHARED_TEST, db, getw, one, rows, now, uid, dump, loads, entitlements
 
 SAMPLES = [
     ('public', 'open', False, [
@@ -84,6 +86,14 @@ SAMPLES = [
         ('assistant', '시작 지연과 납품 지연을 각각 기록했습니다. 사실관계와 보상 여부는 담당자가 확인하겠습니다.'),
         ('user', '보상은 어떻게 되는 거죠?'),
         ('assistant', '보상 금액이나 방법은 제가 임의로 약속하지 않습니다. 담당자에게 우선 확인하도록 전달하겠습니다.')
+    ]),
+    ('public', 'resolved', False, [
+        ('user', '샘플 · 이번 주 스튜디오 촬영 예약 가능한 시간이 있을까요?'),
+        ('assistant', '예약 가능 시간을 확인했습니다. 원하시는 날짜와 시간을 선택해 주세요.'),
+        ('user', '가능한 시간 중 오전 10시로 할게요. 인원은 두 명입니다.'),
+        ('assistant', '예약 양식에 고객명과 연락처를 입력하고 내용을 확인해 주세요. 확인 전에는 일정이 확정되지 않습니다.'),
+        ('user', '예약 내용을 확인했습니다.'),
+        ('assistant', '예약이 확정되었습니다. 업체 일정표에도 같은 시간이 등록되고, 담당자에게 알림이 남습니다.')
     ])
 ]
 
@@ -91,19 +101,58 @@ def local_demo(c, ws):
     w = getw(c, ws)
     require(DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost', '127.0.0.1') and w['owner'].startswith('demo:'), '로컬 데모 계정에서만 샘플을 관리할 수 있습니다.', 403)
 
+def mark(c, ws, kind, item):
+    c.execute('INSERT OR IGNORE INTO demo_sample_entity(ws,kind,id) VALUES(?,?,?)', (ws, kind, item))
+
+def seed_related(c, ws):
+    if 'calendar' not in entitlements(getw(c, ws)):
+        return
+    samples = rows(c, 'SELECT t.id,t.visitor FROM thread t JOIN demo_sample d ON d.thread=t.id WHERE t.ws=? AND d.ws=? ORDER BY t.created', (ws, ws))
+    if len(samples) < len(SAMPLES):
+        return
+    if not one(c, "SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown'", (ws,)):
+        unknown_id=uid()
+        c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(unknown_id,ws,samples[4]['id'],'샘플 · 해외 배송 가능 국가와 운임은 어떻게 되나요?','open',now()))
+        mark(c,ws,'unknown',unknown_id)
+    if one(c, "SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking'", (ws,)):
+        return
+    settings = loads(getw(c, ws)['settings'])
+    local_now = datetime.now(ZoneInfo(settings['timezone']))
+    start = datetime.combine((local_now + timedelta(days=2)).date(), clock_time(10), tzinfo=ZoneInfo(settings['timezone']))
+    end = start + timedelta(minutes=settings['duration'])
+    booking_id = uid()
+    payload = {'name':'샘플 고객','contact':'010-0000-0000','location':'스튜디오','people':'2','product':'프로필 촬영','source':'CS AI 상담 링크','note':'예약 확인 후 자동 확정된 화면 예시'}
+    c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (booking_id,ws,samples[-1]['visitor'],start.isoformat(),end.isoformat(),'default',dump(payload),settings['template_version'],dump(settings['fields']),'confirmed',1,0,uid(),now()))
+    mark(c, ws, 'booking', booking_id)
+    for index, kind, title, details, status in [
+        (1,'tasks','샘플 · 네이버 교환 요청 확인','고객의 사이즈 교환 요청. 재고와 교환 배송비를 담당자가 확인합니다.','pending'),
+        (2,'complaints','샘플 · 카카오 환불 문의','예약 취소 및 환불 조건 확인 요청. AI는 환불 금액을 확정하지 않았습니다.','open'),
+        (5,'quote','샘플 · 행사 촬영 견적 검토','3시간 행사 촬영, 사진 100장 및 영상 옵션 견적을 담당자가 검토합니다.','resolved')]:
+        work_id=uid()
+        c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(work_id,ws,kind,title,details,status,now()))
+        c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,samples[index]['id'],kind,work_id))
+        mark(c,ws,'work',work_id)
+    event_id=uid()
+    c.execute('INSERT INTO event_log VALUES(?,?,?,?,?,0,?)',(event_id,ws,'booking','샘플 · AI 상담 예약 확정',booking_id,now()))
+    mark(c,ws,'event',event_id)
+
 def seed_samples(c, ws):
     local_demo(c, ws)
     existing = one(c, 'SELECT COUNT(*) n FROM demo_sample WHERE ws=?', (ws,))['n']
-    if existing:
+    if existing == len(SAMPLES):
+        seed_related(c, ws)
         return {'count': existing, 'created': False}
     base = now() - 8 * 86400
     for index, (kind, status, manual, messages) in enumerate(SAMPLES):
+        if index < existing:
+            continue
         visitor = uid(); thread = uid(); created = base + index * 86400
         c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)', (visitor, ws, now() + 86400 * 30, 'test'))
         c.execute('INSERT INTO thread(id,ws,visitor,kind,status,manual,created) VALUES(?,?,?,?,?,?,?)', (thread, ws, visitor, kind, status, int(manual), created))
         c.execute('INSERT INTO demo_sample(thread,ws) VALUES(?,?)', (thread, ws))
         for pos, (role, body) in enumerate(messages):
             c.execute('INSERT INTO message(id,ws,thread,role,body,created) VALUES(?,?,?,?,?,?)', (uid(), ws, thread, role, body, created + pos * 120))
+    seed_related(c, ws)
     return {'count': len(SAMPLES), 'created': True}
 
 @app.post('/api/demo/samples')
@@ -115,6 +164,17 @@ def add_samples(ws=Depends(ident)):
 def remove_samples(ws=Depends(ident)):
     with db(True) as c:
         local_demo(c, ws)
+        for item in rows(c, 'SELECT kind,id FROM demo_sample_entity WHERE ws=?', (ws,)):
+            if item['kind']=='booking':
+                c.execute('DELETE FROM booking WHERE ws=? AND id=?',(ws,item['id']))
+            elif item['kind']=='work':
+                c.execute('DELETE FROM work_link WHERE ws=? AND work=?',(ws,item['id']))
+                c.execute('DELETE FROM work WHERE ws=? AND id=?',(ws,item['id']))
+            elif item['kind']=='event':
+                c.execute('DELETE FROM event_log WHERE ws=? AND id=?',(ws,item['id']))
+            elif item['kind']=='unknown':
+                c.execute('DELETE FROM unknown WHERE ws=? AND id=?',(ws,item['id']))
+        c.execute('DELETE FROM demo_sample_entity WHERE ws=?',(ws,))
         found = rows(c, 'SELECT t.id,t.visitor FROM thread t JOIN demo_sample d ON d.thread=t.id WHERE d.ws=? AND t.ws=?', (ws, ws))
         for item in found:
             c.execute('DELETE FROM demo_sample WHERE thread=? AND ws=?', (item['id'], ws))

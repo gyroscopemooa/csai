@@ -43,6 +43,17 @@ with sync_playwright() as pw:
     desktop.locator(".app-sidebar").get_by_role("button", name="AI 상담원 관리").click()
     desktop.get_by_role("heading", name="추가 상담원 설정").wait_for()
     desktop.screenshot(path=str(OUT / "live_demo_developer_desktop.png"))
+    desktop.locator(".app-sidebar").get_by_role("button", name="일정표 보기").click()
+    desktop.get_by_role("heading", name="샘플 · 상담에서 확정된 예약").wait_for()
+    desktop.get_by_role("button", name="샘플 확정 일정 보기").click()
+    desktop.get_by_text("샘플 · 읽기 전용").first.wait_for()
+    desktop.screenshot(path=str(OUT / "live_sample_calendar_desktop.png"))
+    desktop.locator(".app-sidebar").get_by_role("button", name="고객·업무 관리").click()
+    desktop.get_by_text("샘플 · 네이버 교환 요청 확인").wait_for()
+    desktop.screenshot(path=str(OUT / "live_sample_work_desktop.png"))
+    desktop.locator(".app-sidebar").get_by_role("button", name="알림").click()
+    desktop.get_by_text("샘플 · AI 상담 예약 확정").wait_for()
+    desktop.get_by_text("샘플 · 해외 배송 가능 국가와 운임은 어떻게 되나요?").wait_for()
     desktop.locator("#demo-view").select_option("free")
     desktop.locator(".sidebar-tenant").get_by_text("FREE 요금제").wait_for()
     desktop.locator(".app-sidebar").get_by_role("button", name="AI 교육시키기").click()
@@ -72,11 +83,11 @@ with sync_playwright() as pw:
     desktop.locator("#inbox-kind").select_option("all")
     desktop.get_by_role("button", name="찾기").click()
     desktop.locator(".inbox-entry").first.wait_for()
-    if desktop.locator(".inbox-entry").count() < 8:
-        desktop.get_by_role("button", name="샘플 상담 8건 넣기").click()
-        desktop.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 8")
-    assert desktop.locator(".inbox-entry").count() >= 8
-    assert desktop.locator(".sample-tag").count() >= 8
+    if desktop.locator(".inbox-entry").count() < 9:
+        desktop.get_by_role("button", name="연결 샘플 9건 넣기").click()
+        desktop.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 9")
+    assert desktop.locator(".inbox-entry").count() >= 9
+    assert desktop.locator(".sample-tag").count() >= 9
     desktop.wait_for_timeout(500)
     desktop.screenshot(path=str(OUT / "live_inbox_toolbar_desktop.png"))
     desktop.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
@@ -161,10 +172,10 @@ with sync_playwright() as pw:
     mobile.get_by_role("heading", name="무료 계정에서는 상담 테스트 1회를 확인할 수 있어요").wait_for()
     mobile.locator("#inbox-kind").select_option("all")
     mobile.get_by_role("button", name="찾기").click()
-    if mobile.locator(".inbox-entry").count() < 8:
-        mobile.get_by_role("button", name="샘플 상담 8건 넣기").click()
-        mobile.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 8")
-    assert mobile.locator(".inbox-entry").count() >= 8
+    if mobile.locator(".inbox-entry").count() < 9:
+        mobile.get_by_role("button", name="연결 샘플 9건 넣기").click()
+        mobile.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 9")
+    assert mobile.locator(".inbox-entry").count() >= 9
     mobile.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
     mobile.get_by_text("메시지 22개").wait_for()
     assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -179,6 +190,13 @@ with sync_playwright() as pw:
     assert mobile.locator("#msg").bounding_box()["y"] + mobile.locator("#msg").bounding_box()["height"] < 844
     mobile.wait_for_timeout(450)
     mobile.screenshot(path=str(OUT / "live_chat_mobile.png"))
+    mobile.get_by_role("button", name="메뉴 열기").click()
+    mobile.locator("#demo-view").select_option("developer")
+    mobile.locator(".app-sidebar").get_by_role("button", name="일정표 보기").click()
+    mobile.get_by_role("heading", name="샘플 · 상담에서 확정된 예약").wait_for()
+    mobile.get_by_role("button", name="샘플 확정 일정 보기").click()
+    assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    mobile.screenshot(path=str(OUT / "live_sample_calendar_mobile.png"), full_page=True)
     assert not errors, errors
     browser.close()
 

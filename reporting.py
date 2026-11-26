@@ -14,11 +14,11 @@ def init():
 init()
 
 def summarize(c,ws,start,end):
-    t=rows(c,"SELECT kind,status,COUNT(*) n FROM thread WHERE ws=? AND created>=? AND created<? GROUP BY kind,status",(ws,start,end))
-    m=rows(c,"SELECT m.role,COUNT(*) n FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND m.created>=? AND m.created<? AND t.kind<>'test' GROUP BY m.role",(ws,start,end))
-    u=one(c,"SELECT COUNT(*) n FROM unknown u JOIN thread t ON t.id=u.thread AND t.ws=u.ws WHERE u.ws=? AND u.created>=? AND u.created<? AND t.kind<>'test'",(ws,start,end))['n']
-    b=rows(c,"SELECT status,COUNT(*) n FROM booking WHERE ws=? AND created>=? AND created<? AND status NOT IN ('draft','superseded') GROUP BY status",(ws,start,end))
-    work=rows(c,"SELECT kind,status,COUNT(*) n FROM work WHERE ws=? AND created>=? AND created<? GROUP BY kind,status",(ws,start,end))
+    t=rows(c,"SELECT t.kind,t.status,COUNT(*) n FROM thread t WHERE t.ws=? AND t.created>=? AND t.created<? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id) GROUP BY t.kind,t.status",(ws,start,end))
+    m=rows(c,"SELECT m.role,COUNT(*) n FROM message m JOIN thread t ON t.id=m.thread AND t.ws=m.ws WHERE m.ws=? AND m.created>=? AND m.created<? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id) GROUP BY m.role",(ws,start,end))
+    u=one(c,"SELECT COUNT(*) n FROM unknown u JOIN thread t ON t.id=u.thread AND t.ws=u.ws WHERE u.ws=? AND u.created>=? AND u.created<? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=u.ws AND d.kind='unknown' AND d.id=u.id)",(ws,start,end))['n']
+    b=rows(c,"SELECT b.status,COUNT(*) n FROM booking b WHERE b.ws=? AND b.created>=? AND b.created<? AND b.status NOT IN ('draft','superseded') AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id) GROUP BY b.status",(ws,start,end))
+    work=rows(c,"SELECT w.kind,w.status,COUNT(*) n FROM work w WHERE w.ws=? AND w.created>=? AND w.created<? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=w.ws AND d.kind='work' AND d.id=w.id) GROUP BY w.kind,w.status",(ws,start,end))
     public=[r for r in t if r['kind']!='test']
     return {'threads':sum(x['n'] for x in public),'resolved':sum(x['n'] for x in public if x['status']=='resolved'),'unknown':u,'messages':sum(x['n'] for x in m),'channels':public,'roles':m,'bookings':b,'work':work}
 
@@ -40,7 +40,7 @@ def analytics(days:int=30,ws=Depends(ident)):
         daily=[]
         for i in range(days):
             a=start+timedelta(days=i);z=a+timedelta(days=1)
-            count=one(c,"SELECT COUNT(*) n FROM thread WHERE ws=? AND kind<>'test' AND created>=? AND created<?",(ws,int(a.timestamp()),int(z.timestamp())))['n']
+            count=one(c,"SELECT COUNT(*) n FROM thread t WHERE t.ws=? AND t.kind<>'test' AND t.created>=? AND t.created<? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(ws,int(a.timestamp()),int(z.timestamp())))['n']
             daily.append({'date':a.date().isoformat(),'threads':count})
         return out|{'daily':daily,'days':days,'remaining':remaining(c,w)}
 
