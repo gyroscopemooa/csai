@@ -10,7 +10,7 @@ DEMO=os.getenv('DEMO_MODE','1')=='1'
 SHARED_TEST=os.getenv('SHARED_TEST_MODE','0')=='1'
 OPERATOR_OWNERS={x.strip() for x in os.getenv('OPERATOR_OWNERS','').split(',') if x.strip()}
 OPERATOR_EMAILS={x.strip().lower() for x in os.getenv('OPERATOR_EMAILS','').split(',') if x.strip()}
-APP_URL=os.getenv('APP_URL','http://127.0.0.1:8000').rstrip('/')
+APP_URL=os.getenv('APP_URL','http://127.0.0.1:3000').rstrip('/')
 PLAN={x['id']:x for x in CAT['plans']}; ADD={x['id']:x for x in CAT['addons']}; PACK={x['id']:x for x in CAT['packages']}
 def uid(): return secrets.token_urlsafe(18)
 def now(): return int(time.time())

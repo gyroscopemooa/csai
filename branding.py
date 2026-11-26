@@ -1,4 +1,4 @@
-"""Paid appearance/alias and one extra independently configured assistant.
+"""Basic company logo, paid appearance/alias, and one extra assistant.
 Shared workspace credits, bookings, and main knowledge; extra assistant has its own FAQ/voice.
 """
 from fastapi import Depends,HTTPException

@@ -31,7 +31,7 @@ def bounded(v,n=2000):
     if not isinstance(v,str) or len(v)>n:fail(422,'텍스트 형식 또는 길이 오류')
     return v.strip()
 MODEL_RATES={
-    'gpt-6.2-sol':(2.0,10.0,0.10),
+    'gpt-6.2-sol':(1.0,5.0,0.05),
     'gpt-6-luna':(0.05,0.25,0.005),
 }
 def record_usage(c,ws,kind,model,result):

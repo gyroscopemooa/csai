@@ -1,5 +1,16 @@
 # CS AI 상품 기능 검수표
 
+## 2026-11-26 PC 검증 기록
+
+- 기능 브랜치 `feat/product-functions`에 최신 `main`의 사이드바·채팅 UI를 병합하고 충돌을 검토했습니다. `main`에는 역방향 병합하지 않았습니다.
+- 격리된 SQLite·모의 AI 환경에서 Python 컴파일, 브라우저 JS 구문 검사, `pytest -q` **75개 통과**.
+- 로컬 `127.0.0.1:3000` Playwright 직접 접속: PC 채팅 전송·사이드바 이동, 모바일 입력·가로 넘침, 랜딩 하단 01~04 카드·CTA 확인 통과.
+- 확장 ASGI 브라우저 시나리오: 교육, 예약 입력·확정·변경, 채널, 추가 상담원, 주문 화면 통과. 개별 FAQ 직접 입력 검사는 현재 유료 교육 흐름에 맞춰 수정했습니다.
+- 아래 상품별 실제 구매 및 외부 계정 연동은 아직 완료하지 않았으므로 검증 체크는 유지합니다. Supabase 전용 프로젝트 연결, 실 PG, 실제 발송, 공개 HTTPS 위젯은 미검증입니다.
+- OpenAI 공식 Standard 단가(USD/100만 토큰, 2026-11-26): `gpt-6.2-sol` 입력 1.00/출력 5.00/캐시 0.05, `gpt-6-luna` 입력 0.05/출력 0.25/캐시 0.005. 계정별 모델 접근 및 실제 청구는 미확인입니다.
+- Cloudflare `jeonmeensoo@gmail.com`의 `csai` Worker 확인. Worker 코드 단독 `wrangler deploy --dry-run --containers-rollout=none` 성공. Docker CLI가 없어 Container 이미지 dry-run 및 실제 배포는 아직 미완료입니다.
+- Supabase 커넥터에는 CS AI 프로젝트가 아닌 `transtream`만 보입니다. `002_private_runtime_bootstrap.sql`을 다른 서비스 DB에 실행하지 않았습니다. 적용할 SQL과 변수는 `SETUP_REQUIRED.md`에 모았습니다.
+
 개발 체크는 해당 상품의 주요 코드/UI/권한이 반영됐다는 의미이며, 검증 체크는 실제 구매 권한 및 사용 흐름을 테스트한 경우에만 표시합니다. 부분 구현은 미완료로 유지합니다.
 
 | 상품/기능 | 개발 | 검증 | 남은 사항 |
