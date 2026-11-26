@@ -91,7 +91,7 @@ async function sendChat(){
  }finally{waiting?.remove();sending=false;if($('#send'))$('#send').disabled=false}
 }
 async function preview(test=false){return pageTop(test?'AI 상담 테스트':'채팅창 미리보기',test?'첫 AI 답변 1회 무료 · 이후 구독 필요':'고객은 로그인 없이 상담합니다.')+`<div class="grid"><div>${phone(me.settings,test,!test)}</div><div>${card('전용 상담 링크',`<p>현재 ${me.enabled?'활성화':'비활성화'} 상태입니다.</p>${input('public-link',location.origin+'/c/'+me.slug)}<div class="row" style="margin:10px 0">${btn('링크 복사',"act(async()=>{await navigator.clipboard.writeText(val('public-link'));toast('복사했습니다')})")}${btn('공개 설정',"act(async()=>{await api('/api/settings',{enabled:!me.enabled},'PATCH');await refresh();render()})",'primary')}</div>${me.plan==='free'?'<p class="muted">유료 구독 후 공개 채팅 및 QR을 사용할 수 있습니다.</p>':`<img src="/api/qr" width="132" height="132" alt="상담 링크 QR코드"><a href="/api/qr" download="csai-qr.png">QR 저장</a>`}<div style="margin-top:12px">${btn('AI 상담 테스트',"go('test')",'primary')}</div>`)}${card('상담 사용량',`<div class="price">${me.remaining.toLocaleString()}회 남음</div><p class="muted">테스트와 실고객 상담은 동일한 사용량으로 차감됩니다.</p>`)}</div></div>`}
-async function education(){files=await api('/api/files');let jobs=await api('/api/training'),faq=await api('/api/faq');return pageTop('AI 교육시키기','자료와 직접 지침으로 나만의 상담원을 만드세요.')+`<div class="grid">${card('교육 현황',`<div class="price">${me.credits} 크레딧</div><p class="muted">최초 무료 20크레딧 · 직접 교육 무료</p>${btn('교육 크레딧 보기',"go('credits')")}${btn('말투 설정',"go('style')")}`)}${card('교육 자료 등록',`<input type="file" id="upload" multiple accept=".txt,.md,.csv,.pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx"><p class="muted">파일당 5MB · PDF 30페이지 · HWP는 PDF로 변환 · 사진 개인정보는 사전 제거</p>${btn('파일 업로드','uploadFiles()','primary')}`)}</div>${card('자료 선택 및 AI 교육',`${files.map(f=>`<div class="row line"><input class="check file-check" type="checkbox" value="${e(f.id)}" checked><span>${e(f.name)} <small>${f.chars}자</small></span>${btn('삭제',`act(async()=>{await api('/api/files/${f.id}',undefined,'DELETE');render()})`)}</div>`).join('')||'<p class="muted">등록된 자료가 없습니다.</p>'}${label('추가 교육 내용',ta('training-text'))}${btn('교육 비용 확인','estimateTraining()','primary')}<div id="estimate"></div>`)}${card('교육 결과 검토 및 반영',jobs.filter(j=>j.result).map(j=>`<div class="line"><strong>${e(j.state==='published'?'반영 완료':'검토 필요')} · ${j.cost} C</strong><pre class="scrolltext">${e(JSON.stringify(j.result,null,2))}</pre>${j.state==='review'?btn('결과 수정',`reviewModal('${j.id}')`)+btn('승인 및 상담에 반영',`act(async()=>{await api('/api/training/${j.id}/publish',{});await refresh();render()})`,'primary'):''}</div>`).join('')||'<p class="muted">교육을 실행하면 결과가 표시됩니다. 승인 전에는 고객 상담에 반영되지 않습니다.</p>')}${card('직접 모범 답변 등록 · 무료',`${label('질문',input('faq-q'))}${label('답변',ta('faq-a'))}${btn('저장',"act(async()=>{await api('/api/faq',{q:val('faq-q'),a:val('faq-a')});render()})",'primary')}${faq.map(f=>`<div class="line"><b>${e(f.q)}</b><p>${e(f.a)}</p>${btn('삭제',`act(async()=>{await api('/api/faq/${f.id}',undefined,'DELETE');render()})`)}</div>`).join('')}`)}${btn('AI 상담 테스트',"go('test')",'primary')}`}
+async function education(){files=await api('/api/files');let jobs=await api('/api/training'),faq=await api('/api/faq');return pageTop('AI 교육시키기','자료와 직접 지침으로 나만의 상담원을 만드세요.')+chatgptImportCard()+`<div class="grid">${card('교육 현황',`<div class="price">${me.credits} 크레딧</div><p class="muted">최초 무료 20크레딧 · 직접 교육 무료</p>${btn('교육 크레딧 보기',"go('credits')")}${btn('말투 설정',"go('style')")}`)}${card('교육 자료 등록',`<input type="file" id="upload" multiple accept=".txt,.md,.csv,.pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx"><p class="muted">파일당 5MB · PDF 30페이지 · HWP는 PDF로 변환 · 사진 개인정보는 사전 제거</p>${btn('파일 업로드','uploadFiles()','primary')}`)}</div>${card('자료 선택 및 AI 교육',`${files.map(f=>`<div class="row line"><input class="check file-check" type="checkbox" value="${e(f.id)}" checked><span>${e(f.name)} <small>${f.chars}자</small></span>${btn('삭제',`act(async()=>{await api('/api/files/${f.id}',undefined,'DELETE');render()})`)}</div>`).join('')||'<p class="muted">등록된 자료가 없습니다.</p>'}${label('추가 교육 내용',ta('training-text'))}${btn('교육 비용 확인','estimateTraining()','primary')}<div id="estimate"></div>`)}${card('교육 결과 검토 및 반영',jobs.filter(j=>j.result).map(j=>`<div class="line"><strong>${e(j.state==='published'?'반영 완료':'검토 필요')} · ${j.cost} C</strong><pre class="scrolltext">${e(JSON.stringify(j.result,null,2))}</pre>${j.state==='review'?btn('결과 수정',`reviewModal('${j.id}')`)+btn('승인 및 상담에 반영',`act(async()=>{await api('/api/training/${j.id}/publish',{});await refresh();render()})`,'primary'):''}</div>`).join('')||'<p class="muted">교육을 실행하면 결과가 표시됩니다. 승인 전에는 고객 상담에 반영되지 않습니다.</p>')}${card('직접 모범 답변 등록 · 무료',`${label('질문',input('faq-q'))}${label('답변',ta('faq-a'))}${btn('저장',"act(async()=>{await api('/api/faq',{q:val('faq-q'),a:val('faq-a')});render()})",'primary')}${faq.map(f=>`<div class="line"><b>${e(f.q)}</b><p>${e(f.a)}</p>${btn('삭제',`act(async()=>{await api('/api/faq/${f.id}',undefined,'DELETE');render()})`)}</div>`).join('')}`)}${btn('AI 상담 테스트',"go('test')",'primary')}`}
 async function uploadFiles(){await act(async()=>{let fs=[...$('#upload').files];if(!fs.length)throw Error('파일을 선택하세요.');for(let f of fs){if(f.size>5e6)throw Error('파일당 5MB 이하');let data=await new Promise((resolve,reject)=>{let r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(f)});await api('/api/files',{name:f.name,data})}toast('자료 등록 완료');render()})}
 async function estimateTraining(){await act(async()=>{estimate=await api('/api/training/estimate',{text:val('training-text'),files:[...document.querySelectorAll('.file-check:checked')].map(x=>x.value)});$('#estimate').innerHTML=`<div class="banner">최대 ${estimate.maxCredits} 크레딧 예약 · 보유 ${estimate.credits} C<br>실제 사용량 차감 후 남은 예약분은 복구합니다.</div>${estimate.enough?btn('비용 확인 및 교육 시작','runTraining()','primary'):btn('크레딧 충전',"go('credits')")}`})}
 async function runTraining(){await act(async()=>{if(!estimate)return;let area=$('#estimate');area.innerHTML='<div class="banner training-pending" role="status">'+motionDots+'<span>교육 분석 중…</span></div>';try{let r=await api('/api/training/'+estimate.id+'/run',{});toast(`교육 결과 생성 · ${r.cost} C 사용`);await refresh();render()}catch(err){if(area.isConnected)area.innerHTML='<p class="muted">교육 상태를 다시 확인해 주세요.</p>'+btn('교육 비용 다시 확인','estimateTraining()','primary');throw err}})}
@@ -218,3 +218,89 @@ window.addEventListener('hashchange',()=>{if(!publicMode){if(location.hash!=='#t
 
 async function issueRecovery(id){if(!confirm('기존 복구 코드가 있다면 폐기됩니다. 새 코드를 발급할까요?'))return;await act(async()=>{let r=await api('/api/customer/bookings/'+id+'/recovery-code',{token:await getChatSession()});modal('예약 복구 코드',`<p>다른 기기에서 이 예약만 불러올 수 있는 일회용 코드입니다. 누구에게도 공유하지 마세요. 기존 상담 내용은 이전되지 않습니다.</p>${input('recovery-issued',r.code)}<p class="muted">만료: ${e(new Date(r.expires*1000).toLocaleString())}</p>${btn('코드 복사',"act(async()=>{await navigator.clipboard.writeText(val('recovery-issued'));toast('복사 완료')})")}`)})}
 function recoverModal(){modal('예약 불러오기',label('예약 복구 코드',input('recovery-code'))+'<p class="muted">동일 업체의 상담 링크에서 발급받은 코드를 입력하세요. 이 기기로 예약 관리 권한이 이전됩니다.</p>'+btn('예약 불러오기',"act(async()=>{await api('/api/customer/bookings/recover',{token:await getChatSession(),code:val('recovery-code').trim()});toast('예약 불러오기 완료');customerBookings()})",'primary'))}
+
+
+// ChatGPT import phase 1: local-only preview; never sends conversations or charges a user.
+let cgImportRows=[], cgImportSelected=new Set(), cgImportGeneration=0, cgImportOffset=0;
+function chatgptImportCard(){
+ return card('ChatGPT 교육 데이터 가져오기','<p>이미 ChatGPT에 사업 정보, 상담 방식, 말투를 알려주셨나요? 사업 관련 대화만 선택하고 이전 예상 교육 크레딧을 무료로 확인하세요.</p><p class="muted">아직 준비하지 않았다면 ChatGPT에서 사업 소개, 상품·가격, 예약·환불 정책, 상담 말투와 모범 답변을 정리해 보세요. 실제 이전은 이전 이용권 구매 및 교육 크레딧 사용이 필요한 별도 기능으로 준비 중입니다.</p>'+btn('이전 예상 비용 확인','openChatgptImport()','primary')+' <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">ChatGPT에서 준비하기</a>');
+}
+function openChatgptImport(){
+ ++cgImportGeneration;cgImportRows=[];cgImportSelected=new Set();cgImportOffset=0;
+ modal('ChatGPT 이전 무료 견적','<p>ChatGPT 설정 → 데이터 제어 → 데이터 내보내기에서 받은 ZIP을 압축 해제한 후 conversations.json 또는 번호가 붙은 대화 JSON을 선택하세요.</p><p><a href="https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data" target="_blank" rel="noopener noreferrer">공식 내보내기 안내</a></p><p class="muted">파일당 25MB 이하, 여러 파일 선택 가능. 견적은 이 브라우저에서만 계산하며 대화 원문을 서버에 전송하지 않습니다. 업무와 무관한 사적 대화나 민감정보는 제외하세요.</p><input id="cg-import-files" type="file" accept=".json,application/json" multiple onchange="readChatgptImport(this.files)"><div id="cg-import-status" role="status"></div><label for="cg-import-search">대화 제목 검색</label><input id="cg-import-search" type="search" placeholder="사업명, 상담, 예약 등" oninput="cgImportOffset=0;showChatgptImport()"><div id="cg-import-list"></div><div id="cg-import-estimate" aria-live="polite"></div><p class="muted">현재 무료 견적만 제공합니다. 이전 이용권 결제, 데이터 변환 및 실제 교육은 아직 열리지 않았습니다.</p>');
+}
+function cgEstimateText(text){
+ let n=0,chars=Array.from(text),at=0;
+ while(at<chars.length){
+  let end=Math.min(at+12000,chars.length);
+  if(end<chars.length){let cut=chars.lastIndexOf('\n',end-1);if(cut>=at+6000)end=cut+1;}
+  n+=Math.ceil((new TextEncoder().encode(chars.slice(at,end).join('')).length+5000)/1000+6);
+  at=end;
+ }
+ return n;
+}
+function cgExtractConversation(conv){
+ if(!conv||typeof conv!=='object'||!conv.mapping||typeof conv.mapping!=='object'||Array.isArray(conv.mapping))return '';
+ let node=conv.current_node,seen=new Set(),messages=[];
+ // Follow only the active branch; skip hidden, tool, system and non-text messages.
+ while(typeof node==='string'&&Object.prototype.hasOwnProperty.call(conv.mapping,node)&&!seen.has(node)){
+  seen.add(node);let item=conv.mapping[node],msg=item?.message,role=msg?.author?.role;
+  if((role==='user'||role==='assistant')&&!msg.metadata?.is_visually_hidden_from_conversation&&msg.content?.content_type==='text'&&Array.isArray(msg.content.parts)){
+   let value=msg.content.parts.filter(p=>typeof p==='string').join('\n').trim();
+   if(value)messages.push(role+': '+value);
+  }
+  node=item?.parent;
+ }
+ return messages.reverse().join('\n');
+}
+async function readChatgptImport(fileList){
+ const generation=++cgImportGeneration,selected=Array.from(fileList),status=$('#cg-import-status');
+ cgImportRows=[];cgImportSelected=new Set();cgImportOffset=0;showChatgptImport();
+ if(!status)return;
+ if(!selected.length){status.textContent='';return;}
+ if(selected.length>10||selected.some(f=>f.size>25*1024*1024)||selected.reduce((n,f)=>n+f.size,0)>50*1024*1024){status.textContent='최대 10개 파일, 파일당 25MB 및 전체 50MB 이하로 선택해 주세요.';return;}
+ status.textContent='브라우저에서 대화 목록과 데이터 크기를 계산 중입니다.';
+ try{
+  let rows=[],seen=new Set();
+  for(let f of selected){
+   let data=JSON.parse(await f.text());
+   if(generation!==cgImportGeneration||!status.isConnected)return;
+   if(!Array.isArray(data))throw Error('ChatGPT 대화 JSON 배열 형식이 아닙니다.');
+   for(let conv of data){
+    const key=conv?.id||conv?.conversation_id;
+    if(typeof key==='string'&&seen.has(key))continue;
+    let text=cgExtractConversation(conv);
+    if(!text)continue;
+    if(typeof key==='string')seen.add(key);
+    rows.push({title:String(conv.title||'제목 없음').slice(0,250),bytes:new TextEncoder().encode(text).length,credits:cgEstimateText(text)});
+    if(rows.length>10000)throw Error('대화는 한 번에 최대 10,000개까지 견적을 확인할 수 있습니다.');
+   }
+  }
+  if(generation!==cgImportGeneration||!status.isConnected)return;
+  cgImportRows=rows;status.textContent=rows.length.toLocaleString()+'개 텍스트 대화 확인 · 이미지, 첨부 및 비활성 분기는 제외됩니다.';
+  showChatgptImport();
+ }catch(err){if(generation===cgImportGeneration&&status.isConnected){cgImportRows=[];cgImportSelected=new Set();status.textContent='파일을 읽지 못했습니다. '+err.message;showChatgptImport();}}
+}
+function cgToggleImport(index,checked){
+ if(checked)cgImportSelected.add(index);else cgImportSelected.delete(index);
+ showChatgptImportEstimate();
+}
+function showChatgptImport(){
+ let area=$('#cg-import-list');if(!area)return;
+ let query=($('#cg-import-search')?.value||'').toLocaleLowerCase(),matches=cgImportRows.map((row,index)=>({row,index})).filter(x=>x.row.title.toLocaleLowerCase().includes(query));
+ cgImportOffset=Math.max(0,Math.min(cgImportOffset,Math.max(0,Math.floor((matches.length-1)/30)*30)));
+ let page=matches.slice(cgImportOffset,cgImportOffset+30);
+ area.innerHTML=page.map(({row,index})=>'<label class="row line"><input class="check" type="checkbox" '+(cgImportSelected.has(index)?'checked':'')+' onchange="cgToggleImport('+index+',this.checked)"><span>'+e(row.title)+' <small>'+row.credits.toLocaleString()+' C</small></span></label>').join('')+(matches.length?'<div class="row">'+btn('이전','cgImportOffset-=30;showChatgptImport()')+'<span>'+ (cgImportOffset+1)+'–'+Math.min(matches.length,cgImportOffset+30)+' / '+matches.length+'</span>'+btn('다음','cgImportOffset+=30;showChatgptImport()')+'</div>':'<p class="muted">표시할 대화가 없습니다.</p>');
+ showChatgptImportEstimate();
+}
+function showChatgptImportEstimate(){
+ let area=$('#cg-import-estimate');if(!area)return;
+ let rows=Array.from(cgImportSelected,i=>cgImportRows[i]).filter(Boolean),credits=rows.reduce((n,r)=>n+r.credits,0),bytes=rows.reduce((n,r)=>n+r.bytes,0),short=Math.max(0,credits-me.credits);
+ let packs=cfg.catalog.education.filter(x=>x.price>0&&x.quantity>0),largest=packs.reduce((a,b)=>a.quantity>b.quantity?a:b),best=null;
+ if(short){let prefix=Math.max(0,Math.floor(short/largest.quantity)-1);let left=short-prefix*largest.quantity;let limit=left+largest.quantity;let dp=Array(limit+1).fill(Infinity);dp[0]=0;
+  for(let i=1;i<=limit;i++)for(let p of packs)if(i>=p.quantity)dp[i]=Math.min(dp[i],dp[i-p.quantity]+p.price);
+  for(let i=left;i<=limit;i++)if(Number.isFinite(dp[i])){let cost=prefix*largest.price+dp[i];if(best===null||cost<best)best=cost;}
+  // For large selections this is a feasible bundle example, not a guaranteed cheapest quote.
+ }
+ area.innerHTML='<div class="banner">선택 '+rows.length.toLocaleString()+'개 · '+bytes.toLocaleString()+' bytes<br>교육 크레딧 예비 상한: '+credits.toLocaleString()+' C · 보유 '+me.credits.toLocaleString()+' C<br>부족 크레딧 '+short.toLocaleString()+' C · 현재 충전 상품 기준 예상 추가 충전액 '+(short?(best===null?'별도 확인':money(best)):money(0))+'<br>이전 이용권 가격: 미정 (별도 구매 예정)</div><p class="muted">기존 교육 엔진의 바이트 기반 추정식을 대화별 적용한 참고 값으로, 토큰 실측이나 확정 결제 금액이 아닙니다. 실제 이전은 별도 서버 견적과 동의 후 진행될 예정입니다.</p>';
+}
