@@ -42,10 +42,23 @@ def public_products(c,ws,agent):
 
 def chat_products(c,w,agent,msg):
     if not public_enabled(c,w,agent):return []
-    all_items=public_products(c,w['id'],agent['id'] if agent else '')
-    normalized=re.sub(r'\s+','',msg).lower()
-    matched=[p for p in all_items if re.sub(r'\s+','',p['name']).lower() in normalized]
-    return matched[:5] if matched else []
+    from smartstore_sync import candidates
+    aid=agent['id'] if agent else ''
+    all_items=rows(c,'SELECT name,variant,price,url,description FROM commerce_product WHERE ws=? AND agent=? AND published=1',(w['id'],aid))+candidates(c,w['id'],aid)
+    return rank_products(all_items,msg)
+
+def rank_products(items,msg):
+    def norm(x):return re.sub(r'[^\w]','',x.lower())
+    query=norm(msg);words={norm(x) for x in re.findall(r'[\w]+',msg) if len(x)>=2}
+    def score(p):
+        title=norm(p['name'])
+        if not title:return 0
+        if title in query:return 100+min(len(title),50)
+        overlap=sum(len(x) for x in words if len(x)>=2 and x in title and x not in {'상품','가격','배송','얼마','재고','문의','제품','있나요'})
+        return overlap if overlap>=2 else 0
+    ranked=sorted(((score(p),p) for p in items),key=lambda x:x[0],reverse=True)
+    # Keep context bounded regardless of catalog size.
+    return [p for s,p in ranked[:3] if s>0]
 
 def int_value(body,k,minimum,maximum):
     n=body.get(k);require(type(n) is int and minimum<=n<=maximum,'숫자 범위 오류: '+k,422);return n
