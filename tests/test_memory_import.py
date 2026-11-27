@@ -27,3 +27,22 @@ def test_memory_preflight_has_no_raw_messages_or_training_side_effects():
     assert filtered.json()['excluded'] == 2
     assert client.get('/api/me').json()['credits'] == credits
     assert client.get('/api/training').json() == jobs
+
+
+def test_title_category_hints_are_not_ai_classification():
+    from memory_import import category_hint
+    assert '사업·상품·서비스' in category_hint('사업 상품 계획')
+    assert '개인정보 주의' in category_hint('가족 건강')
+    assert category_hint('unclassified text') == ['미분류']
+
+
+def test_numbered_zip_files_and_cross_file_deduplication():
+    from memory_import import chatgpt_export, summarize
+    c={'title':'사업','current_node':'a','mapping':{'a':{'message':{'author':{'role':'user'},'content':{'content_type':'text','parts':['business']}}}}}
+    buf=io.BytesIO()
+    with zipfile.ZipFile(buf,'w') as archive:
+        archive.writestr('conversations-001.json',json.dumps([c]))
+        archive.writestr('conversations-002.json',json.dumps([c]))
+        archive.writestr('ignored.json','not conversation data')
+    result=summarize(chatgpt_export(buf.getvalue()))
+    assert result['duplicates']==1 and len(result['conversations'])==1

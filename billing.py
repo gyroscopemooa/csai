@@ -32,9 +32,16 @@ def normalize_addons(a):
     return sorted(a),price
 
 def quote(body):
-    kind=body.get('kind');require(kind in ['subscription','education','message'],'상품 유형 오류',422)
+    kind=body.get('kind');require(kind in ['subscription','education','message','memory_import'],'상품 유형 오류',422)
     if kind=='subscription':
-        plan=body.get('plan');require(plan in PLAN and plan!='free','유료 요금제 선택 필요',422);a,n=normalize_addons(body.get('addons',[]));return kind,{'plan':plan,'addons':a},PLAN[plan]['price']+n
+        plan=body.get('plan');require(plan in PLAN and plan!='free','유료 요금제 선택 필요',422);a,n=normalize_addons(body.get('addons',[]))
+        count=body.get('brand_quantity',1 if 'extra_agent' in a else 0)
+        require(type(count) is int and 0<=count<=MAX_EXTRA_BRANDS and bool(count)==('extra_agent' in a),'추가 브랜드 수량 오류',422)
+        items={'plan':plan,'addons':a}
+        if count>1:items['brand_quantity']=count
+        return kind,items,PLAN[plan]['price']+n+max(0,count-1)*ADD['extra_agent']['price']
+    if kind=='memory_import':
+        agent=bounded(body.get('agent',''),100);return kind,{'agent':agent},CAT['memory_import']['price']
     if kind=='education':
         q=next((x for x in CAT['education'] if x['id']==body.get('sku') and x['price']>0),None);require(q,'교육 상품 오류',422);return kind,{'sku':q['id'],'quantity':q['quantity']},q['price']
     q=next((x for x in CAT['messages'] if x['name']==body.get('name') and x['quantity']==body.get('quantity')),None);require(q,'메시지 상품 오류',422);return kind,{'name':q['name'],'quantity':q['quantity']},q['price']
@@ -45,12 +52,26 @@ def next_month(t):
 def order_view(r):return dict(r,items=loads(r['items']))
 @app.post('/api/billing/quote')
 def checkout_quote(body:dict,ws=Depends(ident)):
-    k,i,n=quote(body);return {'kind':k,'items':i,'amount':n,'currency':'KRW','sandbox':True}
+    k,i,n=quote(body);result={'kind':k,'items':i,'amount':n,'currency':'KRW','sandbox':True}
+    if k=='subscription':
+        with db() as c:
+            w=getw(c,ws);sub=one(c,'SELECT * FROM subscription WHERE ws=? AND period_end>?',(ws,now()))
+            previous=one(c,"SELECT amount FROM checkout_order WHERE id=? AND ws=? AND status='paid'",(sub['order_id'],ws)) if sub else None
+            old=previous['amount'] if previous else (PLAN[w['plan']]['price']+normalize_addons(loads(w['addons']))[1]+max(0,brand_quantity(w)-1)*ADD['extra_agent']['price'] if w['plan']!='free' else 0)
+            delta=n-old
+            remaining=max(0,sub['period_end']-now()) if sub else 0
+            duration=max(1,sub['period_end']-sub['period_start']) if sub else 1
+            estimate=(max(0,delta)*remaining+duration-1)//duration if sub and previous else None
+            result['change']={'current_monthly':old,'next_monthly':n,'monthly_delta':delta,'period_end':sub['period_end'] if sub else None,'estimated_upgrade_proration':estimate,'actual_charge_verified':False,'sandbox_only':True}
+    return result
 @app.post('/api/billing/orders')
 def checkout_create(body:dict,ws=Depends(ident)):
     require(DEMO,'실제 PG 미연결',503);k,i,n=quote(body);client=bounded(body.get('client',''),100);require(client,'요청 ID 필요',422)
     with db(True) as c:
         require(sandbox_allowed(c,getw(c,ws)),'공유 환경에서는 운영자만 테스트 구매할 수 있습니다.',403)
+        if k=='memory_import':
+            from branding import owned_agent
+            owned_agent(c,getw(c,ws),i['agent'])
         old=one(c,'SELECT * FROM checkout_order WHERE ws=? AND client=?',(ws,client))
         if old:
             require(old['kind']==k and old['items']==dump(i),'동일 요청 ID에 다른 상품',409);return order_view(old)
@@ -72,10 +93,13 @@ def checkout_confirm(i:str,ws=Depends(ident)):
                 # Preserve current UTC-month usage for first migration from legacy local test plan.
                 u=one(c,'SELECT n FROM usage WHERE ws=? AND period=?',(ws,month()))
                 if not sub and u:c.execute('INSERT OR IGNORE INTO usage VALUES(?,?,?)',(ws,'sub:'+str(start),u['n']))
-            c.execute('INSERT INTO subscription VALUES(?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_end=0,order_id=excluded.order_id',(ws,start,end,0,i));c.execute('UPDATE workspace SET plan=?,addons=? WHERE id=?',(x['plan'],dump(x['addons']),ws))
+            c.execute('INSERT INTO subscription VALUES(?,?,?,?,?) ON CONFLICT(ws) DO UPDATE SET period_start=excluded.period_start,period_end=excluded.period_end,cancel_at_end=0,order_id=excluded.order_id',(ws,start,end,0,i));settings=loads(w['settings']);settings['_extra_brand_quantity']=x.get('brand_quantity',1 if 'extra_agent' in x['addons'] else 0);c.execute('UPDATE workspace SET plan=?,addons=?,settings=? WHERE id=?',(x['plan'],dump(x['addons']),dump(settings),ws))
         elif r['kind']=='education':
             # Purchased packs credit the ordinary wallet; operator/trial safety caps are separate.
             c.execute('UPDATE workspace SET credits=credits+? WHERE id=?',(x['quantity'],ws));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education',x['quantity'],i,now()))
+        elif r['kind']=='memory_import':
+            from branding import owned_agent
+            owned_agent(c,w,x['agent'])  # fee entitlement only; never credit the education wallet
         else:c.execute('INSERT INTO message_balance VALUES(?,?,?) ON CONFLICT(ws,kind) DO UPDATE SET n=message_balance.n+excluded.n',(ws,x['name'],x['quantity']))
         c.execute("UPDATE checkout_order SET status='paid',paid_at=? WHERE id=?",(now(),i));return order_view(one(c,'SELECT * FROM checkout_order WHERE id=?',(i,)))
 @app.post('/api/billing/orders/{i}/cancel')
@@ -122,6 +146,8 @@ def sandbox_refund(i:str,body:dict,ws=Depends(ident)):
             n=items['quantity']
             require(w['credits']>=n,'잔여 크레딧이 부족하여 자동 전액 환불 불가',409)
             c.execute('UPDATE workspace SET credits=credits-? WHERE id=?',(n,ws));c.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?)',(uid(),ws,'education_refund',-n,i,now()))
+        elif row['kind']=='memory_import':
+            require(not one(c,'SELECT job FROM memory_import_batch WHERE ws=? AND order_id=?',(ws,i)),'교육 견적을 생성한 이전 이용권은 자동 테스트 환불 대상이 아닙니다.',409)
         else:
             n=items['quantity'];kind=items['name'];balance=one(c,'SELECT n FROM message_balance WHERE ws=? AND kind=?',(ws,kind))
             require(balance and balance['n']>=n,'잔여 메시지 잔액 부족',409)

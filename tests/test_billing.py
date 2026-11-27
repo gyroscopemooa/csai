@@ -45,3 +45,27 @@ def test_polar_sandbox_uses_server_calculated_price(monkeypatch):
     result = client.post(path, json=request)
     assert result.status_code == 200
     assert result.json()['items']['addons'] == ['all']
+
+
+def test_existing_channel_bundle_and_education():
+    c=owner()
+    def amount(addons):
+        return post(c,'/api/billing/quote',{'kind':'subscription','plan':'mini','addons':addons})['amount']
+    assert amount(['naver','kakao']) == amount(['channels']) == 12800
+    assert amount(['channel_pack']) == 14800
+    assert amount(['channel_pack']) < amount(['channels','widget'])
+    assert amount(['all']) == 44800
+    assert post(c,'/api/billing/quote',{'kind':'education','sku':'mini'})['amount'] == 1900
+    assert post(c,'/api/billing/quote',{'kind':'subscription','plan':'enterprise','addons':[]})['amount'] == 699000
+
+
+def test_subscription_change_quote_is_read_only():
+    c=owner()
+    paid(c,order(c,'subscription',plan='lite',addons=[],client='initial-change'))
+    r=post(c,'/api/billing/quote',{'kind':'subscription','plan':'lite','addons':['auto_booking']})
+    assert r['amount']==17700
+    assert r['change']['current_monthly']==9900
+    assert r['change']['monthly_delta']==7800
+    assert 0<=r['change']['estimated_upgrade_proration']<=7800
+    assert not r['change']['actual_charge_verified']
+    assert c.get('/api/me').json()['addons']==[]

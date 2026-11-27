@@ -44,7 +44,7 @@ def create_job(body:dict,ws=Depends(ident)):
     require(isinstance(payload,dict) and len(payload)<=30 and all(isinstance(k,str) and len(k)<=100 and isinstance(v,(str,int,float,bool,type(None))) for k,v in payload.items()),'단순 JSON 객체만 지원',422)
     require(len(dump(payload))<=10000,'전달 데이터 최대 10000자',422)
     with db(True) as c:
-        access(c,ws);w=getw(c,ws);row=one(c,'SELECT kind FROM work WHERE ws=? AND id=?',(ws,work))
+        access(c,ws);w=getw(c,ws);row=one(c,'SELECT kind FROM work WHERE ws=? AND id=? AND NOT EXISTS(SELECT 1 FROM work_brand b WHERE b.ws=work.ws AND b.work=work.id)',(ws,work))
         require(row and row['kind'] in entitlements(w),'업무 권한 없음',404)
         require(one(c,'SELECT id FROM custom_workflow WHERE ws=? AND id=? AND active=1',(ws,workflow)),'활성 업무 없음',404)
         old=one(c,'SELECT * FROM custom_job WHERE ws=? AND workflow=? AND work=?',(ws,workflow,work))

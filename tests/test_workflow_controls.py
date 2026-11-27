@@ -1,0 +1,70 @@
+from datetime import datetime
+from workflow_controls import default_policy,decision
+from test_app import owner,post,patch,public
+
+def test_workflow_decision():
+    p=default_policy();p['tasks']={'refund':'staff','price':'auto'}
+    assert decision(p,'환불 금액',{})==('staff','task')
+    p['blocked_terms']=['계약서'];assert decision(p,'계약서 요청',{})==('staff','restricted')
+    p['schedule']={'enabled':True,'days':[0],'start':'09:00','end':'18:00'}
+    assert decision(p,'안녕하세요',{},datetime(2026,11,27,10))==('staff','schedule')
+
+def test_policy_handoff_uses_no_ai_quota():
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':[]});patch(c,{'enabled':True})
+    post(c,'/api/workflow',{'tasks':{'refund':'staff'}})
+    u,token=public(c);before=c.get('/api/me').json()['remaining']
+    assert post(u,'/api/chat',{'token':token,'message':'환불 문의','clientMessageId':'policy-manual'})['manual']
+    assert c.get('/api/me').json()['remaining']==before
+    assert owner().get('/api/workflow').json()['tasks']=={}
+
+
+def test_backup_import_review_only():
+    c=owner();before=c.get('/api/me').json()
+    backup={'format':'csai-knowledge-v1','published':{'style':'친절','rules':['정확히 답변'],'faq':[{'q':'가격','a':'100원'}]},'faq':[{'q':'영업시간','a':'09:00'}]}
+    payload={'backup':backup,'confirmed':True}
+    assert c.post('/api/workflow/backup/import',json={'backup':backup}).status_code==422
+    r=post(c,'/api/workflow/backup/import',payload)
+    assert r['state']=='review' and r['cost']==0 and r['faq_count']==2
+    assert c.get('/api/me').json()['published']==before['published']
+    assert c.get('/api/me').json()['credits']==before['credits']
+    assert owner().post('/api/training/'+r['id']+'/publish',json={}).status_code==409
+    post(c,'/api/training/'+r['id']+'/publish',{})
+    assert len(c.get('/api/me').json()['published']['faq'])==2
+    assert c.get('/api/me').json()['credits']==before['credits']
+    backup['faq']=[{'q':'가격','a':'200원'}]
+    assert c.post('/api/workflow/backup/import',json=payload).status_code==422
+    assert c.post('/api/workflow/backup/import',json={'confirmed':True,'backup':{'format':'bad'}}).status_code==422
+
+def test_scoped_manual_mode_and_resume():
+    from store import db,one,uid,now
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':[]});patch(c,{'enabled':True,'price':'100원'})
+    u,token=public(c);before=c.get('/api/me').json()['remaining']
+    def mode(agent,channel,manual):
+        return post(c,'/api/consultation-mode',{'agent':agent,'channel':channel,'manual':manual,'confirmed':True})
+    def ask(client):return post(u,'/api/chat',{'token':token,'message':'가격은?','clientMessageId':client})
+    mode('*','naver',True)
+    assert not ask('web-auto').get('manual')
+    mode('*','*',True)
+    assert ask('all-manual')['manual']
+    row=c.get('/api/inbox').json()[0];assert row['paused_by']=='account' and not row['manual']
+    assert c.get('/api/me').json()['remaining']==before-1
+    mode('','public',True);mode('*','*',False)
+    assert ask('brand-manual')['pausedBy']=='brand_channel'
+    mode('','public',False);assert not ask('resumed').get('manual')
+    post(c,'/api/inbox/'+row['id'],{'manual':True});mode('*','*',True);mode('*','*',False)
+    assert ask('individual-manual')['manual']
+    assert owner().get('/api/consultation-mode').json()=={'paused':[]}
+    assert c.post('/api/consultation-mode',json={'agent':'not-owned','channel':'public','manual':True,'confirmed':True}).status_code==403
+
+def test_web_source_attribution_is_not_a_channel_override():
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':[]});patch(c,{'enabled':True})
+    slug=c.get('/api/me').json()['slug']
+    from fastapi.testclient import TestClient
+    from app import app
+    u=TestClient(app)
+    for source in ('link','widget','naver'):
+        r=post(u,'/api/session',{'slug':slug,'source':source})
+        detail=c.get('/api/inbox/'+r['thread']).json()
+        assert detail['kind']=='public'
+        assert detail['source']==(source if source in ('link','widget') else '')
+    assert all(x['kind']=='public' for x in c.get('/api/inbox').json())

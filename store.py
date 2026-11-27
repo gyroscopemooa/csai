@@ -48,6 +48,11 @@ def init():
         CREATE TABLE IF NOT EXISTS workspace(id TEXT PRIMARY KEY,owner TEXT UNIQUE NOT NULL,slug TEXT UNIQUE NOT NULL,settings TEXT NOT NULL,plan TEXT NOT NULL DEFAULT 'free',credits INTEGER NOT NULL DEFAULT 20 CHECK(credits>=0),free_used INTEGER NOT NULL DEFAULT 0,addons TEXT NOT NULL DEFAULT '[]',published TEXT NOT NULL DEFAULT '{}',enabled INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS session(token TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS visitor(token TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),expires INTEGER NOT NULL,kind TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS reply_draft_request(ws TEXT NOT NULL,client TEXT NOT NULL,state TEXT NOT NULL,result TEXT,period TEXT NOT NULL,charge TEXT NOT NULL,fingerprint TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,client));
+        CREATE TABLE IF NOT EXISTS inbox_read(ws TEXT NOT NULL,thread TEXT NOT NULL,seen INTEGER NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE TABLE IF NOT EXISTS inbox_annotation(ws TEXT NOT NULL,thread TEXT NOT NULL,note TEXT NOT NULL,tags TEXT NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE TABLE IF NOT EXISTS inbox_assignment(ws TEXT NOT NULL,thread TEXT NOT NULL,assignee TEXT NOT NULL,priority TEXT NOT NULL,due_date TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE TABLE IF NOT EXISTS inbox_snippet(id TEXT PRIMARY KEY,ws TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS thread(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),visitor TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',manual INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL, UNIQUE(ws,visitor));
         CREATE TABLE IF NOT EXISTS message(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),thread TEXT NOT NULL REFERENCES thread(id),role TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS demo_sample(thread TEXT PRIMARY KEY REFERENCES thread(id),ws TEXT NOT NULL REFERENCES workspace(id));
@@ -122,6 +127,13 @@ def entitlements(w):
         if i in PACK:a.update(PACK[i]['includes'])
     if 'channels' in a:a.update(['naver','kakao'])
     return a if w['plan']!='free' else set()
+MAX_EXTRA_BRANDS=1000  # checkout safety ceiling, not a per-product single-brand restriction
+def brand_quantity(w):
+    if 'extra_agent' not in entitlements(w):return 0
+    if is_operator(w):return MAX_EXTRA_BRANDS
+    value=loads(w['settings']).get('_extra_brand_quantity',1)
+    return value if type(value) is int and 1<=value<=MAX_EXTRA_BRANDS else 1
+
 # Provisional access windows only. No automatic deletion before the retention policy is approved.
 BASE_HISTORY_DAYS=max(1,int(os.getenv('BASE_HISTORY_DAYS','90')))
 EXTENDED_HISTORY_DAYS=max(BASE_HISTORY_DAYS,int(os.getenv('EXTENDED_HISTORY_DAYS','1825')))

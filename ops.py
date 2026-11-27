@@ -15,9 +15,32 @@ def init_ops():
         CREATE TABLE IF NOT EXISTS notification_config(ws TEXT PRIMARY KEY,email TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS delivery(id TEXT PRIMARY KEY,ws TEXT NOT NULL,event TEXT NOT NULL,status TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',created INTEGER NOT NULL,UNIQUE(ws,event));
         CREATE TABLE IF NOT EXISTS channel_session(ws TEXT NOT NULL,channel TEXT NOT NULL,external_user TEXT NOT NULL,token TEXT NOT NULL,PRIMARY KEY(ws,channel,external_user));
+        CREATE TABLE IF NOT EXISTS work_brand(work TEXT PRIMARY KEY REFERENCES work(id) ON DELETE CASCADE,ws TEXT NOT NULL,agent TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS work_brand_scope ON work_brand(ws,agent);
         CREATE TABLE IF NOT EXISTS work_link(ws TEXT NOT NULL,thread TEXT NOT NULL,kind TEXT NOT NULL,work TEXT NOT NULL,PRIMARY KEY(ws,thread,kind));
         ''')
 init_ops()
+
+def work_scope(c,w,agent,write=False):
+    import branding
+    require(isinstance(agent,str),'브랜드 형식 오류',422)
+    branding.owned_agent(c,w,agent)
+    if agent and write:require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(w['id'],agent)),'보관된 브랜드입니다.',409)
+    return agent
+
+def scoped_work(c,w,i,agent,write=False):
+    work_scope(c,w,agent,write)
+    r=one(c,"SELECT w.* FROM work w LEFT JOIN work_brand b ON b.work=w.id AND b.ws=w.ws WHERE w.ws=? AND w.id=? AND COALESCE(b.agent,'')=?",(w['id'],i,agent))
+    require(r and r['kind'] in entitlements(w),'업무 없음 또는 권한 없음',404)
+    return r
+
+def thread_brand(c,w,thread,write=False):
+    r=one(c,"SELECT COALESCE(v.agent,'') agent FROM thread t JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE t.ws=? AND t.id=? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(w['id'],thread))
+    require(r and thread_accessible(c,w,thread),'실제 고객 상담 없음 또는 조회 범위 초과',404)
+    return work_scope(c,w,r['agent'],write)
+
+def bind_work(c,ws,i,agent):
+    if agent:c.execute('INSERT INTO work_brand(work,ws,agent) VALUES(?,?,?)',(i,ws,agent))
 
 def event(c,ws,kind,title,ref):
     c.execute('INSERT INTO event_log VALUES(?,?,?,?,?,0,?)',(uid(),ws,kind,title,ref,now()))
@@ -56,7 +79,11 @@ def read_events(ws=Depends(ident)):
 @app.get('/api/customer/bookings/{token}')
 def own_bookings(token:str):
     with db() as c:
-        v=visitor(c,token,kind='public');w=getw(c,v['ws']);require('calendar' in entitlements(w));a=entitlements(w);s=loads(w['settings']);bs=rows(c,"SELECT * FROM booking WHERE ws=? AND visitor=? AND status NOT IN ('draft','superseded') ORDER BY start",(v['ws'],token));return {'bookings':[booking_view(b) for b in bs],'canChange':'change_booking' in a and s['modes'].get('change')!='off','requests':rows(c,'SELECT id,booking,action,start,state FROM booking_change WHERE ws=? AND visitor=? ORDER BY created DESC',(v['ws'],token))}
+        v=visitor(c,token,kind='public')
+        if v.get('agent'):
+            import brand_calendar
+            return brand_calendar.customer_list(c,v)
+        w=getw(c,v['ws']);require('calendar' in entitlements(w));a=entitlements(w);s=loads(w['settings']);bs=rows(c,"SELECT * FROM booking WHERE ws=? AND visitor=? AND status NOT IN ('draft','superseded') ORDER BY start",(v['ws'],token));return {'bookings':[booking_view(b) for b in bs],'canChange':'change_booking' in a and s['modes'].get('change')!='off','requests':rows(c,'SELECT id,booking,action,start,state FROM booking_change WHERE ws=? AND visitor=? ORDER BY created DESC',(v['ws'],token))}
 
 def apply_change(c,b,r,s):
     require(b['status']=='confirmed' and b['start']==r['original_start'],'예약 상태가 변경되었습니다. 다시 요청하세요.',409)
@@ -70,7 +97,11 @@ def apply_change(c,b,r,s):
 @app.post('/api/customer/bookings/{i}/change')
 def customer_change(i:str,body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''),kind='public');ws=v['ws'];w=getw(c,ws);s=loads(w['settings']);require(w['enabled'] and 'change_booking' in entitlements(w) and s['modes'].get('change')!='off');b=one(c,'SELECT * FROM booking WHERE ws=? AND id=? AND visitor=?',(ws,i,v['token']));require(b and b['status']=='confirmed','변경 가능한 본인 예약 없음',404);require(datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'지난 예약은 변경할 수 없습니다.',409);require(body.get('confirmed') is True,'고객 최종 확인 필요',422)
+        v=visitor(c,body.get('token',''),kind='public')
+        if v.get('agent'):
+            import brand_calendar
+            return brand_calendar.customer_change(c,v,i,body)
+        ws=v['ws'];w=getw(c,ws);s=loads(w['settings']);require(w['enabled'] and 'change_booking' in entitlements(w) and s['modes'].get('change')!='off');b=one(c,'SELECT * FROM booking WHERE ws=? AND id=? AND visitor=?',(ws,i,v['token']));require(b and b['status']=='confirmed','변경 가능한 본인 예약 없음',404);require(datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'지난 예약은 변경할 수 없습니다.',409);require(body.get('confirmed') is True,'고객 최종 확인 필요',422)
         action=body.get('action');require(action in ['cancel','change'],'요청 유형 오류',422);a=z=None
         if action=='change':a,z=interval(s,body.get('start',''));require(available(c,ws,a,z,i,s['buffer'],b['resource']),'예약 시간 충돌',409)
         require(not one(c,"SELECT id FROM booking_change WHERE booking=? AND state='pending'",(i,)),'이미 승인 대기 중인 요청이 있습니다.',409)
@@ -96,10 +127,12 @@ def decide(i:str,body:dict,ws=Depends(ident)):
 def convert_work(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w));t=one(c,'SELECT id FROM thread WHERE ws=? AND id=?',(ws,i));require(t,'상담 없음',404)
+        agent=thread_brand(c,w,i,True)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 업무로 등록할 수 없습니다.',409)
         existing=one(c,'SELECT work FROM work_link WHERE ws=? AND thread=? AND kind=?',(ws,i,k))
-        if existing:return {'id':existing['work'],'duplicate':True}
-        title=bounded(body.get('title',''),200);require(title,'제목 필요',422);detail=bounded(body.get('details',''),2000);j=uid();c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(j,ws,k,title,detail,'open',now()));c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,i,k,j));event(c,ws,'work','상담에서 업무 등록',j)
+        if existing:
+            scoped_work(c,w,existing['work'],agent);return {'id':existing['work'],'duplicate':True}
+        title=bounded(body.get('title',''),200);require(title,'제목 필요',422);detail=bounded(body.get('details',''),2000);j=uid();c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(j,ws,k,title,detail,'open',now()));bind_work(c,ws,j,agent);c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,i,k,j));event(c,ws,'work','상담에서 업무 등록',j)
     return {'id':j,'duplicate':False}
 
 @app.get('/api/notifications')
@@ -131,30 +164,40 @@ def simulate_channel(body:dict,ws=Depends(ident)):
     r=chat({'token':token,'message':m.text,'clientMessageId':bounded(body.get('event_id',uid()),100)})
     return {'simulated':True,'response':naver_out(m.user,r['reply']) if ch=='naver' else kakao_out(r['reply']),'remaining':r['remaining']}
 
+def public_work_scope(c,w,v):
+    import branding
+    require(public_access(w),'공개 상담 권한 필요',403)
+    agent=work_scope(c,w,v.get('agent',''),True)
+    if agent:
+        a=branding.owned_agent(c,w,agent);require(a['enabled'],'브랜드 상담 비활성화',403)
+    else:require(w['enabled'])
+    return agent
+
 @app.get('/api/customer/requests/{token}')
 def request_options(token:str):
     with db() as c:
-        v=visitor(c,token,kind='public');w=getw(c,v['ws']);require(w['enabled']);return [k for k in ['quote','complaints','tasks'] if k in entitlements(w)]
+        v=visitor(c,token,kind='public');w=getw(c,v['ws']);agent=public_work_scope(c,w,v);return [k for k in ['quote','complaints','tasks'] if k in entitlements(w)]
 
 @app.post('/api/customer/requests')
 def customer_request(body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''),kind='public');ws=v['ws'];w=getw(c,ws);k=body.get('kind');require(w['enabled'] and k in ['quote','complaints','tasks'] and k in entitlements(w));require(body.get('confirmed') is True,'고객 확인 필요',422)
+        v=visitor(c,body.get('token',''),kind='public');ws=v['ws'];w=getw(c,ws);agent=public_work_scope(c,w,v);k=body.get('kind');require(k in ['quote','complaints','tasks'] and k in entitlements(w));require(body.get('confirmed') is True,'고객 확인 필요',422)
         title=bounded(body.get('title',''),200);details=bounded(body.get('details',''),2000);require(title and details,'제목과 내용 필요',422)
-        t=one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(ws,v['token']));existing=one(c,'SELECT work FROM work_link WHERE ws=? AND thread=? AND kind=?',(ws,t['id'],k))
-        if existing:return {'id':existing['work'],'duplicate':True}
-        j=uid();c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(j,ws,k,title,details,'open',now()));c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,t['id'],k,j));event(c,ws,'work','고객 업무 요청 접수',j);return {'id':j,'duplicate':False}
+        t=one(c,"SELECT id FROM thread WHERE ws=? AND visitor=? AND kind='public'",(ws,v['token']));require(t and thread_brand(c,w,t['id'],True)==agent,'상담 없음',404);existing=one(c,'SELECT work FROM work_link WHERE ws=? AND thread=? AND kind=?',(ws,t['id'],k))
+        if existing:
+            scoped_work(c,w,existing['work'],agent);return {'id':existing['work'],'duplicate':True}
+        j=uid();c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(j,ws,k,title,details,'open',now()));bind_work(c,ws,j,agent);c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,t['id'],k,j));event(c,ws,'work','고객 업무 요청 접수',j);return {'id':j,'duplicate':False}
 
 @app.patch('/api/work/{i}')
-def edit_work(i:str,body:dict,ws=Depends(ident)):
+def edit_work(i:str,body:dict,agent:str='',ws=Depends(ident)):
     with db(True) as c:
         require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 변경할 수 없습니다.',409)
-        w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w),'업무 없음 또는 권한 없음',404);title=bounded(body.get('title',r['title']),200);details=bounded(body.get('details',r['details']),2000);status=body.get('status',r['status']);require(title and status in ['open','pending','resolved'],'업무 상태 오류',422);c.execute('UPDATE work SET title=?,details=?,status=? WHERE id=?',(title,details,status,i))
+        w=getw(c,ws);r=scoped_work(c,w,i,agent,True);title=bounded(body.get('title',r['title']),200);details=bounded(body.get('details',r['details']),2000);status=body.get('status',r['status']);require(title and status in ['open','pending','resolved'],'업무 상태 오류',422);c.execute('UPDATE work SET title=?,details=?,status=? WHERE id=?',(title,details,status,i))
     return {'ok':True}
 
 @app.delete('/api/work/{i}')
-def remove_work(i:str,ws=Depends(ident)):
+def remove_work(i:str,agent:str='',ws=Depends(ident)):
     with db(True) as c:
         require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 삭제할 수 없습니다.',409)
-        w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w),'업무 없음 또는 권한 없음',404);c.execute('DELETE FROM work_link WHERE ws=? AND work=?',(ws,i));c.execute('DELETE FROM work WHERE ws=? AND id=?',(ws,i))
+        w=getw(c,ws);r=scoped_work(c,w,i,agent,True);c.execute('DELETE FROM work_link WHERE ws=? AND work=?',(ws,i));c.execute('DELETE FROM work WHERE ws=? AND id=?',(ws,i))
     return {'ok':True}

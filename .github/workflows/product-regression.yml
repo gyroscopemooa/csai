@@ -1,7 +1,7 @@
 name: Product regression
 on:
   push:
-    branches: ['feat/product-functions']
+    branches: ['feat/product-functions', 'feat/pricing-increase-1127', 'codex/integration-1127']
   pull_request:
     branches: ['main']
 permissions:
@@ -34,6 +34,10 @@ jobs:
       - name: Check browser scripts
         run: |
           node --check web/app.js
+          node --check web/db-motion.js
+          node tests/test_db_motion.js
+          node --check web/setup-guide.js
+          node --check web/memory-preview-worker.js
           node --check web/widget.js
           node --check web/push-sw.js
       - name: Run SQLite regression tests

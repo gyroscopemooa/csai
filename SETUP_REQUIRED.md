@@ -27,10 +27,10 @@ COMMIT;
 | DB | `CSAI_DB_BACKEND`, `DATABASE_URL` | SQL 적용·실연결 검증 후 `postgres`, CS AI 전용 SSL PostgreSQL **session pooler** URL. URL을 채팅·GitHub에 게시하지 않음 |
 | 운영자 | `OPERATOR_OWNERS`, `OPERATOR_EMAILS` | 검증된 Google ID/이메일만. 현재 설정의 기존 운영자 값을 보존 |
 | Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | CS AI OAuth 클라이언트 값. 기존 값 보존 |
-| AI | `OPENAI_API_KEY`, `TRAIN_MODEL`, `CHAT_MODEL` | 실제 키, `gpt-6.2-sol`, `gpt-6-luna`; 계정별 모델 접근 확인 후 실제 호출 |
-| AI 원가 | `TRAIN_INPUT_USD_PER_M`, `TRAIN_OUTPUT_USD_PER_M`, `TRAIN_CACHED_USD_PER_M` | 공식 Standard USD/100만 토큰: `1.00`, `5.00`, `0.05` (2026-11-26 확인) |
-| AI 원가 | `CHAT_INPUT_USD_PER_M`, `CHAT_OUTPUT_USD_PER_M`, `CHAT_CACHED_USD_PER_M` | `0.05`, `0.25`, `0.005` (2026-11-26 확인) |
-| AI 추론 | `TRAIN_EFFORT`, `CHAT_EFFORT`, `BOOKING_EFFORT` | 현재 예시 `low`, `none`, `low`; 실제 모델 지원 확인 |
+| AI | `OPENAI_API_KEY`, `TRAIN_MODEL`, `CHAT_MODEL` | 실제 키, 둘 다 `gpt-6.2-sol`; 계정별 모델 접근 확인 후 실제 호출 |
+| AI 원가 | `TRAIN_INPUT_USD_PER_M`, `TRAIN_OUTPUT_USD_PER_M`, `TRAIN_CACHED_USD_PER_M` | 공식 Standard USD/100만 토큰: `2.00`, `10.00`, `0.10` (2026-11-27 확인) |
+| AI 원가 | `CHAT_INPUT_USD_PER_M`, `CHAT_OUTPUT_USD_PER_M`, `CHAT_CACHED_USD_PER_M` | `2.00`, `10.00`, `0.10` (2026-11-27 확인) |
+| AI 추론 | `TRAIN_EFFORT`, `CHAT_EFFORT`, `BOOKING_EFFORT` | 현재 예시 `high`, `low`, `low`; 실제 모델 지원 확인 |
 | 암호화 | `INTEGRATION_ENCRYPTION_KEY` | 기존 값 유지. 변경 시 기존 암호화된 연결정보를 읽지 못할 수 있음 |
 
 로컬 테스트에는 `APP_URL=http://127.0.0.1:3000`, `DATA_DIR=./data/gui-test`, `CSAI_DB_BACKEND=sqlite`, `DEMO_MODE=1`, `SHARED_TEST_MODE=0`을 사용합니다. 로컬 운영자 테스트만 `LOCAL_OPERATOR_TOKEN`을 비공개 설정합니다. 실제 API 키·DB URL은 격리 테스트에 넣지 않습니다.

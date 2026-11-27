@@ -21,6 +21,12 @@ def init():
         CREATE TABLE IF NOT EXISTS quote_suggestion(ws TEXT NOT NULL,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,items TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS quote_offer(id TEXT PRIMARY KEY,ws TEXT NOT NULL,work TEXT NOT NULL REFERENCES work(id) ON DELETE CASCADE,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,items TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0),note TEXT NOT NULL,status TEXT NOT NULL,created INTEGER NOT NULL,sent INTEGER);
         """)
+        if "agent" not in [r[1] for r in c.execute("PRAGMA table_info(crm_contact)")]:
+            c.execute("ALTER TABLE crm_contact ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+        c.execute("CREATE INDEX IF NOT EXISTS crm_contact_scope ON crm_contact(ws,agent,updated)")
+        if "agent" not in [r[1] for r in c.execute("PRAGMA table_info(quote_item)")]:
+            c.execute("ALTER TABLE quote_item ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+        c.execute("CREATE INDEX IF NOT EXISTS quote_item_scope ON quote_item(ws,agent,active)")
 init()
 
 def access(c,ws,key):require(key in entitlements(getw(c,ws)))
@@ -36,10 +42,16 @@ def signal(msg,result):
 
 def capture_lead(c,ws,thread,msg,result):
     if 'leads' not in entitlements(getw(c,ws)):return
+    import ops
+    w=getw(c,ws)
+    row=one(c,"SELECT COALESCE(v.agent,'') agent FROM thread t JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE t.ws=? AND t.id=? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(ws,thread))
+    if not row:return
+    agent=row['agent'];ops.work_scope(c,w,agent,True)
     stage,source=signal(msg,result)
     if stage=='inquiry':return
     old=one(c,'SELECT * FROM lead_profile WHERE ws=? AND thread=?',(ws,thread))
     if old:
+        ops.scoped_work(c,w,old['work'],agent)
         # Never downgrade by a later generic question; administrators can edit status.
         if old['stage']=='ready' and stage!='ready':return
         c.execute('UPDATE lead_profile SET stage=?,source=?,updated=? WHERE ws=? AND thread=?',(stage,source,now(),ws,thread))
@@ -47,22 +59,25 @@ def capture_lead(c,ws,thread,msg,result):
         return
     existing=one(c,"SELECT work FROM work_link WHERE ws=? AND thread=? AND kind='leads'",(ws,thread))
     i=existing['work'] if existing else uid()
+    if existing:ops.scoped_work(c,w,i,agent)
     if not existing:
-        c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,'leads','잠재 고객',LEAD_REASONS[stage],'open',now()))
+        c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,'leads','잠재 고객',LEAD_REASONS[stage],'open',now()));ops.bind_work(c,ws,i,agent)
         c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,thread,'leads',i))
     c.execute('INSERT INTO lead_profile VALUES(?,?,?,?,?,?)',(ws,thread,i,stage,source,now()))
 
 @app.get('/api/leads')
-def leads(ws=Depends(ident)):
+def leads(agent:str='',ws=Depends(ident)):
+    import ops
     with db() as c:
-        access(c,ws,'leads')
-        return rows(c,'SELECT l.*,w.status,w.title FROM lead_profile l JOIN work w ON w.id=l.work WHERE l.ws=? ORDER BY l.updated DESC',(ws,))
+        access(c,ws,'leads');w=getw(c,ws);ops.work_scope(c,w,agent)
+        return [r for r in rows(c,"SELECT l.*,w.status,w.title FROM lead_profile l JOIN work w ON w.id=l.work AND w.ws=l.ws LEFT JOIN work_brand b ON b.work=w.id AND b.ws=w.ws WHERE l.ws=? AND COALESCE(b.agent,'')=? ORDER BY l.updated DESC",(ws,agent)) if thread_accessible(c,w,r['thread'])]
 
 @app.patch('/api/leads/{thread}')
-def lead_edit(thread:str,body:dict,ws=Depends(ident)):
+def lead_edit(thread:str,body:dict,agent:str='',ws=Depends(ident)):
+    import ops
     stage=body.get('stage');require(isinstance(stage,str) and stage in LEAD_STAGES,'분류 오류',422)
     with db(True) as c:
-        access(c,ws,'leads');old=one(c,'SELECT work FROM lead_profile WHERE ws=? AND thread=?',(ws,thread));require(old,'잠재 고객 없음',404)
+        access(c,ws,'leads');old=one(c,'SELECT work FROM lead_profile WHERE ws=? AND thread=?',(ws,thread));require(old,'잠재 고객 없음',404);w=getw(c,ws);ops.scoped_work(c,w,old['work'],agent,True);require(ops.thread_brand(c,w,thread)==agent,'잠재 고객 없음',404)
         c.execute("UPDATE lead_profile SET stage=?,source='staff',updated=? WHERE ws=? AND thread=?",(stage,now(),ws,thread))
         c.execute('UPDATE work SET details=? WHERE ws=? AND id=?',(LEAD_REASONS[stage],ws,old['work']))
     return {'ok':True}
@@ -74,92 +89,130 @@ def contact_fields(body,old=None):
     require(not out['phone'] or bool(re.fullmatch(r'[+\d ()-]{7,40}',out['phone'])),'전화번호 형식 오류',422)
     return out
 
-def link_contact(c,ws,i,thread):
-    require(one(c,"SELECT id FROM thread WHERE id=? AND ws=? AND kind<>'test'",(thread,ws)),'고객 상담 없음',404)
+def crm_access(c,ws,agent,write=False):
+    import branding
+    access(c,ws,'crm')
+    require(isinstance(agent,str),'브랜드 형식 오류',422)
+    w=getw(c,ws);branding.owned_agent(c,w,agent)
+    if agent and write:
+        require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent)),'보관된 브랜드입니다.',409)
+    return w
+
+def link_contact(c,ws,i,thread,agent):
+    require(one(c,"SELECT t.id FROM thread t JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE t.id=? AND t.ws=? AND t.kind<>'test' AND COALESCE(v.agent,'')=? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(thread,ws,agent)),'같은 브랜드의 실제 고객 상담만 연결 가능합니다.',404)
+    require(thread_accessible(c,getw(c,ws),thread),'상담 조회 범위 초과',404)
     c.execute('INSERT INTO crm_thread VALUES(?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET contact=excluded.contact',(ws,i,thread))
 
 @app.get('/api/crm/contacts')
-def contacts(ws=Depends(ident)):
+def contacts(agent:str='',ws=Depends(ident)):
     with db() as c:
-        access(c,ws,'crm');result=rows(c,'SELECT * FROM crm_contact WHERE ws=? ORDER BY updated DESC LIMIT 500',(ws,))
-        for r in result:r['threads']=rows(c,'SELECT thread FROM crm_thread WHERE ws=? AND contact=?',(ws,r['id']))
+        w=crm_access(c,ws,agent);result=rows(c,'SELECT * FROM crm_contact WHERE ws=? AND agent=? ORDER BY updated DESC LIMIT 500',(ws,agent))
+        for r in result:
+            links=rows(c,"SELECT l.thread FROM crm_thread l JOIN thread t ON t.ws=l.ws AND t.id=l.thread JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE l.ws=? AND l.contact=? AND COALESCE(v.agent,'')=? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(ws,r['id'],agent))
+            r['threads']=[x for x in links if thread_accessible(c,w,x['thread'])]
         return result
 
 @app.post('/api/crm/contacts')
 def contact_create(body:dict,ws=Depends(ident)):
-    f=contact_fields(body);i=uid()
+    f=contact_fields(body);i=uid();agent=body.get('agent','')
     with db(True) as c:
-        access(c,ws,'crm');c.execute('INSERT INTO crm_contact VALUES(?,?,?,?,?,?,?,?)',(i,ws,f['name'],f['email'],f['phone'],f['notes'],now(),now()))
-        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100))
-    return {'id':i}
+        crm_access(c,ws,agent,True);c.execute('INSERT INTO crm_contact(id,ws,name,email,phone,notes,created,updated,agent) VALUES(?,?,?,?,?,?,?,?,?)',(i,ws,f['name'],f['email'],f['phone'],f['notes'],now(),now(),agent))
+        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100),agent)
+    return {'id':i,'agent':agent}
 
 @app.patch('/api/crm/contacts/{i}')
 def contact_edit(i:str,body:dict,ws=Depends(ident)):
+    agent=body.get('agent','')
     with db(True) as c:
-        access(c,ws,'crm');r=one(c,'SELECT * FROM crm_contact WHERE id=? AND ws=?',(i,ws));require(r,'고객 없음',404);f=contact_fields(body,r)
-        c.execute('UPDATE crm_contact SET name=?,email=?,phone=?,notes=?,updated=? WHERE id=? AND ws=?',(f['name'],f['email'],f['phone'],f['notes'],now(),i,ws))
-        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100))
+        crm_access(c,ws,agent,True);r=one(c,'SELECT * FROM crm_contact WHERE id=? AND ws=? AND agent=?',(i,ws,agent));require(r,'고객 없음',404);f=contact_fields(body,r)
+        c.execute('UPDATE crm_contact SET name=?,email=?,phone=?,notes=?,updated=? WHERE id=? AND ws=? AND agent=?',(f['name'],f['email'],f['phone'],f['notes'],now(),i,ws,agent))
+        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100),agent)
     return {'ok':True}
 
 @app.delete('/api/crm/contacts/{i}')
-def contact_delete(i:str,ws=Depends(ident)):
+def contact_delete(i:str,agent:str='',ws=Depends(ident)):
     with db(True) as c:
-        access(c,ws,'crm');require(one(c,'SELECT id FROM crm_contact WHERE id=? AND ws=?',(i,ws)),'고객 없음',404);c.execute('DELETE FROM crm_contact WHERE id=? AND ws=?',(i,ws))
+        crm_access(c,ws,agent);require(one(c,'SELECT id FROM crm_contact WHERE id=? AND ws=? AND agent=?',(i,ws,agent)),'고객 없음',404);c.execute('DELETE FROM crm_contact WHERE id=? AND ws=? AND agent=?',(i,ws,agent))
     return {'ok':True}
 
+def quote_scope(c,ws,agent,write=False):
+    import ops
+    access(c,ws,'quote');w=getw(c,ws);ops.work_scope(c,w,agent,write)
+    return w
+
+def quote_catalog(c,ws,agent):
+    return rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND agent=? AND active=1 ORDER BY name LIMIT 100',(ws,agent))
+
+def quote_thread(c,w,work,agent,write=False):
+    import ops
+    item=ops.scoped_work(c,w,work,agent,write);require(item['kind']=='quote','견적 업무 없음',404)
+    r=one(c,"SELECT l.thread FROM work_link l JOIN thread t ON t.id=l.thread AND t.ws=l.ws WHERE l.ws=? AND l.work=? AND l.kind='quote' AND t.kind='public'",(w['id'],work))
+    require(r and ops.thread_brand(c,w,r['thread'],write)==agent,'같은 브랜드의 실제 고객 웹 상담에서 접수한 견적만 가능합니다.',404)
+    return r['thread']
+
 @app.get('/api/quotes/items')
-def quote_items(ws=Depends(ident)):
-    with db() as c:access(c,ws,'quote');return rows(c,'SELECT * FROM quote_item WHERE ws=? ORDER BY name',(ws,))
+def quote_items(agent:str='',ws=Depends(ident)):
+    with db() as c:
+        quote_scope(c,ws,agent);return rows(c,'SELECT * FROM quote_item WHERE ws=? AND agent=? ORDER BY name',(ws,agent))
 
 @app.post('/api/quotes/items')
-def quote_item_save(body:dict,ws=Depends(ident)):
+def quote_item_save(body:dict,agent:str='',ws=Depends(ident)):
     name=bounded(body.get('name',''),120);price=body.get('price');require(name and type(price)==int and 0<=price<=100000000,'상품명 및 원화 단가 필요',422)
     i=body.get('id') or uid();require(isinstance(i,str),'항목 오류',422)
     with db(True) as c:
-        access(c,ws,'quote');old=one(c,'SELECT id FROM quote_item WHERE ws=? AND id=?',(ws,i))
-        if body.get('id'):require(old,'견적 항목 없음',404);c.execute('UPDATE quote_item SET name=?,price=?,active=? WHERE ws=? AND id=?',(name,price,int(body.get('active',True) is True),ws,i))
-        else:require(one(c,'SELECT count(*) n FROM quote_item WHERE ws=?',(ws,))['n']<100,'견적 항목 최대 100개',409);c.execute('INSERT INTO quote_item VALUES(?,?,?,?,1)',(i,ws,name,price))
+        quote_scope(c,ws,agent,True);old=one(c,'SELECT id FROM quote_item WHERE ws=? AND id=? AND agent=?',(ws,i,agent))
+        if body.get('id'):require(old,'견적 항목 없음',404);c.execute('UPDATE quote_item SET name=?,price=?,active=? WHERE ws=? AND id=? AND agent=?',(name,price,int(body.get('active',True) is True),ws,i,agent))
+        else:require(one(c,'SELECT count(*) n FROM quote_item WHERE ws=? AND agent=?',(ws,agent))['n']<100,'브랜드별 견적 항목 최대 100개',409);c.execute('INSERT INTO quote_item(id,ws,name,price,active,agent) VALUES(?,?,?,?,1,?)',(i,ws,name,price,agent))
     return {'id':i}
 
 def quote_view(r):return dict(r,items=loads(r['items']))
 
 @app.get('/api/quotes/offers')
-def offers(ws=Depends(ident)):
-    with db() as c:access(c,ws,'quote');return [quote_view(r) for r in rows(c,'SELECT * FROM quote_offer WHERE ws=? ORDER BY created DESC LIMIT 200',(ws,))]
+def offers(agent:str='',ws=Depends(ident)):
+    with db() as c:
+        w=quote_scope(c,ws,agent)
+        result=rows(c,"SELECT o.* FROM quote_offer o JOIN work w ON w.id=o.work AND w.ws=o.ws LEFT JOIN work_brand b ON b.work=w.id AND b.ws=w.ws JOIN thread t ON t.id=o.thread AND t.ws=o.ws JOIN visitor v ON v.token=t.visitor AND v.ws=t.ws WHERE o.ws=? AND COALESCE(b.agent,'')=? AND COALESCE(v.agent,'')=? AND t.kind='public' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id) ORDER BY o.created DESC LIMIT 200",(ws,agent,agent))
+        return [quote_view(r) for r in result if thread_accessible(c,w,r['thread'])]
 
 @app.post('/api/quotes/offers')
-def quote_create(body:dict,ws=Depends(ident)):
+def quote_create(body:dict,agent:str='',ws=Depends(ident)):
     work=bounded(body.get('work',''),100);items=body.get('items');note=bounded(body.get('note',''),1000)
     require(isinstance(items,list) and 1<=len(items)<=30,'견적 항목 필요',422)
     with db(True) as c:
-        access(c,ws,'quote');r=one(c,"SELECT t.thread FROM work_link t JOIN work w ON w.id=t.work AND w.ws=t.ws JOIN thread th ON th.id=t.thread AND th.ws=t.ws WHERE t.ws=? AND t.work=? AND t.kind='quote' AND w.kind='quote' AND th.kind='public'",(ws,work));require(r,'고객 상담에서 접수한 견적 요청만 전송 가능합니다.',404)
+        w=quote_scope(c,ws,agent,True);thread=quote_thread(c,w,work,agent,True)
         out=[];seen=set()
         for x in items:
             require(isinstance(x,dict),'항목 오류',422);i=x.get('id');q=x.get('quantity');require(isinstance(i,str) and i not in seen and type(q)==int and 1<=q<=1000,'항목 또는 수량 오류',422);seen.add(i)
-            item=one(c,'SELECT * FROM quote_item WHERE ws=? AND id=? AND active=1',(ws,i));require(item,'판매 중인 견적 항목 없음',404)
+            item=one(c,'SELECT * FROM quote_item WHERE ws=? AND id=? AND agent=? AND active=1',(ws,i,agent));require(item,'판매 중인 견적 항목 없음',404)
             out.append({'name':item['name'],'unit_price':item['price'],'quantity':q,'total':item['price']*q})
         amount=sum(x['total'] for x in out);require(amount<=1_000_000_000,'견적 금액 한도 초과',422)
-        j=uid();c.execute('INSERT INTO quote_offer VALUES(?,?,?,?,?,?,?,?,?,NULL)',(j,ws,work,r['thread'],dump(out),amount,note,'draft',now()))
+        j=uid();c.execute('INSERT INTO quote_offer VALUES(?,?,?,?,?,?,?,?,?,NULL)',(j,ws,work,thread,dump(out),amount,note,'draft',now()))
         return quote_view(one(c,'SELECT * FROM quote_offer WHERE id=?',(j,)))
 
 @app.post('/api/quotes/offers/{i}/send')
-def quote_send(i:str,body:dict,ws=Depends(ident)):
+def quote_send(i:str,body:dict,agent:str='',ws=Depends(ident)):
     require(body.get('confirmed') is True,'최종 견적 전송 확인 필요',422)
     with db(True) as c:
-        access(c,ws,'quote');r=one(c,'SELECT * FROM quote_offer WHERE ws=? AND id=?',(ws,i));require(r,'견적 없음',404)
+        w=quote_scope(c,ws,agent,True);r=one(c,'SELECT * FROM quote_offer WHERE ws=? AND id=?',(ws,i));require(r,'견적 없음',404)
+        require(quote_thread(c,w,r['work'],agent,True)==r['thread'],'견적 상담 불일치',404)
         if r['status']=='sent':return quote_view(r)
         require(r['status']=='draft','전송 불가',409)
         text='업체에서 확인한 견적입니다.\n'+'\n'.join(x['name']+' × '+str(x['quantity'])+' = '+format(x['total'],',')+'원' for x in loads(r['items']))+'\n합계: '+format(r['amount'],',')+'원'
         if r['note']:text+='\n'+r['note']
         text+='\n결제 및 예약 확정은 별도 안내를 확인해 주세요.'
-        c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,r['thread'],'staff',text,now()));c.execute("UPDATE quote_offer SET status='sent',sent=? WHERE id=?",(now(),i));c.execute("UPDATE work SET status='resolved' WHERE ws=? AND id=?",(ws,r['work']))
+        changed=c.execute("UPDATE quote_offer SET status='sent',sent=? WHERE ws=? AND id=? AND status='draft'",(now(),ws,i))
+        if changed.rowcount!=1:
+            latest=one(c,'SELECT * FROM quote_offer WHERE ws=? AND id=?',(ws,i));require(latest and latest['status']=='sent','견적 전송 상태 변경',409);return quote_view(latest)
+        c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,r['thread'],'staff',text,now()));c.execute("UPDATE work SET status='resolved' WHERE ws=? AND id=?",(ws,r['work']))
         return quote_view(one(c,'SELECT * FROM quote_offer WHERE id=?',(i,)))
 
 def capture_quote_suggestion(c,ws,thread,msg,result):
     draft=result.get('workDraft')
     if not isinstance(draft,dict) or draft.get('kind')!='quote':return
     raw=draft.pop('quoteItems',[])
-    active={x['id']:x for x in rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1',(ws,))}
+    import ops
+    agent=ops.thread_brand(c,getw(c,ws),thread)
+    active={x['id']:x for x in quote_catalog(c,ws,agent)}
     out=[];seen=set()
     if isinstance(raw,list):
         for x in raw[:30]:
@@ -173,12 +226,11 @@ def capture_quote_suggestion(c,ws,thread,msg,result):
     c.execute('INSERT INTO quote_suggestion VALUES(?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET items=excluded.items,updated=excluded.updated',(ws,thread,dump(out),now()))
 
 @app.get('/api/quotes/suggestions/{work}')
-def quote_suggestions(work:str,ws=Depends(ident)):
+def quote_suggestions(work:str,agent:str='',ws=Depends(ident)):
     with db() as c:
-        access(c,ws,'quote')
-        link=one(c,"SELECT thread FROM work_link WHERE ws=? AND work=? AND kind='quote'",(ws,work));require(link,'견적 요청 없음',404)
-        row=one(c,'SELECT items FROM quote_suggestion WHERE ws=? AND thread=?',(ws,link['thread']))
-        active={x['id']:x for x in rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1',(ws,))}
+        w=quote_scope(c,ws,agent);thread=quote_thread(c,w,work,agent)
+        row=one(c,'SELECT items FROM quote_suggestion WHERE ws=? AND thread=?',(ws,thread))
+        active={x['id']:x for x in quote_catalog(c,ws,agent)}
         out=[]
         for item in loads(row['items']) if row else []:
             if item['id'] in active:out.append({'id':item['id'],'quantity':item['quantity'],'name':active[item['id']]['name'],'unit_price':active[item['id']]['price']})

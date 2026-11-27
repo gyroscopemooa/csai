@@ -249,3 +249,20 @@
 .preview-appearance summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;cursor:pointer;list-style:none;border-radius:8px}.preview-appearance summary:hover{color:#246bd1}.preview-appearance summary:focus-visible{outline:3px solid #89baff;outline-offset:3px}.preview-appearance summary::-webkit-details-marker{display:none}.preview-appearance summary strong{font-size:14px}.preview-appearance summary small{margin-left:auto;color:#8b95a1;font-size:11px;text-align:right}.preview-appearance summary::after{content:'';display:block;flex:none;width:18px;height:18px;background:#5b6b80;-webkit-mask:url('/assets/icons/chevron-down.svg') center/contain no-repeat;mask:url('/assets/icons/chevron-down.svg') center/contain no-repeat;transition:transform .2s}.preview-appearance[open] summary::after{transform:rotate(180deg)}.preview-appearance-body{padding-top:16px}.preview-appearance-body>.muted{margin:0 0 10px;font-size:12px}
 @media(max-width:700px){.preview-appearance summary strong{white-space:nowrap}.preview-appearance summary small{display:none}}
 @media(prefers-reduced-motion:reduce){.preview-appearance summary::after{transition:none}}
+
+/* Education methods: fixed chooser with one active source panel; shared review below. */
+.education-methods{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 18px}
+.education-methods button{aspect-ratio:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:12px 8px;border:1px solid #e5e8eb;border-radius:14px;background:#fff;color:#191f28;text-align:center;white-space:normal;line-height:1.35;cursor:pointer}
+.education-methods button .ui-icon{width:26px;height:26px;flex:none;color:#6b7684}
+.education-methods button strong{font-size:15px;overflow-wrap:anywhere}.education-methods button small{font-size:12px;color:#6b7684;overflow-wrap:anywhere}
+.education-methods button[aria-pressed="true"]{border-color:#3182f6;box-shadow:inset 0 0 0 1px #3182f6;background:#f4f8ff;color:#246bd1}
+.education-methods button:focus-visible{outline:2px solid #3182f6;outline-offset:3px}
+#education-workspace [data-education-panel][hidden]{display:none!important}
+#education-workspace [data-education-panel]{min-width:0}
+@media(max-width:900px){.education-methods{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.education-methods button{padding:10px 6px}}
+
+/* Calendar filter controls and staff handoff. */
+.calendar-range-control{padding:14px 18px;border:1px solid var(--border);background:#fff;border-radius:16px;margin:0 0 14px}
+.calendar-range-control p{margin:8px 0 0}.calendar-range-fields{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:10px;margin-top:10px}.calendar-range-fields label{margin:0;min-width:0}.calendar-range-fields input{width:100%;min-width:0}
+.handoff-status{align-self:center;text-align:center;margin:6px 0;padding:6px 10px;border-radius:8px;background:#f2f4f6}
+@media(max-width:600px){.calendar-range-fields{grid-template-columns:1fr 1fr}.calendar-range-fields button{grid-column:1/-1}.calendar-range-control{padding:12px}}

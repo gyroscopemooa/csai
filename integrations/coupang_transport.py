@@ -1,0 +1,129 @@
+"""Fixed read-only Coupang order API, fresh HMAC and TLS verification."""
+import hashlib,hmac,re,time
+from urllib.parse import urlencode
+import httpx
+ROOT='https://api-gateway.coupang.com'
+STATUSES={'ACCEPT':'결제완료','INSTRUCT':'상품준비중','DEPARTURE':'배송지시','DELIVERING':'배송중','FINAL_DELIVERY':'배송완료','NONE_TRACKING':'직접배송·추적불가'}
+class CoupangError(RuntimeError):pass
+
+def authorization(access_key,secret_key,path,stamp=None,method='GET',query=''):
+    if not isinstance(access_key,str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,200}',access_key) or not isinstance(secret_key,str) or not re.fullmatch(r'[A-Za-z0-9_+=/-]{8,200}',secret_key):raise CoupangError('API 키 형식 확인 필요')
+    stamp=stamp or time.strftime('%y%m%dT%H%M%SZ',time.gmtime())
+    sign=hmac.new(secret_key.encode(),(stamp+method+path+query).encode(),hashlib.sha256).hexdigest()
+    return 'CEA algorithm=HmacSHA256, access-key='+access_key+', signed-date='+stamp+', signature='+sign
+
+def text(x,n):
+    return x[:n] if isinstance(x,str) else ''
+
+def order_status(vendor,access_key,secret_key,reference):
+    if not isinstance(vendor,str) or not re.fullmatch(r'[A-Za-z0-9]{3,30}',vendor) or not isinstance(reference,str) or not re.fullmatch(r'[1-9][0-9]{0,31}',reference):raise CoupangError('판매자 ID 또는 주문번호 형식 오류')
+    path='/v2/providers/openapi/apis/api/v5/vendors/'+vendor+'/'+reference+'/ordersheets'
+    headers={'Authorization':authorization(access_key,secret_key,path),'Content-Type':'application/json;charset=UTF-8'}
+    try:
+        resp=httpx.get(ROOT+path,headers=headers,timeout=12,follow_redirects=False)
+        if not resp.is_success:raise CoupangError('쿠팡 주문 조회 실패 · API 권한 또는 취소·반품 상태 확인 필요')
+        if len(resp.content)>3_000_000:raise CoupangError('주문 응답 용량 초과')
+        data=resp.json()
+        if not isinstance(data,dict) or str(data.get('code'))!='200' or not isinstance(data.get('data'),list) or not 0<len(data['data'])<=100:raise CoupangError('주문 응답 확인 필요')
+        shipments=[]
+        for row in data['data']:
+            if not isinstance(row,dict) or str(row.get('orderId'))!=reference or type(row.get('shipmentBoxId')) is not int:raise CoupangError('주문번호 불일치')
+            items=row.get('orderItems');state=row.get('status')
+            if not isinstance(items,list) or not isinstance(state,str):raise CoupangError('배송 응답 형식 오류')
+            shipments.append({'shipment_id':str(row['shipmentBoxId']),'state':state[:50],'state_label':STATUSES.get(state,'판매처 확인 필요'),'carrier':text(row.get('deliveryCompanyName'),80),'tracking':text(row.get('invoiceNumber'),100),'products':[text(x.get('vendorItemName'),200) for x in items[:50] if isinstance(x,dict)]})
+        return {'reference':reference,'shipments':shipments,'queried_at':int(time.time())}
+    except (httpx.HTTPError,ValueError,TypeError):raise CoupangError('쿠팡 연결 결과 미확인') from None
+
+PRODUCT_PATH='/v2/providers/seller_api/apis/api/v1/marketplace/seller-products'
+def signed_json(vendor,access,secret,path,params=(),method='GET',body=None):
+    if not isinstance(vendor,str) or not re.fullmatch(r'[A-Za-z0-9]{3,30}',vendor):raise CoupangError('판매자 ID 확인 필요')
+    query=urlencode(params)
+    headers={'Authorization':authorization(access,secret,path,method=method,query=query),'Content-Type':'application/json;charset=UTF-8'}
+    url=ROOT+path+('?' + query if query else '')
+    try:
+        resp=httpx.get(url,headers=headers,timeout=12,follow_redirects=False) if method=='GET' else httpx.post(url,headers=headers,json=body,timeout=12,follow_redirects=False)
+        if not resp.is_success or len(resp.content)>3_000_000:raise CoupangError('쿠팡 API 응답 확인 필요')
+        data=resp.json()
+        if not isinstance(data,dict) or str(data.get('code')) not in ('200','SUCCESS'):raise CoupangError('쿠팡 API 권한 또는 응답 확인 필요')
+        return data
+    except (httpx.HTTPError,ValueError,TypeError):raise CoupangError('쿠팡 API 연결 결과 미확인') from None
+
+def product_catalog(vendor,access,secret):
+    cursor='';seen=set();items={}
+    for page in range(20):
+        params=[('vendorId',vendor),('maxPerPage',100),('status','APPROVED')]
+        if cursor:params.append(('nextToken',cursor))
+        data=signed_json(vendor,access,secret,PRODUCT_PATH,params)
+        batch=data.get('data');next_token=data.get('nextToken')
+        if not isinstance(batch,list) or len(batch)>100 or not isinstance(next_token,str):raise CoupangError('상품 목록 형식 오류')
+        for row in batch:
+            if not isinstance(row,dict) or row.get('vendorId')!=vendor:raise CoupangError('상품 판매자 불일치')
+            pid=row.get('sellerProductId');public_id=row.get('productId');name=row.get('sellerProductName');state=row.get('statusName')
+            if type(pid) is not int or pid<=0 or not isinstance(name,str) or not name.strip():raise CoupangError('상품 정보 확인 필요')
+            if state not in ('APPROVED','승인완료'):continue
+            if str(pid) in items:raise CoupangError('중복 상품 · 목록 갱신 필요')
+            if len(items)>=2000:raise CoupangError('상품 최대 2,000개')
+            items[str(pid)]={'id':str(pid),'public_id':str(public_id) if type(public_id) is int and public_id>0 else '', 'name':name.strip()[:200]}
+        if not next_token:return list(items.values())
+        if not re.fullmatch(r'[0-9]{1,30}',next_token) or next_token in seen:raise CoupangError('상품 페이지 확인 필요')
+        seen.add(next_token);cursor=next_token
+    raise CoupangError('상품 최대 2,000개 · 전체 목록 확인 필요')
+
+def pending_inquiries(vendor,access,secret,from_date,to_date,page):
+    path='/v2/providers/openapi/apis/api/v5/vendors/'+vendor+'/onlineInquiries'
+    d=signed_json(vendor,access,secret,path,[('inquiryStartAt',from_date),('inquiryEndAt',to_date),('vendorId',vendor),('answeredType','NOANSWER'),('pageSize',50),('pageNum',page)])
+    result=d.get('data');p=result.get('pagination') if isinstance(result,dict) else None;batch=result.get('content') if isinstance(result,dict) else None
+    if not isinstance(p,dict) or type(p.get('totalPages')) is not int or not isinstance(batch,list) or len(batch)>50:raise CoupangError('문의 목록 형식 오류')
+    items=[]
+    for x in batch:
+        if not isinstance(x,dict) or type(x.get('inquiryId')) is not int or x['inquiryId']<=0 or type(x.get('sellerProductId')) is not int or x['sellerProductId']<=0 or not isinstance(x.get('content'),str) or not isinstance(x.get('commentDtoList'),list):raise CoupangError('문의 항목 형식 오류')
+        if x['commentDtoList']:continue
+        items.append({'id':str(x['inquiryId']),'product_id':str(x['sellerProductId']),'name':'','question':x['content'],'created':text(x.get('inquiryAt'),80)})
+    return items,p['totalPages']
+
+def reply_inquiry(vendor,access,secret,inquiry,answer,wing):
+    if not isinstance(inquiry,str) or not re.fullmatch(r'[1-9][0-9]{0,31}',inquiry) or not isinstance(wing,str) or not re.fullmatch(r'[A-Za-z0-9_@.\-]{1,100}',wing):raise CoupangError('문의번호 또는 WING ID 확인 필요')
+    path='/v2/providers/openapi/apis/api/v4/vendors/'+vendor+'/onlineInquiries/'+inquiry+'/replies'
+    d=signed_json(vendor,access,secret,path,method='POST',body={'vendorId':vendor,'content':answer,'replyBy':wing})
+    if str(d.get('code'))!='200':raise CoupangError('답변 발송 결과 미확인')
+
+def positive_id(value):
+    return isinstance(value,str) and re.fullmatch(r'[1-9][0-9]{0,31}',value)
+
+def product_detail(vendor,access,secret,pid):
+    if not positive_id(pid):raise CoupangError('등록상품번호 오류')
+    data=signed_json(vendor,access,secret,PRODUCT_PATH+'/'+pid).get('data')
+    if not isinstance(data,dict) or str(data.get('sellerProductId'))!=pid or data.get('vendorId')!=vendor:raise CoupangError('상품 또는 판매자 불일치')
+    return data
+
+def inventory(vendor,access,secret,item_id):
+    if not positive_id(item_id):raise CoupangError('옵션번호 오류')
+    path='/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/'+item_id+'/inventories'
+    d=signed_json(vendor,access,secret,path).get('data')
+    if not isinstance(d,dict) or type(d.get('amountInStock')) is not int or not 0<=d['amountInStock']<=1000000000 or type(d.get('salePrice')) is not int or not 0<=d['salePrice']<=1000000000 or type(d.get('onSale')) is not bool:raise CoupangError('옵션 재고·가격 응답 형식 오류')
+    if 'vendorItemId' in d and str(d['vendorItemId'])!=item_id:raise CoupangError('옵션번호 불일치')
+    return {'item_id':item_id,'stock':d['amountInStock'],'price':d['salePrice'],'on_sale':d['onSale'],'queried_at':int(time.time())}
+
+def ordersheets_day(vendor,access,secret,day,status):
+    """One complete Korean calendar day and status, with bounded pagination."""
+    from datetime import date
+    if not isinstance(day,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or status not in STATUSES:raise CoupangError('조회 날짜 또는 상태 오류')
+    try:date.fromisoformat(day)
+    except ValueError:raise CoupangError('조회 날짜 오류') from None
+    path='/v2/providers/openapi/apis/api/v5/vendors/'+vendor+'/ordersheets'
+    cursor='';seen=set();result={}
+    for _ in range(10):
+        params=[('createdAtFrom',day+'+09:00'),('createdAtTo',day+'+09:00'),('status',status),('maxPerPage',50)]
+        if cursor:params.append(('nextToken',cursor))
+        data=signed_json(vendor,access,secret,path,params)
+        batch=data.get('data');next_token=data.get('nextToken')
+        if not isinstance(batch,list) or len(batch)>50 or (next_token is not None and not isinstance(next_token,str)):raise CoupangError('발주서 목록 형식 오류')
+        for row in batch:
+            if not isinstance(row,dict) or type(row.get('shipmentBoxId')) is not int or type(row.get('orderId')) is not int or row['shipmentBoxId']<=0 or row['orderId']<=0 or row.get('status')!=status:raise CoupangError('발주서 상태 또는 번호 확인 필요')
+            sid=str(row['shipmentBoxId'])
+            if sid in result:raise CoupangError('발주서 목록 변경 중 · 다시 조회 필요')
+            result[sid]={'shipment_id':sid,'reference':str(row['orderId']),'status':status,'ordered_at':text(row.get('orderedAt'),80),'paid_at':text(row.get('paidAt'),80)}
+        if not next_token:return list(result.values())
+        if len(next_token)>200 or not re.fullmatch(r'[A-Za-z0-9_+=/\-]+',next_token) or next_token in seen:raise CoupangError('발주서 페이지 오류')
+        cursor=next_token;seen.add(cursor)
+    raise CoupangError('하루·상태별 발주서 500건 초과 · 별도 조회 필요')

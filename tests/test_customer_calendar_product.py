@@ -71,3 +71,19 @@ def test_quote_server_price_and_confirmed_chat_delivery():
     post(c,'/api/quotes/offers/'+offer['id']+'/send',{'confirmed':True})
     messages=u.get('/api/session/'+t+'/messages').json()
     assert sum('60,000원' in x['body'] for x in messages)==1
+
+
+def test_crm_brand_scope():
+    c=purchase('crm','extra_agent');u,t=public(c)
+    thread=next(x['id'] for x in c.get('/api/inbox').json() if x['kind']=='public')
+    a=post(c,'/api/agents',{'create':True,'brand':'별도 브랜드','welcome':'안녕하세요'})['id']
+    main=post(c,'/api/crm/contacts',{'name':'기본 고객','thread':thread})['id']
+    assert c.post('/api/crm/contacts',json={'agent':a,'name':'잘못된 연결','thread':thread}).status_code==404
+    brand=post(c,'/api/crm/contacts',{'agent':a,'name':'브랜드 고객'})['id']
+    assert [r['id'] for r in c.get('/api/crm/contacts').json()]==[main]
+    assert [r['id'] for r in c.get('/api/crm/contacts',params={'agent':a}).json()]==[brand]
+    assert c.patch('/api/crm/contacts/'+brand,json={'name':'기본에서 접근'}).status_code==404
+    assert c.delete('/api/crm/contacts/'+brand).status_code==404
+    assert c.patch('/api/crm/contacts/'+brand,json={'agent':a,'thread':thread}).status_code==404
+    assert owner().get('/api/crm/contacts',params={'agent':a}).status_code==403
+    assert c.delete('/api/crm/contacts/'+brand,params={'agent':a}).status_code==200

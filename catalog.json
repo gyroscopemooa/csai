@@ -1,4 +1,5 @@
 {
+  "memory_import": {"name": "외부 AI 기억 이전 이용권", "price": 19900, "max_batches": 120},
   "plans": [
     {
       "id": "free",
@@ -143,7 +144,7 @@
     {
       "id": "kakao",
       "group": "채널·디자인",
-      "name": "카카오톡 채널",
+      "name": "카카오 AI 챗봇",
       "price": 4900,
       "local": false,
       "requires": []
@@ -151,7 +152,7 @@
     {
       "id": "channels",
       "group": "채널·디자인",
-      "name": "네이버·카카오 통합",
+      "name": "네이버·카카오 AI 챗봇 통합",
       "price": 7900,
       "local": false,
       "requires": []
@@ -167,7 +168,7 @@
     {
       "id": "extra_agent",
       "group": "채널·디자인",
-      "name": "추가 AI 상담원",
+      "name": "추가 브랜드 상담원",
       "price": 4900,
       "local": true,
       "requires": []

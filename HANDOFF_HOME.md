@@ -3,11 +3,11 @@
 ## 1. 반드시 이 버전에서 이어서 작업
 
 - 저장소: https://github.com/gyroscopemooa/csai
-- 개발 브랜치: feat/product-functions
+- 개발 브랜치: feat/pricing-increase-1127
 - 기존 main: 3e7a11f736a2dfedc28489ba162b0cc12a216558 (기존 디자인 및 로그인 보존)
 - PR: https://github.com/gyroscopemooa/csai/pull/1 (draft, 미병합)
-- 인계 직전 개발 커밋: 85f5fbf113987bb1691078c8d65a9f7fb28e1e4f
-- 인계 직전 main 대비 128개 커밋 앞섬, 0개 뒤처짐. 인계 문서 커밋은 이 숫자에 추가됨.
+- 인계 최신 작업: 현재 브랜치 HEAD 확인 (이 문서의 과거 커밋 수 및 PR은 참고만)
+- 최신 main 대비 상태는 git rev-list --left-right --count origin/main...HEAD 로 확인.
 - 기존 dev 주소: https://csai.jeonmeensoo.workers.dev (최신 브랜치 배포 미확인)
 - 최신 소스는 반드시 GitHub 브랜치에서 가져온다. 과거 ZIP을 풀어 덮어쓰지 않는다.
 - 최신 검수표 FEATURE_CHECKLIST.md, 배포/이전 절차 DEPLOY_DEV.md, 설정 기준 .env.example.
@@ -15,7 +15,7 @@
 
 ## 2. PC GUI에 붙여 넣을 명령문
 
-> CS AI 저장소 gyroscopemooa/csai의 feat/product-functions 브랜치에 모바일에서 개발한 최신 코드가 저장돼 있다. 처음부터 재개발하지 말고 현재 로컬 작업 및 미커밋 변경을 먼저 확인하여 보존하고, 최신 브랜치를 받아 기존 UI/기능을 유지한 채 이어서 개발해라. HANDOFF_HOME.md, FEATURE_CHECKLIST.md, DEPLOY_DEV.md, .env.example부터 읽어라.
+> CS AI 저장소 gyroscopemooa/csai의 feat/pricing-increase-1127 브랜치에 모바일에서 개발한 최신 코드가 저장돼 있다. 처음부터 재개발하지 말고 현재 로컬 작업 및 미커밋 변경을 먼저 확인하여 보존하고, 최신 브랜치를 받아 기존 UI/기능을 유지한 채 이어서 개발해라. HANDOFF_HOME.md, FEATURE_CHECKLIST.md, DEPLOY_DEV.md, .env.example부터 읽어라.
 >
 > 기존 main을 강제 reset하거나 덮어쓰지 말고 별도 개발 브랜치에서 수정해라. 상단 랜딩, 로그인, 사이드바 및 기존 style.css를 유지하고, 새 하단 01~04 장점 카드가 제대로 보이는지 확인해라. 웹앱에 반짝이·이모지·AI 장식 아이콘은 넣지 마라. 로컬은 3000 포트로 열고 GUI 브라우저로 PC/모바일을 확인해라.
 >
@@ -32,11 +32,11 @@
 미커밋 작업은 별도로 보존한다. 기존 브랜치를 변경할 때 충돌 위험이 있으면 새 worktree를 사용한다.
 ```sh
 git fetch origin
-git switch feat/product-functions
-git pull --ff-only origin feat/product-functions
+git switch feat/pricing-increase-1127
+git pull --ff-only origin feat/pricing-increase-1127
 git log -1 --oneline
 ```
-로컬에 브랜치가 없으면 git switch --track origin/feat/product-functions.
+로컬에 브랜치가 없으면 git switch --track origin/feat/pricing-increase-1127.
 강제 reset, force push, 기존 작업 삭제 금지.
 
 ### B. 로컬 실행 및 테스트
@@ -133,3 +133,5 @@ CLI 출력 URL 및 /health 확인. dev 사이트 랜딩 하단과 로그인 실�
 
 ## 4. 완료 기준
 코드 작성과 검증을 분리한다. 기능별 개발 여부는 FEATURE_CHECKLIST.md를 기준으로 하고, 테스트 실제 통과만 검증 체크한다. 전체 실행 검증 및 PG는 아직 미완료다. 나머지 코드에도 실제 테스트에서 오류가 나올 수 있으므로 숫자만 100%로 올리지 않는다. 마지막에 실제 커밋 SHA, 테스트 결과(성공/실패 수), 수정 파일, 설정 누락, 배포 버전과 URL을 보고한다.
+
+2026-11-27 추가: NEXT_PHASE_1127.md와 MOTION_HANDOFF_1127.md 및 각 phase 문서를 확인. ENABLE_NAVER_STAFF_SEND=0 유지, 공식 실계정 발송 검증 후만 활성화. 카카오 상담톡 계약/권한 별도 필요. 최신 브랜치에서 통합 상담함, 수동 모드, 발송 상태·중복 방지, DB 마이그레이션 전체 테스트 필요.

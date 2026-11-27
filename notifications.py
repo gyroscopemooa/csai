@@ -3,7 +3,7 @@ Claims are serialized in SQLite; ambiguous delivery stays failed for operator re
 """
 from store import *
 import httpx
-ALLOWED={'unknown':'unknown_alert','booking':'booking_alert','new':'new_alert','report':'report'}
+ALLOWED={'handoff':'new_alert','handoff_urgent':'new_alert','unanswered':'new_alert','unknown':'unknown_alert','booking':'booking_alert','new':'new_alert','report':'report'}
 
 def live_enabled():
     return not DEMO and os.getenv('ENABLE_LIVE_EMAIL','0')=='1' and bool(os.getenv('RESEND_API_KEY') and os.getenv('RESEND_FROM'))

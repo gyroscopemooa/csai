@@ -129,3 +129,27 @@ main>.top{animation:cs-enter var(--motion-enter) var(--motion-ease) both}
 .app-sidebar .usage-link{width:100%;padding:5px 8px;min-height:25px;background:transparent;color:#d5d5d5;border:1px solid #555;border-radius:15px;font-size:10px}
 .app-sidebar .sidebar-logout{display:block;width:100%;margin-top:14px;padding:9px;background:#282828;color:#ddd;text-align:left;font-size:11px}
 @media(max-width:700px){.layout{grid-template-columns:1fr}.layout .app-sidebar{position:relative;height:auto;padding:8px 12px;overflow:visible}.app-sidebar .sidebar-brand{padding:3px 4px}.app-sidebar .sidebar-tenant,.app-sidebar nav,.app-sidebar .sidebar-bottom{display:none}.app-sidebar.open .sidebar-tenant,.app-sidebar.open nav,.app-sidebar.open .sidebar-bottom{display:block}.app-sidebar.open nav{max-height:50vh;overflow-y:auto}.app-sidebar .mobile-toggle{display:block;background:#303030;color:#eee;padding:6px 10px}}
+
+/* Public business profile: independent of the selected chat theme. */
+.phone .chat-profile-open{margin-left:auto;flex-shrink:0;font-size:12px;min-height:32px;padding:6px 11px;background:#edf1f5;color:#25334a;border:1px solid #dfe5ec}
+.chat-profile-card{display:flex;align-items:flex-start;gap:12px;width:100%;max-width:390px;align-self:flex-start;box-sizing:border-box;padding:14px;border:1px solid #dfe5ec;background:#fff;color:#192333;border-radius:14px;flex-shrink:0;text-align:left}
+.chat-profile-photo{display:block;width:76px;height:76px;object-fit:cover;border-radius:12px;flex:0 0 auto;border:1px solid #e8edf2}
+.chat-profile-content{flex:1;min-width:0;overflow-wrap:anywhere}
+.chat-profile-content strong{font-size:15px;display:block;margin-bottom:5px;color:#192333}
+.chat-profile-content p{font-size:13px;line-height:1.55;white-space:pre-wrap;margin:0 0 8px;color:#4e5968}
+.chat-profile-links{display:grid;gap:6px;margin-top:8px}
+.chat-profile-links a{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid #e8edf2;color:#236fde;background:#f7f9fc;text-decoration:none;font-size:12px;overflow-wrap:anywhere}
+.profile-edit-link{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.8fr) auto;gap:8px;align-items:center;margin:8px 0}
+#profile-current-photo{margin:12px 0}
+#profile-editor-links{margin-bottom:8px}
+@media(max-width:480px){.profile-edit-link{grid-template-columns:minmax(0,1fr) auto}.profile-edit-link .profile-link-name{grid-column:1/-1}.chat-profile-card{gap:9px;padding:12px}.chat-profile-photo{width:60px;height:60px}}
+
+.chat-profile-contacts{display:grid;gap:6px;margin-top:8px}
+.chat-profile-contacts .profile-contact{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid #e8edf2;border-radius:8px;color:#25334a;background:#f7f9fc;text-decoration:none;overflow-wrap:anywhere}
+.chat-profile-contacts a.profile-contact strong{color:#236fde}
+.chat-profile-contacts .profile-contact span{font-size:11px;color:#687587}
+.chat-profile-contacts .profile-contact strong{font-size:13px;margin:0}
+.phone .notice .chat-profile-card{max-width:100%;margin:8px 0}
+.chat-manual-notice{white-space:pre-wrap;overflow-wrap:anywhere}
+.profile-edit-contact{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr) auto;align-items:center;gap:8px;margin:8px 0}
+@media(max-width:600px){.profile-edit-contact{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.profile-edit-contact .profile-contact-kind{grid-column:1/-1}.profile-edit-contact .profile-contact-name{grid-column:1/-1}.profile-edit-contact .profile-contact-value{grid-column:1/3}}
