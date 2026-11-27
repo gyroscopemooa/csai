@@ -227,6 +227,20 @@ def add_samples(ws=Depends(ident)):
     with db(True) as c:
         return seed_samples(c, ws)
 
+@app.post('/api/demo/samples/{thread}/message')
+def sample_message(thread:str,body:dict,ws=Depends(ident)):
+    # Isolated simulation: no AI call, real visitor, notifications or channel delivery.
+    with db(True) as c:
+        local_demo(c,ws)
+        t=one(c,'SELECT t.id,t.kind FROM thread t JOIN demo_sample d ON d.thread=t.id AND d.ws=t.ws WHERE t.ws=? AND t.id=?',(ws,thread))
+        require(t and t['kind'] in ('public','test','naver','telegram'),'직접 답변을 지원하는 샘플 상담만 체험할 수 있습니다.',409)
+        role=body.get('role');value=body.get('message')
+        require(role in ('staff','user') and isinstance(value,str) and 0<len(value.strip())<=2000,'메시지를 1~2000자로 입력하세요.',422)
+        c.execute('INSERT INTO message(id,ws,thread,role,body,created) VALUES(?,?,?,?,?,?)',(uid(),ws,thread,role,value.strip(),now()))
+        if role=='staff':c.execute("UPDATE thread SET manual=1,status='open' WHERE ws=? AND id=?",(ws,thread))
+        else:c.execute("UPDATE thread SET status='open' WHERE ws=? AND id=?",(ws,thread))
+        return {'ok':True}
+
 @app.delete('/api/demo/samples')
 def remove_samples(ws=Depends(ident)):
     with db(True) as c:
