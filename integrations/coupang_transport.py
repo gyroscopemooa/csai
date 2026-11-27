@@ -103,3 +103,27 @@ def inventory(vendor,access,secret,item_id):
     if not isinstance(d,dict) or type(d.get('amountInStock')) is not int or not 0<=d['amountInStock']<=1000000000 or type(d.get('salePrice')) is not int or not 0<=d['salePrice']<=1000000000 or type(d.get('onSale')) is not bool:raise CoupangError('옵션 재고·가격 응답 형식 오류')
     if 'vendorItemId' in d and str(d['vendorItemId'])!=item_id:raise CoupangError('옵션번호 불일치')
     return {'item_id':item_id,'stock':d['amountInStock'],'price':d['salePrice'],'on_sale':d['onSale'],'queried_at':int(time.time())}
+
+def ordersheets_day(vendor,access,secret,day,status):
+    """One complete Korean calendar day and status, with bounded pagination."""
+    from datetime import date
+    if not isinstance(day,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}',day) or status not in STATUSES:raise CoupangError('조회 날짜 또는 상태 오류')
+    try:date.fromisoformat(day)
+    except ValueError:raise CoupangError('조회 날짜 오류') from None
+    path='/v2/providers/openapi/apis/api/v5/vendors/'+vendor+'/ordersheets'
+    cursor='';seen=set();result={}
+    for _ in range(10):
+        params=[('createdAtFrom',day+'+09:00'),('createdAtTo',day+'+09:00'),('status',status),('maxPerPage',50)]
+        if cursor:params.append(('nextToken',cursor))
+        data=signed_json(vendor,access,secret,path,params)
+        batch=data.get('data');next_token=data.get('nextToken')
+        if not isinstance(batch,list) or len(batch)>50 or (next_token is not None and not isinstance(next_token,str)):raise CoupangError('발주서 목록 형식 오류')
+        for row in batch:
+            if not isinstance(row,dict) or type(row.get('shipmentBoxId')) is not int or type(row.get('orderId')) is not int or row['shipmentBoxId']<=0 or row['orderId']<=0 or row.get('status')!=status:raise CoupangError('발주서 상태 또는 번호 확인 필요')
+            sid=str(row['shipmentBoxId'])
+            if sid in result:raise CoupangError('발주서 목록 변경 중 · 다시 조회 필요')
+            result[sid]={'shipment_id':sid,'reference':str(row['orderId']),'status':status,'ordered_at':text(row.get('orderedAt'),80),'paid_at':text(row.get('paidAt'),80)}
+        if not next_token:return list(result.values())
+        if len(next_token)>200 or not re.fullmatch(r'[A-Za-z0-9_+=/\-]+',next_token) or next_token in seen:raise CoupangError('발주서 페이지 오류')
+        cursor=next_token;seen.add(cursor)
+    raise CoupangError('하루·상태별 발주서 500건 초과 · 별도 조회 필요')
