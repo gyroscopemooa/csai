@@ -435,6 +435,17 @@ def customer_handoff(body:dict):
 def messages(token:str):
     with db() as c:
         v=visitor(c,token);t=one(c,'SELECT * FROM thread WHERE visitor=? AND ws=?',(token,v['ws']));return chat_attachments.messages(c,v['ws'],t['id'],include_id=False)
+def live_chat_message_id(key):
+    return hashlib.sha256(('live-chat:'+dump(list(key))).encode()).hexdigest()
+
+def cancel_live_chat(c,ws,tid):
+    # Only the transaction owning a running request may restore its reservation.
+    for r in rows(c,"SELECT client,period,charge FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)):
+        w=getw(c,ws)
+        refund_chat(c,w,r['period'],r['charge'])
+        result={'reply':'담당자가 확인 중입니다.','manual':True,'remaining':remaining(c,getw(c,ws))}
+        c.execute("UPDATE request SET state='done',result=? WHERE ws=? AND thread=? AND client=? AND state='running'",(dump(result),ws,tid,r['client']))
+
 def abort_chat_request(key,period,kind):
     """Recover once; a successful but ambiguous commit is replayed, never refunded."""
     ws,tid,client=key
@@ -443,6 +454,7 @@ def abort_chat_request(key,period,kind):
         if prior and prior['state']=='done':return loads(prior['result'])
         if prior and prior['state']=='running':
             refund_chat(c,getw(c,ws),period,kind)
+            c.execute('DELETE FROM message WHERE ws=? AND thread=? AND id=?',(ws,tid,live_chat_message_id(key)))
             c.execute("UPDATE request SET state='failed' WHERE ws=? AND thread=? AND client=?",key)
     return None
 
@@ -490,6 +502,10 @@ def chat(body:dict):
         quote_catalog=customer_ops.quote_catalog(c,ws,v.get('agent','')) if 'quote' in adds else []
         response_style=workflow_controls.response_style(c,ws,v.get('agent',''))
         s={**s,'_response_style':response_style,'_commerce_products':commerce.chat_products(c,w,agent,msg)}
+        # Publish the inbound message before waiting for the model.
+        c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(live_chat_message_id(key),ws,tid,'user',msg,now()))
+        if v['kind']!='test' and not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='new' AND ref=?",(ws,tid)):
+            ops.event(c,ws,'new','신규 고객 상담',tid)
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
         replay=abort_chat_request(key,p,kind)
@@ -514,14 +530,25 @@ def chat(body:dict):
         r.pop('workDraft',None)
     try:
         with db(True) as c:
-            c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()))
+            prior=one(c,'SELECT state,result FROM request WHERE ws=? AND thread=? AND client=?',key)
+            if prior and prior['state']=='done':
+                # The owner already took over; account for provider cost, never send the stale answer.
+                record_usage(c,ws,'chat',ai.CHAT,r,v.get('agent',''))
+                return loads(prior['result'])
+            require(prior and prior['state']=='running','상담 처리 상태가 변경되었습니다.',409)
+            current=one(c,'SELECT manual,kind FROM thread WHERE ws=? AND id=?',(ws,tid))
+            pause=workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),v.get('agent',''),current['kind'])
+            if current['manual'] or pause:
+                cancel_live_chat(c,ws,tid)
+                c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
+                record_usage(c,ws,'chat',ai.CHAT,r,v.get('agent',''))
+                return loads(one(c,'SELECT result FROM request WHERE ws=? AND thread=? AND client=?',key)['result'])
             if handoff:
                 c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
                 if v['kind']!='test':
                     ops.event(c,ws,'handoff','사장님 확인 요청',tid)
             answer_id=uid();c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(answer_id,ws,tid,'assistant',r['reply'],now()))
             if context:c.execute('INSERT INTO answer_context VALUES(?,?,?,?)',(ws,answer_id,v.get('agent',''),dump(context)))
-            if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
             if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
             if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
             if r.get('unknown'):
@@ -815,13 +842,16 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
         if 'manual' in body:
             require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(type(body['manual']) is bool,'상담 방식 오류',422)
-            require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
-            c.execute('UPDATE thread SET manual=? WHERE id=?',(int(body['manual']),i))
+            if body['manual'] and t['kind'] in ('public','test'):
+                cancel_live_chat(c,ws,i)
+            else:
+                require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
+            c.execute('UPDATE thread SET manual=? WHERE ws=? AND id=?',(int(body['manual']),ws,i))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
         if body.get('reply'):
             require(t['kind'] in ('public','test'),'외부 채널 직접 답변은 연결 승인 및 발송 검증 후 이용할 수 있습니다.',409)
             require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 답변하세요.',409)
-            c.execute('UPDATE thread SET manual=1 WHERE ws=? AND id=?',(ws,i))
+            c.execute("UPDATE thread SET manual=1,status='open' WHERE ws=? AND id=?",(ws,i))
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
     return {'ok':True}
 @app.get('/api/unknown')
