@@ -1935,7 +1935,7 @@ async function businessDashboard(){
  ];
  return pageTop('오늘의 사업 현황',r.date+' · '+r.timezone)+
   `<div class="preview-brand">${brandSelect('business-brand',brands,businessAgent,'businessAgent=this.value;render()')}</div>`+
-  card('초기 세팅 대행',stack(helperText(setupEstimate)+helperText(setupCallback))+actionFooter([btn('상담 요청하기','openSetupConsultation()')]))+
+  `<section class="card app-card dashboard-setup-strip" aria-labelledby="dashboard-setup-title"><div class="dashboard-setup-copy"><h2 class="dashboard-setup-title" id="dashboard-setup-title">초기 세팅 대행</h2><p class="dashboard-setup-price"><span>기본 50만 원~</span> · <span>AI 상담·업무 자동화 100만 원~</span></p></div><button type="button" class="ui-button secondary dashboard-setup-action" onclick="openSetupConsultation()">상담 요청</button></section>`+
   card('상담 및 업무',metrics(activity))+
   (sales.length?card('판매 현황',metrics(sales)+'<p class="muted">판매 금액은 직접 등록한 주문의 합계이며 결제·정산 매출이 아닙니다.</p>'):'')+
   `<div class="grid dashboard-workspace">
