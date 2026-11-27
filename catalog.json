@@ -144,7 +144,7 @@
     {
       "id": "kakao",
       "group": "채널·디자인",
-      "name": "카카오톡 채널",
+      "name": "카카오 AI 챗봇",
       "price": 9900,
       "local": false,
       "requires": []
@@ -152,7 +152,7 @@
     {
       "id": "channels",
       "group": "채널·디자인",
-      "name": "네이버·카카오 통합",
+      "name": "네이버·카카오 AI 챗봇 통합",
       "price": 14900,
       "local": false,
       "requires": []
