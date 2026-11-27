@@ -11,13 +11,15 @@ def init():
         CREATE TABLE IF NOT EXISTS brand_calendar_settings(ws TEXT NOT NULL,agent TEXT NOT NULL,config TEXT NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS brand_booking(id TEXT PRIMARY KEY,ws TEXT NOT NULL,agent TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,resource TEXT NOT NULL,payload TEXT NOT NULL,fields TEXT NOT NULL,version INTEGER NOT NULL,status TEXT NOT NULL,customer_ok INTEGER NOT NULL,paid INTEGER NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS brand_booking_customer(ws TEXT NOT NULL,agent TEXT NOT NULL,booking TEXT NOT NULL,visitor TEXT NOT NULL,secret TEXT NOT NULL,PRIMARY KEY(ws,agent,booking));
+        CREATE TABLE IF NOT EXISTS brand_booking_change(id TEXT PRIMARY KEY,ws TEXT NOT NULL,agent TEXT NOT NULL,booking TEXT NOT NULL,visitor TEXT NOT NULL,action TEXT NOT NULL,start TEXT NOT NULL,end TEXT NOT NULL,original_start TEXT NOT NULL,version INTEGER NOT NULL,state TEXT NOT NULL,created INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS brand_booking_change_scope ON brand_booking_change(ws,agent,booking,state);
         CREATE INDEX IF NOT EXISTS brand_booking_customer_lookup ON brand_booking_customer(ws,agent,visitor);
         CREATE INDEX IF NOT EXISTS brand_booking_scope ON brand_booking(ws,agent,resource,start,end);
         """)
 init()
 def config(c,ws,agent):
     r=one(c,'SELECT config FROM brand_calendar_settings WHERE ws=? AND agent=?',(ws,agent))
-    return ({'booking_mode':'off'}|loads(r['config'])) if r else {'booking_mode':'off','timezone':'Asia/Seoul','open':'09:00','close':'18:00','duration':60,'buffer':0,'closed_days':[],'payment_required':False,'resources':[{'id':'default','name':'기본 담당자'}],'fields':[{'key':'title','label':'일정 제목','type':'text','required':True},{'key':'contact','label':'연락처','type':'phone','required':False},{'key':'note','label':'메모','type':'text','required':False}],'template_version':1}
+    return ({'booking_mode':'off','allow_customer_change':False}|loads(r['config'])) if r else {'booking_mode':'off','allow_customer_change':False,'timezone':'Asia/Seoul','open':'09:00','close':'18:00','duration':60,'buffer':0,'closed_days':[],'payment_required':False,'resources':[{'id':'default','name':'기본 담당자'}],'fields':[{'key':'title','label':'일정 제목','type':'text','required':True},{'key':'contact','label':'연락처','type':'phone','required':False},{'key':'note','label':'메모','type':'text','required':False}],'template_version':1}
 def access(c,ws,agent):
     from app import require
     from branding import owned_agent
@@ -76,12 +78,55 @@ def customer_confirm(c,v,i,body):
     return view(one(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND id=?',(ws,agent,i)))
 
 def customer_list(c,v):
-    customer_scope(c,v)
+    w,s=customer_scope(c,v)
     bs=rows(c,"SELECT b.* FROM brand_booking b JOIN brand_booking_customer x ON x.ws=b.ws AND x.agent=b.agent AND x.booking=b.id WHERE b.ws=? AND b.agent=? AND x.visitor=? AND b.status NOT IN ('draft','superseded') ORDER BY b.start",(v['ws'],v['agent'],v['token']))
-    return {'bookings':[view(b) for b in bs],'canChange':False,'canRecover':False,'requests':[],'brandScoped':True}
+    return {'bookings':[view(b) for b in bs],'canChange':s['allow_customer_change'] and 'change_booking' in entitlements(w),'canRecover':False,'requests':rows(c,'SELECT id,booking,action,start,state FROM brand_booking_change WHERE ws=? AND agent=? AND visitor=? ORDER BY created DESC',(v['ws'],v['agent'],v['token'])),'brandScoped':True}
+
+def customer_change(c,v,i,body):
+    from app import require,interval
+    import ops
+    w,s=customer_scope(c,v);ws=v['ws'];agent=v['agent']
+    require('change_booking' in entitlements(w) and s['allow_customer_change'],'고객 예약 변경 기능이 꺼져 있습니다.',403)
+    b=one(c,"SELECT b.* FROM brand_booking b JOIN brand_booking_customer x ON x.ws=b.ws AND x.agent=b.agent AND x.booking=b.id WHERE b.ws=? AND b.agent=? AND b.id=? AND x.visitor=?",(ws,agent,i,v['token']))
+    require(b and b['status']=='confirmed','변경 가능한 본인 예약 없음',404)
+    require(datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'지난 예약은 변경할 수 없습니다.',409)
+    action=body.get('action');require(body.get('confirmed') is True and action in ('cancel','change'),'고객 최종 확인 필요',422)
+    require(not one(c,"SELECT id FROM brand_booking_change WHERE ws=? AND agent=? AND booking=? AND state='pending'",(ws,agent,i)),'이미 승인 대기 중인 요청이 있습니다.',409)
+    a=z=''
+    if action=='change':
+        a,z=interval(s,body.get('start',''));require(available(c,ws,agent,a,z,s['buffer'],b['resource'],i),'예약 시간 충돌',409)
+    rid=uid();c.execute('INSERT INTO brand_booking_change VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(rid,ws,agent,i,v['token'],action,a,z,b['start'],s['template_version'],'pending',now()))
+    ops.event(c,ws,'brand_booking','추가 브랜드 예약 변경·취소 요청',i)
+    return {'id':rid,'state':'pending'}
+
 
 def register(app,ident):
     from app import require,bounded,interval,resource_id,validate_fields
+    @app.get('/api/brand-calendar/{agent}/changes')
+    def changes(agent:str,ws=Depends(ident)):
+        with db() as c:
+            w=access(c,ws,agent);require('change_booking' in entitlements(w))
+            return rows(c,'SELECT id,booking,action,start,state,created FROM brand_booking_change WHERE ws=? AND agent=? ORDER BY created DESC',(ws,agent))
+    @app.post('/api/brand-calendar/{agent}/changes/{i}')
+    def decide_change(agent:str,i:str,body:dict,ws=Depends(ident)):
+        import ops
+        with db(True) as c:
+            w=access(c,ws,agent);require('change_booking' in entitlements(w))
+            r=one(c,"SELECT * FROM brand_booking_change WHERE ws=? AND agent=? AND id=? AND state='pending'",(ws,agent,i));require(r,'승인 대기 요청 없음',404)
+            decision=body.get('action');require(decision in ('approve','reject'),'요청 유형 오류',422)
+            if decision=='approve':
+                from branding import owned_agent
+                s=public_config(c,w,owned_agent(c,w,agent));require(s and s['allow_customer_change'],'예약 변경 기능이 꺼져 있습니다.',409)
+                b=one(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND id=?',(ws,agent,r['booking']))
+                require(b and b['status']=='confirmed' and b['start']==r['original_start'] and datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'예약 상태가 변경되었거나 만료되었습니다.',409)
+                if r['action']=='cancel':
+                    c.execute("UPDATE brand_booking SET status='cancelled' WHERE ws=? AND agent=? AND id=?",(ws,agent,b['id']))
+                else:
+                    require(r['version']==s['template_version'] and b['resource'] in [x['id'] for x in s['resources']] and datetime.fromisoformat(r['start'])>datetime.now(timezone.utc) and available(c,ws,agent,r['start'],r['end'],s['buffer'],b['resource'],b['id']),'변경 시간 충돌 또는 설정 변경',409)
+                    c.execute('UPDATE brand_booking SET start=?,end=? WHERE ws=? AND agent=? AND id=?',(r['start'],r['end'],ws,agent,b['id']))
+                ops.event(c,ws,'brand_booking','추가 브랜드 예약 변경·취소 승인',b['id'])
+            c.execute('UPDATE brand_booking_change SET state=? WHERE ws=? AND agent=? AND id=?',('approved' if decision=='approve' else 'rejected',ws,agent,i))
+        return {'ok':True}
     @app.get('/api/brand-calendar/{agent}')
     def get(agent:str,ws=Depends(ident)):
         with db() as c:
@@ -108,6 +153,10 @@ def register(app,ident):
                 mode=body['booking_mode'];require(isinstance(mode,str) and mode in ('off','manual','auto'),'예약 모드 오류',422)
                 if mode=='auto':require('auto_booking' in entitlements(getw(c,ws)) and policies.status(c,ws)['automation_accepted'],'자동 예약 옵션 및 위험 안내 확인 필요',403)
                 s['booking_mode']=mode
+            if 'allow_customer_change' in body:
+                require(type(body['allow_customer_change']) is bool,'변경 허용 설정 오류',422)
+                if body['allow_customer_change']:require('change_booking' in entitlements(getw(c,ws)))
+                s['allow_customer_change']=body['allow_customer_change']
             if 'payment_required' in body:
                 require(type(body['payment_required']) is bool,'결제 확인 설정 오류',422);s['payment_required']=body['payment_required']
             if 'resources' in body:
