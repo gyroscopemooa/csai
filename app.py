@@ -358,7 +358,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if not agent and k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if not agent and k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
