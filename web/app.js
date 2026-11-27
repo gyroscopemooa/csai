@@ -1545,22 +1545,33 @@ async function submitAssistance(form){
   else showCheckout(order);
  })}finally{submit.disabled=false}
 }
-const setupEstimate='예상 비용 · 기본 세팅 50만 원부터, AI 상담·업무 자동화 구축 100만 원부터';
+const setupEstimate='예상 비용 · 기본 구축 대행 50만 원부터, 맞춤 컨설팅 및 구축 대행 100만 원부터';
 const setupCallback='전화번호를 남겨주시면 담당자가 연락드립니다. 상담 후 필요한 작업과 견적을 확인하고 진행 여부를 결정하세요.';
+const setupConsultationTypes={
+ basic:{title:'기본 구축 대행',price:'50만 원부터',intro:'사장님이 정해 놓은 운영 방식을 실제 사용할 수 있도록 구축합니다.',items:['사업 및 필요 기능 파악, 구독 패키지 구성 및 결제 안내','AI 상담사 교육, 기능 설정 및 지원되는 채널 연동','작동 테스트 및 사용법 안내']},
+ custom:{title:'맞춤 컨설팅 및 구축 대행',price:'100만 원부터',intro:'사장님과 함께 사업 운영 방식을 설계하고 구현합니다.',items:['기본 구축 대행 전체 포함','사업 운영 과정 분석, 상담 자료 정리 및 맞춤 AI 교육','견적·예약·취소 등 상황별 응대 및 예외 처리 기준 설계','맞춤 업무 자동화 설계 및 시나리오별 검수']},
+ undecided:{title:'상담 후 결정',price:'',intro:'어떤 구축이 적합한지 상담을 통해 안내받습니다.',items:[]}
+};
 function openSetupConsultation(){
-  modal('전체 세팅 대행 상담',`<form class="ui-flow-body" onsubmit="event.preventDefault();submitSetupConsultation(this)">
-   ${helperText(setupEstimate)}
+ const options=Object.entries(setupConsultationTypes).map(([key,o])=>`<label class="setup-consultation-option"><input type="radio" name="setup_type" value="${e(key)}" required><span><strong>${e(o.title)}${o.price?' · '+e(o.price):''}</strong><small>${e(o.intro)}</small>${o.items.length?'<ul>'+o.items.map(item=>'<li>'+e(item)+'</li>').join('')+'</ul>':''}</span></label>`).join('');
+ modal('초기 세팅 대행 상담',`<form class="ui-flow-body" onsubmit="event.preventDefault();submitSetupConsultation(this)">
+   <fieldset class="setup-consultation-options"><legend>희망 구축 유형을 선택하세요</legend>${options}</fieldset>
+   ${helperText('표시 금액은 시작 견적입니다. 최종 비용은 업무 범위와 난이도에 따라 결정되며, 구독료·교육 크레딧·외부 서비스 비용 및 미지원 기능의 별도 개발비는 포함되지 않습니다.')}
    ${label('연락받을 전화번호','<input name="phone" type="tel" autocomplete="tel" maxlength="32" required>')}
-   ${label('궁금한 점 (선택)','<textarea name="needs" maxlength="1200" placeholder="예: 카카오 연결, 교환·반품 답변 교육, 담당자 연결 기준 설정"></textarea>')}
+   ${label('궁금한 점 (선택)','<textarea name="needs" maxlength="1140" placeholder="예: 스냅 촬영 예약, 카카오 연결, 교환·반품 기준 설계"></textarea>')}
    ${helperText(setupCallback+' 상담 요청 시 결제되는 금액은 없습니다.')}
    ${flowActions('<button type="submit" class="ui-button primary">전화 상담 요청하기</button>')}</form>`);
 }
 async function submitSetupConsultation(form){
  const button=form.querySelector('[type=submit]');button.disabled=true;
  try{await act(async()=>{
+  const type=form.elements.setup_type.value;
+  if(!Object.prototype.hasOwnProperty.call(setupConsultationTypes,type))throw Error('희망 구축 유형을 선택하세요.');
+  const option=setupConsultationTypes[type];
+  const needs='[희망 구축 유형: '+option.title+']'+(form.elements.needs.value.trim()?'\n'+form.elements.needs.value.trim():'');
   form.dataset.client ||= crypto.randomUUID();
-  await api('/api/billing/setup-consultations',{phone:form.elements.phone.value,needs:form.elements.needs.value,client:form.dataset.client});
-  modal('상담 신청 완료',helperText('담당자가 신청 내용을 확인하고 입력하신 번호로 연락드립니다.'));
+  await api('/api/billing/setup-consultations',{phone:form.elements.phone.value,needs,client:form.dataset.client});
+  modal('상담 신청 완료',helperText(option.title+' 상담 신청이 접수되었습니다. 담당자가 신청 내용을 확인하고 입력하신 번호로 연락드립니다.'));
  })}finally{button.disabled=false}
 }
 async function assistanceQueue(){
@@ -1935,7 +1946,7 @@ async function businessDashboard(){
  ];
  return pageTop('오늘의 사업 현황',r.date+' · '+r.timezone)+
   `<div class="preview-brand">${brandSelect('business-brand',brands,businessAgent,'businessAgent=this.value;render()')}</div>`+
-  `<section class="card app-card dashboard-setup-strip" aria-labelledby="dashboard-setup-title"><div class="dashboard-setup-copy"><h2 class="dashboard-setup-title" id="dashboard-setup-title">초기 세팅 대행</h2><p class="dashboard-setup-price"><span>기본 50만 원~</span> · <span>AI 상담·업무 자동화 100만 원~</span></p></div><button type="button" class="ui-button secondary dashboard-setup-action" onclick="openSetupConsultation()">상담 요청</button></section>`+
+  `<section class="card app-card dashboard-setup-strip" aria-labelledby="dashboard-setup-title"><div class="dashboard-setup-copy"><h2 class="dashboard-setup-title" id="dashboard-setup-title">초기 세팅 대행</h2><p class="dashboard-setup-price"><span>기본 구축 50만 원~</span> · <span>맞춤 구축 100만 원~</span></p></div><button type="button" class="ui-button secondary dashboard-setup-action" onclick="openSetupConsultation()">상담 요청</button></section>`+
   card('상담 및 업무',metrics(activity))+
   (sales.length?card('판매 현황',metrics(sales)+'<p class="muted">판매 금액은 직접 등록한 주문의 합계이며 결제·정산 매출이 아닙니다.</p>'):'')+
   `<div class="grid dashboard-workspace">
