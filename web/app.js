@@ -1128,6 +1128,8 @@ async function loadInboxThreads(){
  if(inboxPriority!=='all')ts=ts.filter(t=>!t.sample&&t.kind!=='test'&&(inboxPriority==='unassigned'?!t.assignment?.assignee:t.assignment?.priority===inboxPriority));
  return ts;
 }
+function replyCompletionEnabled(){try{return localStorage.getItem('csai-reply-completion:'+me?.slug)!=='off';}catch{return true;}}
+function toggleReplyCompletion(control){try{localStorage.setItem('csai-reply-completion:'+me?.slug,control.checked?'on':'off');}catch{}document.querySelectorAll('.reply-completion-toggle').forEach(x=>{x.checked=control.checked;});document.querySelectorAll('.reply-with-history textarea').forEach(field=>{field.closest('.reply-with-history').dataset.completionEnabled=control.checked?'on':'off';if(!control.checked)clearReplySuggestion(field);else if(document.activeElement===field)updateReplySuggestion(field);});}
 function replyWithHistory(id,title,messages,{maxLength=0}={}){
  const limit=maxLength||2000;
  const portableText=message=>message&&!message.photo&&!message.attachment?String(message.body||'').replace(/\r\n?/g,'\n').trim():'';
@@ -1147,11 +1149,13 @@ function replyWithHistory(id,title,messages,{maxLength=0}={}){
   if(repeated&&prior.length>=12)break;
  }
  const field=maxLength?ta(id).replace('<textarea',`<textarea maxlength="${maxLength}"`):ta(id);
- if(!prior.length)return label(title,field);
+ const saved=inboxSnippets.map(x=>String(x.body||'').replace(/\r\n?/g,'\n').trim()).filter(x=>x&&x.length<=limit);
+ const enabled=replyCompletionEnabled();
  const withEvents=field.replace('<textarea',`<textarea
   onfocus="updateReplySuggestion(this)" oninput="if(!event.isComposing)updateReplySuggestion(this)"
   onselect="updateReplySuggestion(this)" onkeydown="replySuggestionKey(event)"`);
- return `<div class="reply-with-history" data-reply-history="${e(JSON.stringify({repeated,prior}))}">
+ return `<div class="reply-with-history" data-completion-enabled="${enabled?'on':'off'}" data-reply-history="${e(JSON.stringify({repeated,prior,saved,limit}))}">
+  <div class="reply-completion-settings"><label class="ui-check"><input type="checkbox" class="ui-choice reply-completion-toggle" ${enabled?'checked':''} onchange="toggleReplyCompletion(this)"><span>답변 자동완성</span></label><small class="ui-hint">저장 문구·이전 AI 답변 · 사용량 차감 없음</small></div>
   ${label(title,withEvents)}
   <div class="reply-history-ghost" hidden>
    <p class="reply-history-source" id="${id}-suggestion">이 상담의 이전 AI 답변</p>
@@ -1166,7 +1170,7 @@ function replyWithHistory(id,title,messages,{maxLength=0}={}){
 function clearReplySuggestion(field){
  const panel=field.closest('.reply-with-history').querySelector('.reply-history-ghost');
  panel.hidden=true;
- field.removeAttribute('aria-describedby');
+ const described=(field.getAttribute('aria-describedby')||'').split(/\s+/).filter(x=>x&&x!==field.id+'-suggestion');if(described.length)field.setAttribute('aria-describedby',described.join(' '));else field.removeAttribute('aria-describedby');
 }
 function updateReplySuggestion(field){
  const scope=field.closest('.reply-with-history');
@@ -1174,12 +1178,15 @@ function updateReplySuggestion(field){
  const draft=field.value;
  const history=JSON.parse(scope.dataset.replyHistory);
  const atEnd=field.selectionStart===draft.length&&field.selectionEnd===draft.length;
- const prefixMatch=draft.trim().length>=2&&history.prior.find(answer=>answer.length>draft.length&&answer.startsWith(draft));
- const remaining=draft?prefixMatch&&prefixMatch.slice(draft.length):history.repeated;
- if(field.dataset.composing||!atEnd||scope.dataset.dismissed===draft||!remaining){clearReplySuggestion(field);return '';}
+ const match=answer=>answer.length>draft.length&&answer.startsWith(draft)&&answer.length<=history.limit;
+ const savedMatch=draft.trim().length>=2&&history.saved.find(match);
+ const priorMatch=draft.trim().length>=2&&history.prior.find(match);
+ const remaining=draft?(savedMatch||priorMatch)?.slice(draft.length):history.repeated;
+ if(scope.dataset.completionEnabled==='off'||field.dataset.composing||!atEnd||scope.dataset.dismissed===draft||!remaining){clearReplySuggestion(field);return '';}
+ panel.querySelector('.reply-history-source').textContent=savedMatch?'저장된 답변 추천':'이 상담의 이전 AI 답변';
  panel.querySelector('.reply-history-completion').textContent=remaining;
  panel.hidden=false;
- field.setAttribute('aria-describedby',field.id+'-suggestion');
+ const described=new Set((field.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));described.add(field.id+'-suggestion');field.setAttribute('aria-describedby',[...described].join(' '));
  return remaining;
 }
 function acceptReplySuggestion(field){
@@ -1190,7 +1197,7 @@ function acceptReplySuggestion(field){
  clearReplySuggestion(field);
  field.focus();
  field.dispatchEvent(new Event('input',{bubbles:true}));
- toast('이전 AI 답변을 초안에 넣었습니다.');
+ toast('추천 답변을 초안에 넣었습니다.');
 }
 document.addEventListener('compositionstart',event=>{
  const field=event.target;
@@ -1239,7 +1246,7 @@ async function inbox(){
   actionFooter([btn('답변 전송',"updateThread({reply:val('staff-reply'),manual:true})",'primary')])):externalReplyControls(detail)}${actionGroup({keepSize:true},detail.photos&&detail.kind==='public'?btn('사진 첨부',"photoUploadModal('owner')"):'',detail.files&&detail.kind==='public'?btn('영상·파일 첨부',"photoUploadModal('owner','file')"):'',detail.web_calls&&detail.kind==='public'?btn('통화 요청 확인',"checkWebCall('owner')"):'',detail.kind==='public'?btn('주문 조회 승인','ownerOrderAccess()'):'',inboxSnippets.length?btn('저장 답변 불러오기','chooseInboxSnippet()'):'',detail.messages.some(m=>m.role==='user')?btn('AI 답장 3가지 추천','openInboxDraftAssistant()'):'',detail.messages.length?btn('상담 핵심 보기','showInboxBrief()'):'',detail.kind!=='test'&&detail.messages.some(m=>m.role==='staff')?btn('직접 상담 기록으로 교육','staffTrainingPreview()'):'',detail.kind!=='test'&&['crm','quote','tasks','leads','complaints'].some(has)?btn('업무로 등록','convertModal()'):'')}`}`:emptyState('상담 기록에서 대화를 선택하면 메시지와 답변 도구가 여기에 표시됩니다.');
  let sampleTools=me.sample_tools?`<div class="inbox-sample-tools"><span>화면 검토용 샘플 · 상담·예약·업무·알림 연결 · 실제 사용량 차감 없음</span><div>${actionGroup({keepSize:true},btn('연결 샘플 9건 넣기','addDemoSamples()'),btn('샘플만 지우기','removeDemoSamples()','danger ui-sm'))}</div></div>`:'';
  let scope=`<p class="inbox-scope">현재 조회 가능 범위: 최근 ${policy.accessible_days.toLocaleString()}일${policy.older_threads?` · 조회 범위 밖 ${policy.older_threads.toLocaleString()}건`:''}${!has('retention')&&!cfg.demo?` <button type="button" onclick="go('addons')">장기 보관 옵션 보기</button>`:''}</p>`;
- return pageTop('통합 상담함','CS AI에서 처리한 상담을 채널별로 확인하세요.')+`<section class="card app-card inbox-toolbar">${brandSelect('inbox-brand',brands,inboxAgent,'inboxAgent=this.value;threadId=null;render()',true)}${filter}<div class="inbox-toolbar-controls">${checkbox('inbox-unread','안 읽은 문의만',{checked:inboxUnread,form:'inbox-filter',className:'inbox-unread'})}<div class="ui-actions inbox-toolbar-actions">${btn('새로고침','refreshInboxNow()','secondary ui-sm')}${btn('자주 쓰는 답변','manageInboxSnippets()','secondary ui-sm')}${btn('답장 비서','go(\'reply-assistant\')','secondary ui-sm')}${btn('외부 발송 문제','showDeliveryIssues()','tertiary ui-sm')} ${btn('채널별 상담 통계','showChannelMetrics()','tertiary ui-sm')}</div></div><div class="inbox-toolbar-status"><span id="inbox-live-status">목록 자동 갱신 · 8초 간격</span>${scope}</div>${sampleTools}${consultationControls(modes,brands)}</section>`+`<div class="grid inbox-grid">${card('상담 기록',`
+ return pageTop('통합 상담함','CS AI에서 처리한 상담을 채널별로 확인하세요.')+`<section class="card app-card inbox-toolbar">${brandSelect('inbox-brand',brands,inboxAgent,'inboxAgent=this.value;threadId=null;render()',true)}${filter}<div class="inbox-toolbar-controls">${checkbox('inbox-unread','안 읽은 문의만',{checked:inboxUnread,form:'inbox-filter',className:'inbox-unread'})}<div class="ui-actions inbox-toolbar-actions">${btn('새로고침','refreshInboxNow()','secondary ui-sm')}${btn('자주 쓰는 답변','manageInboxSnippets()','secondary ui-sm')}${btn('외부 발송 문제','showDeliveryIssues()','tertiary ui-sm')} ${btn('채널별 상담 통계','showChannelMetrics()','tertiary ui-sm')}</div></div><div class="inbox-toolbar-status"><span id="inbox-live-status">목록 자동 갱신 · 8초 간격</span>${scope}</div>${sampleTools}${consultationControls(modes,brands)}</section>`+`<div class="grid inbox-grid">${card('상담 기록',`
   <p class="inbox-pull-hint ui-helper">목록 맨 위에서 아래로 당겨 새로고침</p>
   <div class="inbox-pull">
    <div class="inbox-pull-indicator" aria-hidden="true"><span class="inbox-pull-mark"><span class="inbox-pull-drop"></span>${uiIcon('chevron-down')}</span><span data-pull-label></span></div>
