@@ -63,7 +63,7 @@ async def guard(req,call_next):
         if not w:return Response('Unknown or inactive domain',404)
         path=req.url.path
         if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
-        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue','/api/customer/resume') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+)',path))
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/commerce','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue','/api/customer/resume') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+|customer/commerce/[A-Za-z0-9_-]+)',path))
         if not allowed:return Response('Public consultation only',404)
         allowed_origin='https://'+host
         context=domains.current_ws.set(w['id'])
@@ -89,7 +89,7 @@ def session_response(owner,verified_email=None):
         t=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(t,w['id'],now()+86400*7))
         if owner.startswith('google:') and verified_email:
             c.execute('INSERT INTO session_verified_email VALUES(?,?)',(t,verified_email.lower()))
-    r=RedirectResponse('/#education',303);r.set_cookie('csai_session',t,httponly=True,samesite='lax',secure=APP_URL.startswith('https://'),max_age=86400*7);return r
+    r=RedirectResponse('/#dashboard',303);r.set_cookie('csai_session',t,httponly=True,samesite='lax',secure=APP_URL.startswith('https://'),max_age=86400*7);return r
 def current_workspace(req):
     with db() as c:
         s=one(c,'SELECT * FROM session WHERE token=? AND expires>?',(req.cookies.get('csai_session',''),now()))
@@ -360,7 +360,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'commerce':commerce.public_enabled(c,w,agent),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -475,6 +475,7 @@ def chat(body:dict):
             if calendar_config:
                 adds.add('calendar');s={**s,**{k:calendar_config[k] for k in ('timezone','open','close','duration','buffer','closed_days','fields','resources','payment_required')},'modes':dict(s['modes'],booking=calendar_config['booking_mode'])}
         quote_catalog=customer_ops.quote_catalog(c,ws,v.get('agent','')) if 'quote' in adds else []
+        s={**s,'_commerce_products':commerce.chat_products(c,w,agent,msg)}
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
         replay=abort_chat_request(key,p,kind)
@@ -987,6 +988,8 @@ workflow_controls.register(app,ident)
 import brand_calendar
 brand_calendar.register(app,ident)
 import staff_access
+import commerce
+import business_dashboard
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
