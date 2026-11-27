@@ -30,3 +30,28 @@ def test_email_reply_medium_and_idempotency(monkeypatch):
     assert post(c,'/api/reply-assistant',payload)==first
     assert len(calls)==1
     assert c.post('/api/reply-assistant',json=payload|{'medium':'message'}).status_code==409
+
+
+def test_abandoned_reply_refunded_once(monkeypatch):
+    from store import db,one,now
+    c=owner()
+    monkeypatch.setattr(ai,'KEY','mock')
+    payload={'message':'예약 문의','client':'abandoned','confirmed':True}
+    slug=c.get('/api/me').json()['slug']
+    with db() as conn:
+        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(slug,))['id']
+    # Seed a charged abandoned request as if a process stopped before finalization.
+    from store import charge_chat,getw,usage_period,dump
+    import hashlib
+    fingerprint=hashlib.sha256(dump(['','예약 문의','',['간결하게','친근하게','정중하게']]).encode()).hexdigest()
+    with db(True) as conn:
+        w=getw(conn,ws);period=usage_period(w);charge=charge_chat(conn,w,period)
+        conn.execute('INSERT INTO reply_draft_request VALUES(?,?,?,?,?,?,?,?)',(ws,'abandoned','running',dump({'attempt':'old'}),period,charge,fingerprint,now()-1900))
+    assert c.get('/api/me').json()['remaining']==0
+    assert c.post('/api/reply-assistant',json=payload).status_code==409
+    assert c.get('/api/me').json()['remaining']==1
+    assert c.post('/api/reply-assistant',json=payload).status_code==409
+    assert c.get('/api/me').json()['remaining']==1
+    monkeypatch.setattr(ai,'KEY','')
+    result=post(c,'/api/reply-assistant',payload|{'client':'new-attempt'})
+    assert result['remaining']==0
