@@ -542,9 +542,11 @@ input.ui-switch[type="checkbox"] { width: 36px; height: 20px; border: 0; }
 .reply-form .reply-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }
 .reply-form .reply-medium { width: 100%; max-width: none; }
 .reply-form .ui-field > select, .reply-form .ui-field > input, .reply-form .ui-field > textarea { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
-.reply-completion-settings { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-.reply-completion-settings .ui-check { margin: 0; }
-.reply-completion-settings .ui-hint { margin: 0; }
+.inbox-completion-control { display: inline-flex; align-items: center; gap: 6px; margin: 0; min-height: 44px; white-space: nowrap; }
+.inbox-record-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inbox-record-heading h2 { margin: 0; }
+.inbox-record-heading .inbox-refresh-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; min-width: 44px; min-height: 44px; padding: 0; margin: 0; }
+.inbox-refresh-icon svg { flex: none; }
 .reply-form > .reply-medium:first-child > .ui-field { margin-top: 0; }
 .reply-form .reply-submit { display: grid; gap: var(--ds-2); }
 .ui-action-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--ds-2) var(--ds-4); }
