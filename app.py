@@ -993,6 +993,7 @@ import business_dashboard
 import chat_attachments
 import web_calls
 import telegram_connection
+import commerce_import
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

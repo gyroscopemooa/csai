@@ -3,7 +3,10 @@ No routes, polling, token persistence, activation, or paid broadcasting.
 The caller must verify tenant/brand, webhook secret, chat ownership and entitlement.
 """
 import re
+import logging
 import httpx
+# HTTPX INFO request logging includes Telegram bot tokens in URLs.
+logging.getLogger('httpx').setLevel(logging.WARNING)
 from integrations.provider_formats import telegram_out
 
 _TOKEN=re.compile(r'[0-9]{1,20}:[A-Za-z0-9_-]{20,128}\Z')

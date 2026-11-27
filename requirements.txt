@@ -13,6 +13,7 @@ pytest>=8,<10
 tzdata>=2025.1
 
 cryptography>=44,<48
+bcrypt>=4.2,<6
 
 pywebpush>=2.3,<3
 
