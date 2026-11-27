@@ -39,10 +39,16 @@ def signal(msg,result):
 
 def capture_lead(c,ws,thread,msg,result):
     if 'leads' not in entitlements(getw(c,ws)):return
+    import ops
+    w=getw(c,ws)
+    row=one(c,"SELECT COALESCE(v.agent,'') agent FROM thread t JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE t.ws=? AND t.id=? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(ws,thread))
+    if not row:return
+    agent=row['agent'];ops.work_scope(c,w,agent,True)
     stage,source=signal(msg,result)
     if stage=='inquiry':return
     old=one(c,'SELECT * FROM lead_profile WHERE ws=? AND thread=?',(ws,thread))
     if old:
+        ops.scoped_work(c,w,old['work'],agent)
         # Never downgrade by a later generic question; administrators can edit status.
         if old['stage']=='ready' and stage!='ready':return
         c.execute('UPDATE lead_profile SET stage=?,source=?,updated=? WHERE ws=? AND thread=?',(stage,source,now(),ws,thread))
@@ -50,22 +56,25 @@ def capture_lead(c,ws,thread,msg,result):
         return
     existing=one(c,"SELECT work FROM work_link WHERE ws=? AND thread=? AND kind='leads'",(ws,thread))
     i=existing['work'] if existing else uid()
+    if existing:ops.scoped_work(c,w,i,agent)
     if not existing:
-        c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,'leads','잠재 고객',LEAD_REASONS[stage],'open',now()))
+        c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,'leads','잠재 고객',LEAD_REASONS[stage],'open',now()));ops.bind_work(c,ws,i,agent)
         c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,thread,'leads',i))
     c.execute('INSERT INTO lead_profile VALUES(?,?,?,?,?,?)',(ws,thread,i,stage,source,now()))
 
 @app.get('/api/leads')
-def leads(ws=Depends(ident)):
+def leads(agent:str='',ws=Depends(ident)):
+    import ops
     with db() as c:
-        access(c,ws,'leads')
-        return rows(c,'SELECT l.*,w.status,w.title FROM lead_profile l JOIN work w ON w.id=l.work WHERE l.ws=? ORDER BY l.updated DESC',(ws,))
+        access(c,ws,'leads');w=getw(c,ws);ops.work_scope(c,w,agent)
+        return [r for r in rows(c,"SELECT l.*,w.status,w.title FROM lead_profile l JOIN work w ON w.id=l.work AND w.ws=l.ws LEFT JOIN work_brand b ON b.work=w.id AND b.ws=w.ws WHERE l.ws=? AND COALESCE(b.agent,'')=? ORDER BY l.updated DESC",(ws,agent)) if thread_accessible(c,w,r['thread'])]
 
 @app.patch('/api/leads/{thread}')
-def lead_edit(thread:str,body:dict,ws=Depends(ident)):
+def lead_edit(thread:str,body:dict,agent:str='',ws=Depends(ident)):
+    import ops
     stage=body.get('stage');require(isinstance(stage,str) and stage in LEAD_STAGES,'분류 오류',422)
     with db(True) as c:
-        access(c,ws,'leads');old=one(c,'SELECT work FROM lead_profile WHERE ws=? AND thread=?',(ws,thread));require(old,'잠재 고객 없음',404)
+        access(c,ws,'leads');old=one(c,'SELECT work FROM lead_profile WHERE ws=? AND thread=?',(ws,thread));require(old,'잠재 고객 없음',404);w=getw(c,ws);ops.scoped_work(c,w,old['work'],agent,True);require(ops.thread_brand(c,w,thread)==agent,'잠재 고객 없음',404)
         c.execute("UPDATE lead_profile SET stage=?,source='staff',updated=? WHERE ws=? AND thread=?",(stage,now(),ws,thread))
         c.execute('UPDATE work SET details=? WHERE ws=? AND id=?',(LEAD_REASONS[stage],ws,old['work']))
     return {'ok':True}

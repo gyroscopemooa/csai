@@ -467,7 +467,7 @@ def chat(body:dict):
             return r
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
-        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking','quote','tasks','complaints','crm','leads'} if agent else set())
+        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking','quote'} if agent else set())
         if agent:
             calendar_config=brand_calendar.public_config(c,w,agent)
             if calendar_config:
@@ -494,7 +494,7 @@ def chat(body:dict):
             answer_id=uid();c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(answer_id,ws,tid,'assistant',r['reply'],now()))
             if context:c.execute('INSERT INTO answer_context VALUES(?,?,?,?)',(ws,answer_id,v.get('agent',''),dump(context)))
             if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
-            if v['kind']!='test' and not agent:customer_ops.capture_lead(c,ws,tid,msg,r)
+            if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
             if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
             if r.get('unknown'):
                 if v['kind']!='test':ops.event(c,ws,'unknown','미학습 질문 접수',tid)
@@ -901,18 +901,18 @@ def booking_admin(i:str,body:dict,ws=Depends(ident)):
         else:fail(422,'업무 유형 오류')
         return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)))
 @app.get('/api/work')
-def work_list(ws=Depends(ident)):
+def work_list(agent:str='',ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);a=entitlements(w);return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,r['id']))),'sample_thread':(one(c,'SELECT thread FROM work_link WHERE ws=? AND work=?',(ws,r['id'])) or {}).get('thread') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,r['id'])) else None} for r in rows(c,'SELECT * FROM work WHERE ws=? ORDER BY created DESC',(ws,)) if r['kind'] in a]
+        w=getw(c,ws);ops.work_scope(c,w,agent);a=entitlements(w);return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,r['id']))),'sample_thread':(one(c,'SELECT thread FROM work_link WHERE ws=? AND work=?',(ws,r['id'])) or {}).get('thread') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,r['id'])) else None} for r in rows(c,"SELECT w.* FROM work w LEFT JOIN work_brand b ON b.work=w.id AND b.ws=w.ws WHERE w.ws=? AND COALESCE(b.agent,'')=? ORDER BY w.created DESC",(ws,agent)) if r['kind'] in a]
 @app.post('/api/work')
 def work_add(body:dict,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w));c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(uid(),ws,k,bounded(body.get('title',''),200),bounded(body.get('details',''),2000),'open',now()))
+        w=getw(c,ws);agent=ops.work_scope(c,w,body.get('agent',''),True);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w) and (not agent or k!='quote'));i=uid();title=bounded(body.get('title',''),200);require(title,'제목 필요',422);c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,k,title,bounded(body.get('details',''),2000),'open',now()));ops.bind_work(c,ws,i,agent)
     return {'ok':True}
 @app.post('/api/work/{i}')
-def work_done(i:str,ws=Depends(ident)):
+def work_done(i:str,agent:str='',ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);r=one(c,'SELECT * FROM work WHERE ws=? AND id=?',(ws,i));require(r and r['kind'] in entitlements(w));require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 변경할 수 없습니다.',409);c.execute('UPDATE work SET status=\'resolved\' WHERE id=?',(i,))
+        w=getw(c,ws);r=ops.scoped_work(c,w,i,agent,True);require(not one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='work' AND id=?",(ws,i)),'샘플 업무는 변경할 수 없습니다.',409);c.execute('UPDATE work SET status=\'resolved\' WHERE id=?',(i,))
     return {'ok':True}
 @app.get('/api/stats')
 def stats(ws=Depends(ident)):
@@ -942,7 +942,7 @@ def export(ws=Depends(ident)):
         if 'calendar' in a:
             reservations=rows(c,"SELECT b.id,b.start,b.end,b.status FROM booking b WHERE b.ws=? AND b.status NOT IN ('draft','superseded') AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id) ORDER BY b.start",(ws,))
             add_sheet(b,'예약',['예약 ID','시작 UTC','종료 UTC','상태'],[tuple(r[k] for k in ('id','start','end','status')) for r in reservations])
-        work=rows(c,"SELECT w.kind,w.title,w.details,w.status FROM work w WHERE w.ws=? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=w.ws AND d.kind='work' AND d.id=w.id) ORDER BY w.created",(ws,))
+        work=rows(c,"SELECT w.kind,w.title,w.details,w.status FROM work w WHERE w.ws=? AND NOT EXISTS(SELECT 1 FROM work_brand b WHERE b.ws=w.ws AND b.work=w.id) AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=w.ws AND d.kind='work' AND d.id=w.id) ORDER BY w.created",(ws,))
         add_sheet(b,'업무',['구분','제목','내용','상태'],[tuple(r[k] for k in ('kind','title','details','status')) for r in work if r['kind'] in a])
     o=io.BytesIO();b.save(o);return Response(o.getvalue(),media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={'Content-Disposition':'attachment; filename=consultations.xlsx'})
 @app.get('/widget/{slug}')
