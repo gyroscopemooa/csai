@@ -150,6 +150,9 @@ def answer(msg,history,settings,faq,published,addons,booking_context=None,quote_
     candidates=sorted(all_faq,key=lambda x:score(msg,x['q']),reverse=True)[:5]
     relevant=[x for x in candidates if score(msg,x['q'])>.12]
     if KEY and not relevant and len(all_faq)<=8:relevant=all_faq
+    # Optional candidate retrieval; the default path and all answer checks stay unchanged.
+    from knowledge_retrieval import maybe_select_faq
+    relevant=maybe_select_faq(msg,all_faq,relevant,live_model=bool(KEY))
     rules=sorted(published.get('rules',[]),key=lambda x:score(msg,x),reverse=True)[:4]
     if not KEY and DEMO:
         if relevant and score(msg,relevant[0]['q'])>.55:return {'reply':relevant[0]['a'],'unknown':False,'_context':{'type':'matched_faq','faq':[relevant[0]]}}
