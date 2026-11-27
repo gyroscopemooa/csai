@@ -25,6 +25,8 @@ def access(c,ws,agent):
     from branding import owned_agent
     w=getw(c,ws);require(bool(agent),'추가 브랜드를 선택하세요.',422);owned_agent(c,w,agent);require('calendar' in entitlements(w),'일정표 구매 필요',403);return w
 def available(c,ws,agent,start,end,buffer,resource,exclude=''):
+    from app import blocked_conflict
+    if blocked_conflict(config(c,ws,agent),start,end,buffer):return False
     t0=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).isoformat();t1=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).isoformat()
     return not one(c,"SELECT id FROM brand_booking WHERE ws=? AND agent=? AND resource=? AND status='confirmed' AND start<? AND end>? AND id<>?",(ws,agent,resource,t1,t0,exclude))
 def view(b):
@@ -148,6 +150,9 @@ def register(app,ident):
                 s['timezone']=body['timezone']
             if 'closed_days' in body:
                 d=body['closed_days'];require(isinstance(d,list) and all(type(x) is int and 0<=x<=6 for x in d),'휴무 요일 오류',422);s['closed_days']=sorted(set(d))
+            if 'blocked_times' in body:
+                from app import validate_blocked_times
+                s['blocked_times']=validate_blocked_times(body['blocked_times'])
             if 'booking_mode' in body:
                 import policies
                 mode=body['booking_mode'];require(isinstance(mode,str) and mode in ('off','manual','auto'),'예약 모드 오류',422)
