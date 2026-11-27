@@ -514,7 +514,7 @@ def chat(body:dict):
     return r
 @app.get('/api/inbox')
 def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
-    require(kind in ('','public','test','naver','kakao'),'채널 필터 오류',422)
+    require(kind in ('','public','test','naver','kakao','telegram'),'채널 필터 오류',422)
     q=bounded(q,100).lower()
     with db() as c:
         w=getw(c,ws);cutoff=history_cutoff(w)
@@ -740,7 +740,7 @@ def inbox_channel_metrics(days:int=30,ws=Depends(ident)):
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:
         w=getw(c,ws);t=one(c,'SELECT id,kind FROM thread WHERE ws=? AND id=?',(ws,i))
-        require(t and t['kind'] in ('public','naver','kakao') and thread_accessible(c,w,i),'실제 고객 상담 없음 또는 조회 범위 초과',404)
+        require(t and t['kind'] in ('public','naver','kakao','telegram') and thread_accessible(c,w,i),'실제 고객 상담 없음 또는 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 교육할 수 없습니다.',409)
         messages=rows(c,"SELECT role,body FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid",(ws,i,history_cutoff(w)))
         pairs=[];questions=[];staff=[]
@@ -992,6 +992,7 @@ import commerce
 import business_dashboard
 import chat_attachments
 import web_calls
+import telegram_connection
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

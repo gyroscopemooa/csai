@@ -8,6 +8,8 @@ from app import app,ident,require,fail,bounded,chat,limit
 from store import *
 from google_calendar import encryption
 from integrations.channels import naver_in,naver_out,kakao_in,kakao_out
+from integrations import telegram_transport as tg
+from integrations.provider_formats import telegram_in,telegram_verify
 
 def init_channels():
     with db(True) as c:
@@ -25,6 +27,7 @@ def init_channels():
         ''')
 init_channels()
 def enabled():return os.getenv('ENABLE_CHANNEL_WEBHOOKS','0')=='1' and APP_URL.startswith('https://')
+def telegram_enabled():return enabled() and os.getenv('ENABLE_TELEGRAM_CHANNEL')=='1'
 def digest(s):return hashlib.sha256(s.encode()).hexdigest()
 def lock_text(t):return encryption().encrypt(t.encode()).decode()
 def unlock(t):return encryption().decrypt(t.encode()).decode()
@@ -43,7 +46,7 @@ def link_by_hash(c,ch,key,ws=None):
 
 def permitted_link(c,w,link):
     import branding
-    if not w or not link or not link['active'] or not public_access(w) or link['channel'] not in entitlements(w):return False
+    if not w or not link or not link['active'] or not public_access(w) or (link['channel'] not in entitlements(w) if link['channel']!='telegram' else not telegram_enabled()):return False
     agent=link['agent']
     if not agent:return bool(w['enabled'])
     a=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(w['id'],agent))
@@ -51,7 +54,7 @@ def permitted_link(c,w,link):
 
 def session_key(link,user):
     # Preserve existing main-channel customer IDs and isolate additional brands.
-    return digest(link['secret_hash']+':'+user) if link['agent'] else digest(user)
+    return digest(link['secret_hash']+':'+user) if link['agent'] or link['channel']=='telegram' else digest(user)
 
 def staff_enabled():
     return enabled() and os.getenv('ENABLE_NAVER_STAFF_SEND','0')=='1'
@@ -62,14 +65,15 @@ def naver_success(resp):
     return isinstance(result,dict) and result.get('success') is True and result.get('resultCode')=='00'
 
 def staff_destination(c,ws,t):
-    if not staff_enabled() or t['kind']!='naver':return None
+    ch=t['kind']
+    if not ((ch=='naver' and staff_enabled()) or (ch=='telegram' and telegram_enabled())):return None
     w=getw(c,ws)
     if not w:return None
-    target=one(c,"SELECT * FROM channel_destination WHERE ws=? AND thread=? AND channel='naver'",(ws,t['id']))
-    link=link_by_hash(c,'naver',target['link_hash'],ws) if target else None
+    target=one(c,"SELECT * FROM channel_destination WHERE ws=? AND thread=? AND channel=?",(ws,t['id'],ch))
+    link=link_by_hash(c,ch,target['link_hash'],ws) if target else None
     if not target or not permitted_link(c,w,link) or target['partner']!=link['partner']:return None
     # Only the current live conversation may be used to send; no guessed recipient, no expired old thread.
-    ss=one(c,"SELECT token FROM channel_session WHERE ws=? AND channel='naver' AND external_user=?",(ws,session_key(link,unlock(target['recipient']))))
+    ss=one(c,"SELECT token FROM channel_session WHERE ws=? AND channel=? AND external_user=?",(ws,ch,session_key(link,unlock(target['recipient']))))
     v=one(c,"SELECT token,agent FROM visitor WHERE ws=? AND token=? AND expires>?",(ws,t['visitor'],now()))
     if not ss or not v or v['agent']!=link['agent'] or ss['token']!=t['visitor']:return None
     return target,link
@@ -95,20 +99,20 @@ def queue_staff(thread:str,body:dict,ws=Depends(ident)):
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,thread)),'샘플은 발송할 수 없습니다.',409)
         old=one(c,'SELECT id,status FROM channel_staff_outbox WHERE ws=? AND thread=? AND client=?',(ws,thread,client))
         if old:return old
-        target=staff_destination(c,ws,t);require(target,'네이버 실연동·직접 발송 허용 및 최신 고객 수신 필요',409)
+        target=staff_destination(c,ws,t);require(target,'실연동·직접 발송 허용 및 최신 고객 수신 필요',409)
         require(not staff_pending(c,ws,thread),'이전 답변 발송 중입니다.',409)
-        require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel='naver' AND status='running'",(ws,)),'외부 응답 처리 완료 후 발송하세요.',409)
+        require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,t['kind'])),'외부 응답 처리 완료 후 발송하세요.',409)
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,thread)),'AI 응답 완료 후 발송하세요.',409)
         i=uid();dest,link=target
         c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,thread))
-        c.execute('INSERT INTO channel_staff_outbox VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,thread,client,'naver',link['secret_hash'],link['partner'],lock_text(reply),'queued','',now(),now()))
+        c.execute('INSERT INTO channel_staff_outbox VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,thread,client,t['kind'],link['secret_hash'],link['partner'],lock_text(reply),'queued','',now(),now()))
     return {'id':i,'status':'queued'}
 
 def process_staff_one(ws=None):
     # Claim before network I/O. Ambiguous outcome is never automatically resent.
     with db(True) as c:
         c.execute("UPDATE channel_staff_outbox SET status='unknown',error='발송 결과 확인 필요',body='',updated=? WHERE status='running' AND updated<?",(now(),now()-120))
-        if not staff_enabled():return False
+        if not (staff_enabled() or telegram_enabled()):return False
         sql="SELECT * FROM channel_staff_outbox o WHERE o.status='queued' AND NOT EXISTS(SELECT 1 FROM channel_job j WHERE j.ws=o.ws AND j.channel=o.channel AND j.status='running') AND NOT EXISTS(SELECT 1 FROM channel_staff_outbox r WHERE r.ws=o.ws AND r.channel=o.channel AND r.status='running')"
         args=()
         if ws:sql+=' AND o.ws=?';args=(ws,)
@@ -123,9 +127,12 @@ def process_staff_one(ws=None):
         try:
             dest,link=target;reply=unlock(j['body']);recipient=unlock(dest['recipient']);credential=unlock(link['credential'])
             # All outbound credentials and destination are server-owned; fixed official URL.
-            resp=httpx.post('https://gw.talk.naver.com/chatbot/v1/event',headers={'Authorization':credential},json=naver_out(recipient,reply),timeout=10,follow_redirects=False)
-            if naver_success(resp):state='sent';error=''
-            else:state='unknown';error='공급자 응답 확인 필요'
+            if j['channel']=='telegram':
+                tg.send_text(credential,recipient,reply);state='sent';error=''
+            else:
+                resp=httpx.post('https://gw.talk.naver.com/chatbot/v1/event',headers={'Authorization':credential},json=naver_out(recipient,reply),timeout=10,follow_redirects=False)
+                if naver_success(resp):state='sent';error=''
+                else:state='unknown';error='공급자 응답 확인 필요'
         except Exception:state='unknown';error='발송 결과 미확인 · 재전송 전 톡톡 확인'
     with db(True) as c:
         current=one(c,'SELECT status FROM channel_staff_outbox WHERE ws=? AND id=?',(j['ws'],j['id']))
@@ -242,7 +249,7 @@ def disconnect(ch:str,agent:str='',ws=Depends(ident)):
     return {'ok':True}
 @app.post('/hooks/{ch}/{secret}')
 def ingress(ch:str,secret:str,body:dict,req:Request):
-    require(enabled() and ch in ['naver','kakao'],'연동 비활성화',404)
+    require(enabled() and (ch in ['naver','kakao'] or ch=='telegram' and telegram_enabled()),'연동 비활성화',404)
     with db(True) as c:
         link=link_by_hash(c,ch,digest(secret));require(link,'채널 인증 실패',404);ws=link['ws'];w=getw(c,ws);require(permitted_link(c,w,link),'상담 비활성화',403);limit('hook:'+ws+':'+ch,120)
         if ch=='naver':
@@ -250,11 +257,16 @@ def ingress(ch:str,secret:str,body:dict,req:Request):
             if not m:return Response(status_code=200) # ignore echo and non-text events
             if body.get('partner'):require(body['partner']==link['partner'],'파트너 ID 불일치',403)
             target=''
+        elif ch=='telegram':
+            require(telegram_verify(digest('telegram-header:'+secret),req.headers.get('X-Telegram-Bot-Api-Secret-Token','')),'웹훅 인증 실패',403)
+            incoming=telegram_in(body,link['partner'])
+            if not incoming:return Response(status_code=200)
+            m=incoming[0];target=''
         else:
             require(body.get('bot',{}).get('id')==link['partner'],'봇 ID 불일치',403);m=kakao_in(body);require(m,'텍스트 문의만 지원',422);target=body.get('userRequest',{}).get('callbackUrl','');require(isinstance(target,str) and checked_callback(target),'승인된 콜백 URL 필요',422)
         # Kakao callback is a one-use event ID. Naver has no reliable ID in the documented text event.
-        event=target if target else dump(body)+':'+str(now()//10)
-        key=digest(link['secret_hash']+':'+event if link['agent'] else event)
+        event=m.event_id if ch=='telegram' else target if target else dump(body)+':'+str(now()//10)
+        key=digest(link['secret_hash']+':'+event if link['agent'] or ch=='telegram' else event)
         if not one(c,'SELECT id FROM channel_job WHERE ws=? AND channel=? AND event_key=?',(ws,ch,key)):
             job=uid()
             c.execute('INSERT INTO channel_job VALUES(?,?,?,?,?,?,?,?,?)',(job,ws,ch,key,lock_text(dump({'user':m.user,'text':m.text,'target':target,'link_hash':link['secret_hash'],'partner':link['partner']})),'queued','',now(),now()))
@@ -289,10 +301,11 @@ def process_one(ws=None):
             else:tid=t['id']
             c.execute('INSERT INTO channel_customer_thread VALUES(?,?,?,?,?) ON CONFLICT(ws,thread) DO NOTHING',(ws,tid,ch,link['secret_hash'],external))
             c.execute('INSERT INTO channel_job_thread VALUES(?,?,?) ON CONFLICT(ws,job) DO NOTHING',(ws,j['id'],tid))
-            c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch=='naver' else '',now()))
+            c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch in ('naver','telegram') else '',now()))
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']
-        if r.get('booking'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+(profile['slug'] if profile else w['slug'])
-        if ch=='naver' and r.get('manual'):ok=True;state='held'
+        if r.get('booking') or r.get('workDraft'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+(profile['slug'] if profile else w['slug'])
+        if ch in ('naver','telegram') and r.get('manual'):ok=True;state='held'
+        elif ch=='telegram':tg.send_text(unlock(link['credential']),body['user'],reply);ok=True
         elif ch=='naver':resp=httpx.post('https://gw.talk.naver.com/chatbot/v1/event',headers={'Authorization':unlock(link['credential'])},json=naver_out(body['user'],reply),timeout=10,follow_redirects=False);ok=naver_success(resp)
         else:
             if now()-j['created']>55:raise RuntimeError('카카오 콜백 유효 시간 초과 · 답변 전송 안 됨')
