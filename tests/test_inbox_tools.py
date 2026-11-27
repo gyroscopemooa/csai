@@ -54,3 +54,21 @@ def test_brief_uses_visible_records_and_is_tenant_scoped():
     assert result['note']=='담당자 확인' and result['tags']==['배송']
     assert [m['body'] for m in result['recent']]==['배송 문의','안내 내용','확인 중','추가 질문']
     assert c.get('/api/me').json()['remaining']==before
+
+
+def test_inbox_assignment_is_internal_and_workspace_scoped():
+    c=owner();other=owner()
+    slug=c.get('/api/me').json()['slug']
+    with db(True) as conn:
+        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(slug,))['id']
+        tid,token=uid(),uid()
+        conn.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,ws,now()+86400,'public'))
+        conn.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(tid,ws,token,'public',now()))
+    path='/api/inbox/'+tid+'/assignment'
+    data={'assignee':'담당자 A','priority':'urgent','due_date':'2026-12-01'}
+    assert other.get(path).status_code==404
+    assert other.post(path,json=data).status_code==404
+    assert c.post(path,json=data|{'due_date':'2026-02-30'}).status_code==422
+    assert post(c,path,data)['ok']
+    assert c.get(path).json()['assignee']=='담당자 A'
+    assert next(x for x in c.get('/api/inbox').json() if x['id']==tid)['assignment']==data
