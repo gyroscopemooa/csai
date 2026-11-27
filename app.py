@@ -341,6 +341,7 @@ def publish(i:str,body:dict,ws=Depends(ident)):
         if j['state']=='published':return {'ok':True}
         result=loads(j['result']);w=getw(c,ws);source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
         if agent_id:require(branding.agent_allowed(w,agent),'추가 브랜드 상담원 권한 필요',403)
+        if source.get('backup_import') and agent_id:require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent_id)),'보관된 브랜드는 복원 후 승인하세요.',409)
         old=loads(agent['published'] if agent else w['published'])
         if body.get('replace'):merged=result
         else:merged={'style':result.get('style',old.get('style','')),'rules':list(dict.fromkeys(old.get('rules',[])+result.get('rules',[])))[-100:],'faq':list({x['q']:x for x in old.get('faq',[])+result.get('faq',[])}.values())[-200:],'conflicts':result.get('conflicts',[])}

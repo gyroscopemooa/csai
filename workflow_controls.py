@@ -60,6 +60,30 @@ def decision(p,msg,settings,at=None):
         if at.weekday() not in sch['days'] or not sch['start']<=at.strftime('%H:%M')<sch['end']:return 'staff','schedule'
     return 'auto',''
 
+def validate_knowledge_backup(data):
+    from app import require
+    require(isinstance(data,dict) and data.get('format')=='csai-knowledge-v1','CS AI 교육 백업 파일이 필요합니다.',422)
+    require(len(dump(data).encode('utf-8'))<=2*1024*1024,'백업 파일 최대 2 MiB',422)
+    p=data.get('published')
+    require(isinstance(p,dict),'교육 백업 형식 오류',422)
+    def string(v,n):
+        require(isinstance(v,str) and len(v)<=n,'교육 항목 형식 또는 길이 오류',422)
+        return v
+    def strings(key,n):
+        xs=p.get(key,[]);require(isinstance(xs,list) and len(xs)<=100,'교육 항목 수 초과',422)
+        return [string(x,n) for x in xs]
+    faq=p.get('faq',[]);manual=data.get('faq',[])
+    require(isinstance(faq,list) and isinstance(manual,list) and len(faq)+len(manual)<=400,'FAQ 형식 또는 수량 오류',422)
+    out={}
+    for f in faq+manual:
+        require(isinstance(f,dict),'FAQ 형식 오류',422)
+        q=string(f.get('q'),500);a=string(f.get('a'),2000)
+        require(q.strip() and a.strip(),'빈 FAQ는 가져올 수 없습니다.',422)
+        require(q not in out or out[q]==a,'동일 질문에 다른 답변이 있습니다. 백업을 검토하세요.',422)
+        out[q]=a
+    require(len(out)<=200,'FAQ 최대 200개',422)
+    return {'style':string(p.get('style',''),1000),'rules':strings('rules',1000),'faq':[{'q':q,'a':a} for q,a in out.items()],'conflicts':strings('conflicts',500)}
+
 def register(app,ident):
     from app import require,bounded,visitor,limit
     import branding,ops
@@ -92,6 +116,17 @@ def register(app,ident):
             versions=rows(c,'SELECT content,created FROM agent_knowledge_version WHERE ws=? AND agent=? ORDER BY created DESC LIMIT 100',(ws,agent)) if a else rows(c,'SELECT content,created FROM knowledge_version WHERE ws=? ORDER BY created DESC LIMIT 100',(ws,))
             # Export approved education only, not conversation transcripts, tokens or raw uploads.
             return {'format':'csai-knowledge-v1','brand':branding.brand_settings(w,a)['brand'],'exported_at':now(),'published':published,'faq':faq,'versions':[{'created':v['created'],'content':loads(v['content'])} for v in versions]}
+    @app.post('/api/workflow/backup/import')
+    def import_backup(body:dict,ws=Depends(ident)):
+        agent=body.get('agent','');require(isinstance(agent,str),'브랜드 형식 오류',422)
+        require(body.get('confirmed') is True,'교육 자료 가져오기 확인 필요',422)
+        result=validate_knowledge_backup(body.get('backup'))
+        with db(True) as c:
+            a=owner_brand(c,ws,agent)
+            require(not agent or not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent)),'보관된 브랜드는 복원 후 가져올 수 있습니다.',409)
+            # Import creates a zero-cost review only; no AI call, no direct publication.
+            i=uid();c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(i,ws,'review',0,0,dump({'agent':agent,'backup_import':True}),dump(result),now()))
+        return {'id':i,'agent':agent,'state':'review','cost':0,'faq_count':len(result['faq']),'rule_count':len(result['rules'])}
     @app.get('/api/workflow/queue')
     def queue(agent:str='',ws=Depends(ident)):
         with db() as c:
