@@ -1309,13 +1309,6 @@ function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).
 let calendarAgent='',calendarProfile=null;
 let calFilter='confirmed',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='',calendarMotion=null,calendarRecords=[];
 function calendarRangeContains(date){return !!calendarRange&&date>=calendarRange.start&&date<=calendarRange.end}
-async function calendarRangeToggle(){
- calendarRangeMode=!calendarRangeMode;
- calendarRangeAnchor='';
- calendarRange=null;
- await render();
- $('#calendar-period-toggle')?.focus();
-}
 const calendarFilters=[['all','전체'],['confirmed','확정'],['pending','승인·결제 대기']];
 const calendarPending=b=>b.status==='pending'||b.status==='pending_payment';
 function calendarFiltered(bs){return bs.filter(b=>calFilter==='all'||(calFilter==='pending'&&calendarPending(b))||b.status===calFilter);}
@@ -1393,8 +1386,8 @@ function updateCalendarPanels(){
 function mountCalendarMotion(){
  calendarMotion?.destroy();calendarMotion=null;const root=$('#db-calendar');if(!root)return;
  const counts={};for(const b of calendarFiltered(calendarRecords)){const d=localDate(b.start);counts[d]=(counts[d]||0)+1;}
- calendarMotion=DBMotion.calendar(root,{year:calendarMonth.getFullYear(),month:calendarMonth.getMonth(),range:calendarRangeMode,day:calendarDay(),start:calendarRange?.start,end:calendarRangeAnchor?null:calendarRange?.end,anchor:calendarRangeAnchor,counts},st=>{
-  calendarMonth=new Date(st.year,st.month,1);selectedDate=st.day;calendarRangeAnchor=st.anchor?st.start:'';calendarRange=calendarRangeMode&&st.start?{start:st.start,end:st.end||st.start}:null;
+ calendarMotion=DBMotion.calendar(root,{year:calendarMonth.getFullYear(),month:calendarMonth.getMonth(),range:true,directRange:true,day:calendarDay(),start:calendarRange?.start||calendarDay(),end:calendarRangeAnchor?null:calendarRange?.end||calendarDay(),anchor:!!calendarRangeAnchor,counts},st=>{
+  calendarMonth=new Date(st.year,st.month,1);selectedDate=st.day;calendarRangeAnchor=st.anchor?st.start:'';calendarRange=st.start?{start:st.start,end:st.end||st.start}:null;calendarRangeMode=!!(st.start&&st.end&&st.start!==st.end);
   updateCalendarPanels();
  });
 }
@@ -1446,7 +1439,7 @@ async function calendar(){
    actionFooter([btn('연결 샘플 넣기','addDemoSamples()','primary')])):'';
  return (readOnly?previewNotice('calendar','일정표 및 가상 예약을 직접 둘러볼 수 있습니다'):'')+`<div class="card app-card calendar-workspace" data-calendar-scope="${e(scope)}">
   <header class="calendar-workspace-head">
-   ${pageTop('일정표 보기','일정을 조회하고 고객 예약을 관리하세요.')}
+   ${pageTop('일정표 보기','AI 상담에서 접수·확정된 예약이 자동으로 등록됩니다.')}
    ${brandSelect('calendar-brand',brands,scope,'switchCalendarBrand(this.value)')}
    ${scope?helperText('추가 브랜드 전용 일정표입니다. 예약 설정에서 고객 예약을 활성화할 수 있습니다. 구글 캘린더 연결은 준비 중입니다.'):''}
    <div class="calendar-tools" role="group" aria-label="일정 등록 및 설정">${tools}</div>
@@ -1455,12 +1448,7 @@ async function calendar(){
    <h2 id="calendar-lookup-heading">일정 조회</h2>
    ${calendarStatusFilters()}
    <div class="calendar-lookup-grid">
-    ${calendarGrid('db-calendar',`<div class="calendar-grid-tools">
-     <button id="calendar-period-toggle" type="button" class="ui-button ${calendarRangeMode?'secondary':'primary'} ui-sm" aria-pressed="${calendarRangeMode}" onclick="calendarRangeToggle()">
-      ${uiIcon('calendar-days')}${calendarRangeMode?'하루 보기':'기간 선택'}
-     </button>
-     ${helperText(calendarRangeMode?'시작일과 종료일을 선택하면 자동 조회됩니다.':'날짜를 선택하면 자동 조회됩니다.')}
-    </div>`)}
+    ${calendarGrid('db-calendar',helperText('날짜를 누르면 조회됩니다. 기간은 두 날짜를 선택하거나 드래그하세요.'))}
     <section id="calendar-results" class="calendar-grid-panel calendar-results" aria-labelledby="calendar-results-heading">${calendarList(bookings)}</section>
    </div>
   </section>
@@ -1484,8 +1472,32 @@ function fieldsPage(){const readOnly=!has('calendar');if(readOnly&&!freeFeatureP
 function addField(){let name=val('field-name').trim();if(!name)return;fields.push({key:'f_'+crypto.randomUUID().slice(0,8),label:name,type:'text',required:false});render()}
 function swapField(i,d){[fields[i],fields[i+d]]=[fields[i+d],fields[i]];render()}
 async function saveFields(){if(!requirePreviewAccess('calendar'))return;await act(async()=>{await api('/api/settings',{fields},'PATCH');await refresh();fields=structuredClone(me.settings.fields);toast('새 양식 버전을 저장했습니다.')})}
-function bookingSettings(){const readOnly=!has('calendar');if(readOnly&&!freeFeaturePreview())return locked('calendar','일정표 권한이 필요합니다.');let s=me.settings;return (readOnly?previewNotice('calendar','예약 설정 체험'):'')+pageTop('예약 설정','영업시간과 소요시간을 기준으로 예약 가능 여부를 검증합니다.')+card('예약 가능 시간',`${label('시간대',input('tz',s.timezone))}${label('영업 시작',input('open',s.open,'time'))}${label('영업 종료',input('close',s.close,'time'))}${label('기본 소요시간(분)',input('duration',s.duration,'number'))}${label('예약 사이 여유 시간(분)',input('buffer',s.buffer,'number'))}<p>휴무 요일</p><div class="row">${['월','화','수','목','금','토','일'].map((x,i)=>`<label><input type="checkbox" class="check closed" value="${i}" ${s.closed_days.includes(i)?'checked':''}>${x}</label>`).join('')}</div><p><label><input id="payment-required" type="checkbox" class="check" ${s.payment_required?'checked':''}> 외부 결제 확인 후 확정</label></p>${label('예약 모드',select('booking-mode',[['manual','수동 승인'],['auto','자동 확정'],['off','OFF']],s.modes.booking))}${btn('저장','saveBookingSettings()','primary')}<p class="muted">자동 확정은 자동 예약 옵션이 있어야 적용됩니다. 현재 단일 담당자/리소스 기준입니다.</p>`)}
-async function saveBookingSettings(){if(!requirePreviewAccess('calendar'))return;await act(async()=>{await api('/api/settings',{timezone:val('tz'),open:val('open'),close:val('close'),duration:+val('duration'),buffer:+val('buffer'),closed_days:[...document.querySelectorAll('.closed:checked')].map(x=>+x.value),payment_required:checked('payment-required'),modes:{booking:val('booking-mode')}},'PATCH');await refresh();toast('예약 설정 저장')})}
+let bookingBlockSerial=0;
+function bookingBlockRow(rule={}){
+ const id='booking-block-'+(++bookingBlockSerial),kind=rule.kind||'date',allDay=rule.start==='00:00'&&rule.end==='24:00'||!rule.start;
+ return `<div class="booking-block-row" data-booking-block>
+  <div class="row between"><strong>차단 일정</strong><button type="button" class="ui-button secondary ui-sm" onclick="this.closest('[data-booking-block]').remove()">삭제</button></div>
+  ${label('일정 이름',input(id+'-name',rule.name||'','text','예: 점심시간, 휴가').replace('<input','<input data-block-name maxlength="100"'))}
+  ${label('반복 유형',select(id+'-kind',[['date','특정 날짜 또는 기간'],['weekly','매주 반복']],kind).replace('<select','<select data-block-kind onchange="toggleBookingBlock(this.closest(\'[data-booking-block]\'))"'))}
+  <div class="booking-settings-grid" data-block-date ${kind==='weekly'?'hidden':''}>
+   ${label('시작일',input(id+'-from',rule.from||'','date').replace('<input','<input data-block-from'))}
+   ${label('종료일',input(id+'-to',rule.to||'','date').replace('<input','<input data-block-to'))}
+  </div>
+  <div data-block-week ${kind==='weekly'?'':'hidden'}><p class="ui-helper">반복 요일</p><div class="booking-weekdays">${['월','화','수','목','금','토','일'].map((day,i)=>`<label><input type="checkbox" data-block-day value="${i}" ${(rule.days||[0,1,2,3,4,5,6]).includes(i)?'checked':''}><span>${day}</span></label>`).join('')}</div></div>
+  <label class="ui-check"><input class="ui-choice" type="checkbox" data-block-all ${allDay?'checked':''} onchange="toggleBookingBlock(this.closest('[data-booking-block]'))"><span>종일 예약 차단</span></label>
+  <div class="booking-settings-grid" data-block-hours ${allDay?'hidden':''}>
+   ${label('시작 시간',input(id+'-start',allDay?'12:00':rule.start||'12:00','time').replace('<input','<input data-block-start'))}
+   ${label('종료 시간',input(id+'-end',allDay?'13:00':rule.end==='24:00'?'23:59':rule.end||'13:00','time').replace('<input','<input data-block-end'))}
+  </div>
+ </div>`;
+}
+function toggleBookingBlock(row){row.querySelector('[data-block-date]').hidden=row.querySelector('[data-block-kind]').value==='weekly';row.querySelector('[data-block-week]').hidden=!row.querySelector('[data-block-date]').hidden;row.querySelector('[data-block-hours]').hidden=row.querySelector('[data-block-all]').checked;}
+function bookingBlockFields(prefix,s){return `<div class="booking-block-list" id="${prefix}-blocked">${(s.blocked_times||[]).map(bookingBlockRow).join('')}</div><button type="button" class="ui-button secondary" onclick="addBookingBlock('${prefix}')">+ 예약 불가 일정 추가</button>`;}
+function addBookingBlock(prefix){const list=document.getElementById(prefix+'-blocked');if(list.children.length>=100){toast('최대 100개까지 등록할 수 있습니다.');return;}list.insertAdjacentHTML('beforeend',bookingBlockRow());list.lastElementChild.querySelector('[data-block-name]').focus();}
+function readBookingBlocks(prefix){return [...document.getElementById(prefix+'-blocked').querySelectorAll('[data-booking-block]')].map(row=>{const get=k=>row.querySelector('[data-block-'+k+']'),kind=get('kind').value,all=get('all').checked;const rule={name:get('name').value.trim(),kind,start:all?'00:00':get('start').value,end:all?'24:00':get('end').value};if(kind==='date'){rule.from=get('from').value;rule.to=get('to').value||rule.from;if(!rule.from||rule.from>rule.to)throw Error('예약 불가 날짜를 확인하세요.');}else{rule.days=[...row.querySelectorAll('[data-block-day]:checked')].map(x=>+x.value);if(!rule.days.length)throw Error('반복 요일을 선택하세요.');}if(!rule.start||!rule.end||rule.start>=rule.end)throw Error('예약 불가 시간을 확인하세요.');return rule;});}
+function bookingScheduleFields(prefix,s){const p=prefix?prefix+'-':'',closed=prefix?'bc-closed':'closed';return `<div class="booking-settings-form">${label('시간대',input(p+'tz',s.timezone))}<div class="booking-settings-grid">${label('영업 시작',input(p+'open',s.open,'time'))}${label('영업 종료',input(p+'close',s.close,'time'))}${label('기본 소요시간(분)',input(p+'duration',s.duration,'number'))}${label('예약 사이 여유(분)',input(p+'buffer',s.buffer,'number'))}</div><p class="label">정기 휴무 요일</p><div class="booking-weekdays">${['월','화','수','목','금','토','일'].map((x,i)=>`<label><input type="checkbox" class="${closed}" value="${i}" ${s.closed_days.includes(i)?'checked':''}><span>${x}</span></label>`).join('')}</div></div>`;}
+function bookingSettings(){const readOnly=!has('calendar');if(readOnly&&!freeFeaturePreview())return locked('calendar','일정표 권한이 필요합니다.');const s=me.settings;return (readOnly?previewNotice('calendar','예약 설정 체험'):'')+pageTop('예약 설정','AI가 고객 예약을 접수할 수 있는 조건을 설정합니다.')+card('예약 가능 시간',bookingScheduleFields('',s))+card('예약 불가 일정',helperText('점심시간, 출장, 휴가 등 지정한 시간에는 신규 예약과 일정 변경이 차단됩니다. 기존 확정 예약은 유지됩니다.')+bookingBlockFields('main',s))+card('예약 처리 방식',`<div class="booking-settings-form">${checkbox('payment-required','외부 결제 확인 후 확정',{checked:s.payment_required})}${label('예약 모드',select('booking-mode',[['manual','수동 승인'],['auto','자동 확정'],['off','OFF']],s.modes.booking))}${helperText('자동 확정은 자동 예약 옵션이 있어야 적용됩니다.')}${actionFooter([btn('돌아가기',"go('calendar')"),btn('저장','saveBookingSettings()','primary')])}</div>`);}
+async function saveBookingSettings(){if(!requirePreviewAccess('calendar'))return;await act(async()=>{await api('/api/settings',{timezone:val('tz'),open:val('open'),close:val('close'),duration:+val('duration'),buffer:+val('buffer'),closed_days:[...document.querySelectorAll('.closed:checked')].map(x=>+x.value),blocked_times:readBookingBlocks('main'),payment_required:checked('payment-required'),modes:{booking:val('booking-mode')}},'PATCH');await refresh();toast('예약 설정 저장');go('calendar')})}
 function formFields(fs,prefix){return fs.map(f=>label(f.label+(f.required?' *':''),f.type==='select'?select(prefix+f.key,(f.options||[]).map(x=>[x,x]),''):f.type==='boolean'?select(prefix+f.key,[['','선택'],['예','예'],['아니오','아니오']],''):input(prefix+f.key,'',f.type==='phone'?'tel':f.type==='number'?'number':f.type==='date'?'date':f.type==='time'?'time':'text'))).join('')}
 function payload(fs,prefix){return Object.fromEntries(fs.map(f=>[f.key,val(prefix+f.key)]))}
 function manualBooking(){let s=calendarProfile||me.settings;modal('수동 일정 등록',label('업체 현지 시작 일시',input('manual-start','','datetime-local'))+label('담당자',select('manual-resource',resources().map(r=>[r.id,r.name]),'default'))+formFields(s.fields,'manual-')+(s.payment_required?'<label><input type="checkbox" class="check" id="manual-paid"> 결제 확인 완료</label>':'')+btn('일정 등록','submitManual()','primary'))}
@@ -3145,8 +3157,8 @@ async function applyReadyDraft(i){const d=readyDraftList[i],agent=readyDraftAgen
 
 function calendarBookingPath(id=''){return (calendarAgent?'/api/brand-calendar/'+enc(calendarAgent)+'/bookings':'/api/bookings')+(id?'/'+enc(id):'')}
 function switchCalendarBrand(agent){calendarAgent=agent;calendarProfile=null;calendarRange=null;calendarRangeAnchor='';selectedDate=null;render()}
-function brandCalendarSettings(){const s=calendarProfile;if(!s)return;modal('브랜드 예약 설정',label('고객 예약 모드',select('bc-booking-mode',[['off','고객 예약 끄기'],['manual','수동 승인'],['auto','자동 확정']],s.booking_mode||'off'))+'<p class="muted">자동 확정은 자동 예약 옵션 및 위험 안내 동의가 필요합니다. 외부 결제 확인이 필요한 경우 먼저 승인 대기됩니다.</p>'+label('시간대',input('bc-tz',s.timezone))+label('영업 시작',input('bc-open',s.open,'time'))+label('영업 종료',input('bc-close',s.close,'time'))+label('소요 시간(분)',input('bc-duration',s.duration,'number'))+label('예약 사이 여유(분)',input('bc-buffer',s.buffer,'number'))+'<p>휴무 요일</p><div class="row">'+['월','화','수','목','금','토','일'].map((d,i)=>'<label><input type="checkbox" class="bc-closed" value="'+i+'" '+(s.closed_days.includes(i)?'checked':'')+'> '+d+'</label>').join('')+'</div><label><input type="checkbox" id="bc-payment" '+(s.payment_required?'checked':'')+'> 외부 결제 확인 필요</label>'+(has('change_booking')?'<label><input type="checkbox" id="bc-change" '+(s.allow_customer_change?'checked':'')+'> 고객 변경·취소 요청 허용 (담당자 승인)</label>':'')+btn('저장','saveBrandCalendarSettings()','primary'))}
-async function saveBrandCalendarSettings(){await act(async()=>{await api('/api/brand-calendar/'+enc(calendarAgent)+'/settings',{booking_mode:val('bc-booking-mode'),timezone:val('bc-tz'),open:val('bc-open'),close:val('bc-close'),duration:Number(val('bc-duration')),buffer:Number(val('bc-buffer')),closed_days:[...document.querySelectorAll('.bc-closed:checked')].map(x=>Number(x.value)),payment_required:checked('bc-payment'),...($('#bc-change')?{allow_customer_change:checked('bc-change')}:{})});$('.modal')?.remove();render()})}
+function brandCalendarSettings(){const s=calendarProfile;if(!s)return;modal('브랜드 예약 설정',`<div class="booking-settings-form">${label('고객 예약 모드',select('bc-booking-mode',[['off','고객 예약 끄기'],['manual','수동 승인'],['auto','자동 확정']],s.booking_mode||'off'))}${helperText('자동 확정은 자동 예약 옵션 및 위험 안내 동의가 필요합니다.')}${bookingScheduleFields('bc',s)}<h3>예약 불가 일정</h3>${helperText('지정한 시간에는 신규 예약 및 변경이 차단됩니다.')}${bookingBlockFields('bc',s)}${checkbox('bc-payment','외부 결제 확인 필요',{checked:s.payment_required})}${has('change_booking')?checkbox('bc-change','고객 변경·취소 요청 허용 (담당자 승인)',{checked:s.allow_customer_change}):''}${actionFooter([btn('저장','saveBrandCalendarSettings()','primary')])}</div>`);}
+async function saveBrandCalendarSettings(){await act(async()=>{await api('/api/brand-calendar/'+enc(calendarAgent)+'/settings',{booking_mode:val('bc-booking-mode'),timezone:val('bc-tz'),open:val('bc-open'),close:val('bc-close'),duration:Number(val('bc-duration')),buffer:Number(val('bc-buffer')),closed_days:[...document.querySelectorAll('.bc-closed:checked')].map(x=>Number(x.value)),blocked_times:readBookingBlocks('bc'),payment_required:checked('bc-payment'),...($('#bc-change')?{allow_customer_change:checked('bc-change')}:{})});$('.modal')?.remove();render()})}
 let brandCalendarFieldsDraft=[];
 function brandCalendarFields(reset=true){if(!calendarProfile)return;if(reset)brandCalendarFieldsDraft=structuredClone(calendarProfile.fields);modal('브랜드 맞춤 일정 양식',brandCalendarFieldsDraft.map((f,i)=>'<div class="line">'+label('항목 이름',input('bc-field-'+i,f.label))+label('형식',select('bc-type-'+i,['text','phone','number','date','time','select','boolean'].map((x,j)=>[x,['텍스트','전화','숫자','날짜','시간','선택','예/아니오'][j]]),f.type))+label('선택지 (쉼표 구분)',input('bc-options-'+i,(f.options||[]).join(',')))+'<label><input type="checkbox" id="bc-required-'+i+'" '+(f.required?'checked':'')+'> 필수</label>'+btn('삭제','changeBrandCalendarFields('+i+')')+'</div>').join('')+actionGroup({keepSize:true},btn('항목 추가','changeBrandCalendarFields(-1)'),btn('양식 저장','saveBrandCalendarFields()','primary')))}
 function captureBrandCalendarFields(){brandCalendarFieldsDraft.forEach((f,i)=>{f.label=val('bc-field-'+i);f.type=val('bc-type-'+i);f.options=val('bc-options-'+i).split(',').map(x=>x.trim()).filter(Boolean);f.required=checked('bc-required-'+i)})}
