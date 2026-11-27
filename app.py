@@ -596,7 +596,9 @@ def reply_assistant(body:dict,ws=Depends(ident)):
     fp=hashlib.sha256(dump(fingerprint).encode()).hexdigest()
     limit('reply-assistant:'+ws,12)
     with db(True) as c:
-        w=getw(c,ws);expire_reply_drafts(c,ws);w=getw(c,ws);p=usage_period(w)
+        expire_reply_drafts(c,ws)
+    with db(True) as c:
+        w=getw(c,ws);p=usage_period(w)
         old=one(c,'SELECT * FROM reply_draft_request WHERE ws=? AND client=?',(ws,client))
         if old:
             require(old['fingerprint']==fp,'요청 식별자 충돌',409)
