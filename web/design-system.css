@@ -540,7 +540,11 @@ input.ui-switch[type="checkbox"] { width: 36px; height: 20px; border: 0; }
 .reply-form textarea { min-height: 80px; resize: vertical; }
 .reply-form #reply-source { min-height: 112px; }
 .reply-form .reply-styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }
-.reply-form .reply-medium { max-width: 280px; }
+.reply-form .reply-medium { width: 100%; max-width: none; }
+.reply-form .ui-field > select, .reply-form .ui-field > input, .reply-form .ui-field > textarea { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.reply-completion-settings { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.reply-completion-settings .ui-check { margin: 0; }
+.reply-completion-settings .ui-hint { margin: 0; }
 .reply-form > .reply-medium:first-child > .ui-field { margin-top: 0; }
 .reply-form .reply-submit { display: grid; gap: var(--ds-2); }
 .ui-action-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--ds-2) var(--ds-4); }
