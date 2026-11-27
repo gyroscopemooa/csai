@@ -169,7 +169,7 @@ def register_paid(app,ident):
                     require(one(c,'SELECT COUNT(*) n FROM memory_import_batch WHERE ws=? AND order_id=?',(ws,order))['n']<CAT['memory_import']['max_batches'],'이전 이용권 구간 한도 초과',409)
                 if job:
                     c.execute("UPDATE training SET state='expired',source=? WHERE ws=? AND id=?",(dump({'agent':agent}),ws,job['id']))
-                n=ai.estimate(guidance+'\n'+text,[]);j=uid()
+                n=ai.estimate(text,[],guidance);j=uid()
                 c.execute('INSERT INTO training VALUES(?,?,?,?,?,?,?,?)',(j,ws,'estimated',n,0,dump({'text':text,'guidance':guidance,'images':[],'agent':agent,'memory_order':order}),None,now()))
                 c.execute('INSERT INTO memory_import_batch VALUES(?,?,?,?,?) ON CONFLICT(ws,order_id,digest) DO UPDATE SET job=excluded.job,created=excluded.created',(ws,order,digest,j,now()))
             t=trial(c,w);credits=10000-operator_wallet(c,w)['credit_used'] if is_operator(w) else (t['credit_limit']-t['credit_used'] if t else w['credits'])
