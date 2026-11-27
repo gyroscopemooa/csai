@@ -6,13 +6,23 @@ from fastapi.responses import FileResponse
 from app import app,ident,require
 from store import *
 
-EVENT_RIGHTS={'handoff':'new_alert','handoff_urgent':'new_alert','unanswered':'new_alert','new':'new_alert','unknown':'unknown_alert','booking':'booking_alert','report':'report','work':'tasks'}
+EVENT_RIGHTS={'handoff':'new_alert','handoff_urgent':'new_alert','manual_message':'new_alert','unanswered':'new_alert','new':'new_alert','unknown':'unknown_alert','booking':'booking_alert','brand_booking':'booking_alert','report':'report','work':'tasks'}
+EVENT_LABELS={'handoff':'담당자 연결 요청','handoff_urgent':'긴급 담당자 확인 요청','manual_message':'직접 상담에 새 메시지','unanswered':'미답변 상담 확인','new':'신규 고객 상담','unknown':'미학습 질문 확인','booking':'예약 관련 알림','brand_booking':'브랜드 예약 관련 알림','report':'업무 보고서','work':'업무 요청 확인'}
+def allowed_kinds(rights):
+    return [k for k,v in EVENT_RIGHTS.items() if v in rights]
+def preferences(c,sub):
+    r=one(c,'SELECT kinds,silent FROM push_preferences WHERE sub=?',(sub,))
+    return {'kinds':loads(r['kinds']),'silent':bool(r['silent'])} if r else {'kinds':list(EVENT_RIGHTS),'silent':False}
+def payload(event,silent=False):
+    kind=event.get('kind','')
+    return {'title':'CS AI · '+EVENT_LABELS.get(kind,'업무 알림'),'body':'관리자 화면에서 확인하세요.','kind':kind,'event':event['id'],'silent':bool(silent),'route':'inbox' if kind in ('handoff','handoff_urgent','manual_message','unanswered','new','unknown') else 'calendar' if kind in ('booking','brand_booking') else 'alerts'}
 HOSTS={'fcm.googleapis.com','updates.push.services.mozilla.com','web.push.apple.com'}
 
 def init_push():
     with db(True) as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS push_subscription(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),endpoint TEXT UNIQUE NOT NULL,keys TEXT NOT NULL,created INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS push_preferences(sub TEXT PRIMARY KEY REFERENCES push_subscription(id) ON DELETE CASCADE,kinds TEXT NOT NULL,silent INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS push_delivery(id TEXT PRIMARY KEY,ws TEXT NOT NULL,sub TEXT NOT NULL REFERENCES push_subscription(id) ON DELETE CASCADE,event TEXT NOT NULL,status TEXT NOT NULL,created INTEGER NOT NULL,UNIQUE(sub,event));
         """)
 init_push()
@@ -49,7 +59,7 @@ def push_sw():return FileResponse(ROOT/'web/push-sw.js',media_type='application/
 def status(ws=Depends(ident)):
     with db() as c:
         require('push' in entitlements(getw(c,ws)))
-        return {'configured':configured(),'live':live_enabled(),'public_key':os.getenv('VAPID_PUBLIC_KEY',''),'devices':rows(c,'SELECT id,created FROM push_subscription WHERE ws=? ORDER BY created DESC',(ws,)),'deliveries':rows(c,'SELECT status,created FROM push_delivery WHERE ws=? ORDER BY created DESC LIMIT 30',(ws,))}
+        return {'configured':configured(),'live':live_enabled(),'public_key':os.getenv('VAPID_PUBLIC_KEY',''),'kinds':[{ 'id':k,'label':EVENT_LABELS[k],'available':k in allowed_kinds(entitlements(getw(c,ws)))} for k in EVENT_RIGHTS],'devices':[d|{'preferences':preferences(c,d['id'])} for d in rows(c,'SELECT id,created FROM push_subscription WHERE ws=? ORDER BY created DESC',(ws,))],'deliveries':rows(c,'SELECT status,created FROM push_delivery WHERE ws=? ORDER BY created DESC LIMIT 30',(ws,))}
 
 @app.post('/api/push')
 def subscribe(body:dict,ws=Depends(ident)):
@@ -63,12 +73,22 @@ def subscribe(body:dict,ws=Depends(ident)):
         require(one(c,'SELECT COUNT(*) n FROM push_subscription WHERE ws=?',(ws,))['n']<10,'등록 기기는 최대 10개',409)
         i=uid();c.execute('INSERT INTO push_subscription VALUES(?,?,?,?,?)',(i,ws,endpoint,dump(keys),now()));return {'id':i}
 
+@app.patch('/api/push/{i}')
+def save_preferences(i:str,body:dict,ws=Depends(ident)):
+    kinds=body.get('kinds');silent=body.get('silent')
+    require(isinstance(kinds,list) and len(kinds)<=len(EVENT_RIGHTS) and all(isinstance(k,str) and k in EVENT_RIGHTS for k in kinds) and type(silent) is bool,'알림 설정 오류',422)
+    with db(True) as c:
+        require('push' in entitlements(getw(c,ws)))
+        require(one(c,'SELECT id FROM push_subscription WHERE id=? AND ws=?',(i,ws)),'기기 없음',404)
+        c.execute('INSERT INTO push_preferences VALUES(?,?,?) ON CONFLICT(sub) DO UPDATE SET kinds=excluded.kinds,silent=excluded.silent',(i,dump(list(dict.fromkeys(kinds))),int(silent)))
+    return {'ok':True}
+
 @app.delete('/api/push/{i}')
 def unsubscribe(i:str,ws=Depends(ident)):
     with db(True) as c:c.execute('DELETE FROM push_subscription WHERE id=? AND ws=?',(i,ws))
     return {'ok':True}
 
-def send(sub,event):
+def send(sub,event,silent=False):
     if not live_enabled():return 'simulated'
     import requests
     from pywebpush import webpush,WebPushException
@@ -80,7 +100,7 @@ def send(sub,event):
     with NoRedirect() as session:
         session.trust_env=False
         try:
-            response=webpush(subscription_info={'endpoint':endpoint,'keys':keys},data=dump({'title':'CS AI 알림','body':'새로운 업무 알림이 있습니다. 관리자 화면에서 확인하세요.'}),vapid_private_key=os.environ['VAPID_PRIVATE_KEY'],vapid_claims={'sub':os.environ['VAPID_SUBJECT']},timeout=10,ttl=300,requests_session=session)
+            response=webpush(subscription_info={'endpoint':endpoint,'keys':keys},data=dump(payload(event,silent)),vapid_private_key=os.environ['VAPID_PRIVATE_KEY'],vapid_claims={'sub':os.environ['VAPID_SUBJECT']},timeout=10,ttl=300,requests_session=session)
             return 'sent' if 200<=response.status_code<300 else 'failed'
         except WebPushException as e:
             return 'expired' if getattr(e.response,'status_code',0) in (404,410) else 'failed'
@@ -96,15 +116,17 @@ def tick():
             w=getw(c,sub['ws'])
             if not w or 'push' not in entitlements(w):continue
             rights=entitlements(w)
-            events=rows(c,"SELECT e.* FROM event_log e LEFT JOIN push_delivery d ON d.sub=? AND d.event=e.id WHERE e.ws=? AND e.created>=? AND d.id IS NULL AND e.seen=0 ORDER BY e.created LIMIT 100",(sub['id'],sub['ws'],max(sub['created'],now()-86400)))
-            events=[x for x in events if EVENT_RIGHTS.get(x['kind']) in rights][:5]
+            pref=preferences(c,sub['id']);kinds=[k for k in allowed_kinds(rights) if k in pref['kinds']]
+            if not kinds:continue
+            marks=','.join('?' for _ in kinds)
+            events=rows(c,"SELECT e.* FROM event_log e LEFT JOIN push_delivery d ON d.sub=? AND d.event=e.id WHERE e.ws=? AND e.created>=? AND d.id IS NULL AND e.seen=0 AND e.kind IN ("+marks+") AND NOT EXISTS(SELECT 1 FROM demo_sample_entity s WHERE s.ws=e.ws AND s.kind='event' AND s.id=e.id) ORDER BY CASE WHEN e.kind='handoff_urgent' THEN 0 ELSE 1 END,e.created LIMIT 5",(sub['id'],sub['ws'],max(sub['created'],now()-86400),*kinds))
             for x in events:c.execute('INSERT INTO push_delivery VALUES(?,?,?,?,?,?)',(uid(),sub['ws'],sub['id'],x['id'],'sending',now()))
         for x in events:
             try:
                 with db() as c:
                     w=getw(c,sub['ws']);active=one(c,'SELECT id FROM push_subscription WHERE id=? AND ws=?',(sub['id'],sub['ws']))
-                    allowed=bool(active and w and {'push',EVENT_RIGHTS[x['kind']]}.issubset(entitlements(w)))
-                result=send(sub,x) if allowed else 'failed'
+                    pref=preferences(c,sub['id']);allowed=bool(active and w and x['kind'] in pref['kinds'] and {'push',EVENT_RIGHTS[x['kind']]}.issubset(entitlements(w)))
+                result=send(sub,x,pref['silent']) if allowed else 'failed'
             except Exception:result='failed'
             with db(True) as c:
                 if result=='expired':c.execute('DELETE FROM push_subscription WHERE id=? AND ws=?',(sub['id'],sub['ws']))
