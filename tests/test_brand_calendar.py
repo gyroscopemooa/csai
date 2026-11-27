@@ -29,3 +29,47 @@ def test_brand_calendar_cross_brand_booking_edit_is_denied():
     assert c.post(pb+'/bookings/'+x['id'],json={'action':'cancel'}).status_code==404
     assert c.get(pa).json()['bookings'][0]['status']=='confirmed'
     assert c.get(pb).json()['bookings'][0]['status']=='confirmed'
+
+
+def test_public_brand_booking_manual_and_isolation():
+    from fastapi.testclient import TestClient
+    from app import app
+    c=owner()
+    post(c,'/api/demo/billing',{'plan':'lite','addons':['extra_agent','calendar'],'brand_quantity':2})
+    a=post(c,'/api/agents',{'create':True,'brand':'고객 예약 A','welcome':'안녕하세요','enabled':True})
+    b=post(c,'/api/agents',{'create':True,'brand':'고객 예약 B','welcome':'안녕하세요','enabled':True})
+    pa='/api/brand-calendar/'+a['id'];pb='/api/brand-calendar/'+b['id']
+    assert not c.get('/api/public/'+a['slug']).json()['calendar']
+    for path in (pa,pb):
+        assert c.post(path+'/settings',json={'booking_mode':'auto'}).status_code==403
+        post(c,path+'/settings',{'booking_mode':'manual'})
+    u=TestClient(app);v=TestClient(app);another=TestClient(app)
+    token=post(u,'/api/session',{'slug':a['slug']})['token']
+    other_token=post(v,'/api/session',{'slug':b['slug']})['token']
+    same_brand_token=post(another,'/api/session',{'slug':a['slug']})['token']
+    assert u.get('/api/public/'+a['slug']).json()['calendar']
+    date=(datetime.now()+timedelta(days=3)).strftime('%Y-%m-%d')
+    form=u.get('/api/booking/form/'+token).json()
+    assert '13:00' in post(u,'/api/booking/availability',{'token':token,'date':date})
+    data={'token':token,'start':date+'T13:00','version':form['template_version'],'payload':{'title':'브랜드 예약'}}
+    draft=post(u,'/api/booking/draft',data)
+    assert not c.get(pa).json()['bookings']
+    confirm='/api/booking/'+draft['id']+'/confirm'
+    assert v.post(confirm,json={'token':other_token,'confirmation':draft['token']}).status_code==403
+    assert another.post(confirm,json={'token':same_brand_token,'confirmation':draft['token']}).status_code==403
+    body={'token':token,'confirmation':draft['token']}
+    assert post(u,confirm,body)['status']=='pending'
+    assert post(u,confirm,body)['status']=='pending'
+    assert post(c,pa+'/bookings/'+draft['id'],{'action':'approve'})['status']=='confirmed'
+    assert '13:00' not in post(u,'/api/booking/availability',{'token':token,'date':date})
+    assert '13:00' in post(v,'/api/booking/availability',{'token':other_token,'date':date})
+    assert not c.get(pb).json()['bookings']
+    assert not c.get('/api/bookings').json()
+    own=u.get('/api/customer/bookings/'+token).json()
+    assert len(own['bookings'])==1 and not own['canChange'] and not own['canRecover']
+    assert not v.get('/api/customer/bookings/'+other_token).json()['bookings']
+    assert not another.get('/api/customer/bookings/'+same_brand_token).json()['bookings']
+    test_token=post(c,'/api/session',{'test':True,'agent':a['id']})['token']
+    assert c.post('/api/booking/draft',json=data|{'token':test_token}).status_code==409
+    post(c,pa+'/settings',{'booking_mode':'off'})
+    assert u.post('/api/booking/draft',json=data).status_code==409
