@@ -64,6 +64,59 @@ def resolve(c,slug):
 
 def appearance(w,s):
     a=entitlements(w);return {'logo':s.get('logo',''),'color':s.get('color','#3182F6') if 'design' in a else '#3182F6','unbrand':bool(s.get('unbrand') and 'unbrand' in a),'theme':s.get('theme','dark') if 'design' in a else 'dark','density':s.get('density','normal') if 'design' in a else 'normal','bubble_radius':s.get('bubble_radius','rounded') if 'design' in a else 'rounded'}
+def chat_profile(s):
+    p=s.get('chat_profile') or {}
+    return {'show_at_start':p.get('show_at_start') is True,'title':p.get('title',''),'message':p.get('message',''),'photo':p.get('photo',''),'links':p.get('links',[])}
+
+@app.get('/api/chat-profile')
+def get_chat_profile(agent:str='',ws=Depends(ident)):
+    with db() as c:
+        w=getw(c,ws);a=owned_agent(c,w,agent)
+        return chat_profile(brand_settings(w,a))
+
+@app.post('/api/chat-profile')
+def save_chat_profile(body:dict,ws=Depends(ident)):
+    from urllib.parse import urlsplit
+    with db(True) as c:
+        w=getw(c,ws);a=owned_agent(c,w,body.get('agent',''))
+        s=loads(a['settings'] if a else w['settings']);p=chat_profile(s)
+        if 'show_at_start' in body:
+            require(type(body['show_at_start']) is bool,'프로필 표시 설정 오류',422)
+            p['show_at_start']=body['show_at_start']
+        for k,n in [('title',100),('message',1500)]:
+            if k in body:
+                require(isinstance(body[k],str) and len(body[k])<=n,'프로필 글자 수 초과',422)
+                p[k]=body[k].strip()
+        if 'links' in body:
+            links=body['links'];require(isinstance(links,list) and len(links)<=10,'프로필 링크는 최대 10개입니다.',422)
+            out=[]
+            for item in links:
+                require(isinstance(item,dict),'링크 형식 오류',422)
+                name=item.get('name','');u=item.get('url','')
+                require(isinstance(name,str) and 0<len(name.strip())<=80 and isinstance(u,str) and 0<len(u)<=1000 and not any(ch.isspace() or ord(ch)<32 or ord(ch)==127 or ch==chr(92) for ch in u),'링크 이름 또는 주소 오류',422)
+                try:
+                    parsed=urlsplit(u);valid=parsed.scheme=='https' and bool(parsed.hostname) and not parsed.username and not parsed.password and parsed.port in (None,443)
+                except ValueError:valid=False
+                require(valid,'HTTPS 주소만 등록할 수 있습니다.',422)
+                out.append({'name':name.strip(),'url':u})
+            p['links']=out
+        if 'photo' in body:
+            data=body['photo'];require(isinstance(data,str) and len(data)<=1400000,'이미지는 1MB 이하여야 합니다.',422)
+            if data:
+                try:
+                    raw=base64.b64decode(data,validate=True)
+                    require(len(raw)<=1000000,'이미지 용량 초과',422)
+                    with Image.open(io.BytesIO(raw)) as im:
+                        require(im.format in ('PNG','JPEG','WEBP') and im.width*im.height<=16000000,'지원하지 않는 이미지입니다.',422)
+                        im.thumbnail((320,320));o=io.BytesIO();im.convert('RGBA').save(o,format='PNG',optimize=True)
+                        p['photo']='data:image/png;base64,'+base64.b64encode(o.getvalue()).decode()
+                except Exception:raise HTTPException(422,'1MB 이하 PNG·JPEG·WebP 이미지를 선택하세요.')
+            else:p['photo']=''
+        s['chat_profile']=p
+        if a:c.execute('UPDATE agent_profile SET settings=? WHERE ws=? AND id=?',(dump(s),ws,a['id']))
+        else:c.execute('UPDATE workspace SET settings=? WHERE id=?',(dump(s),ws))
+    return p
+
 def merged(c,w,v):
     s=loads(w['settings']);agent=None
     if v.get('agent'):
@@ -120,7 +173,7 @@ def agent_save(body:dict,ws=Depends(ident)):
         s={k:bounded(body.get(k,previous.get(k,'')),1500) for k in ['brand','tone','welcome','fallback','notice','price','location','hours']}
         s['prompt']=previous.get('prompt',DEFAULT['prompt']);require('prompt' not in body or body['prompt']==s['prompt'],'상담 지침은 AI 교육에서 변경하세요.',422);require(s['brand'] and s['welcome'],'상담원 이름 및 인사말 필요',422)
         s['emoji']=body.get('emoji',previous.get('emoji')) is True
-        for key in ('logo','color','theme','density','bubble_radius','unbrand'):
+        for key in ('logo','color','theme','density','bubble_radius','unbrand','chat_profile'):
             if key in previous:s[key]=previous[key]
         links=body.get('links',previous.get('links',[]));require(isinstance(links,list) and len(links)<=10,'판매처 최대 10개',422);s['links']=[]
         from urllib.parse import urlsplit
