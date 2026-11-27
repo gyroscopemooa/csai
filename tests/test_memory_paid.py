@@ -21,3 +21,20 @@ def test_paid_memory_requires_entitlement_and_reuses_training():
     assert c.get('/api/me').json()['published']=={}
     post(c,'/api/training/'+j['id']+'/publish',{})
     assert post(c,'/api/memory-import/prepare',body)['state']=='published'
+
+
+def test_unused_memory_pass_refund_revokes_entitlement():
+    c = owner()
+    credits = c.get('/api/me').json()['credits']
+    order = post(c, '/api/billing/orders', {'kind': 'memory_import', 'client': 'unused-pass'})
+    path = '/api/billing/orders/' + order['id']
+    post(c, path + '/sandbox-confirm', {})
+    refund = path + '/sandbox-refund'
+    assert owner().post(refund, json={'confirmed': True}).status_code == 404
+    assert post(c, refund, {'confirmed': True})['status'] == 'refunded'
+    assert post(c, refund, {'confirmed': True})['status'] == 'refunded'
+    assert c.get('/api/memory-import/paid-orders').json() == []
+    assert c.post('/api/memory-import/prepare', json={
+        'consent': True, 'order': order['id'], 'text': 'Business policy',
+    }).status_code == 403
+    assert c.get('/api/me').json()['credits'] == credits
