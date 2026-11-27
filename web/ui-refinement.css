@@ -424,3 +424,17 @@
  .layout main .paid-preview-notice .ui-actions { gap:6px; }
  .service-notice-item summary { flex-wrap:wrap; gap:6px; }
 }
+
+/* Booking settings: equal-width responsive controls, independent blackout rows. */
+.booking-settings-form,.booking-block-list{display:grid;gap:14px;min-width:0}
+.booking-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.booking-settings-form .ui-field,.booking-block-row .ui-field{min-width:0;margin:0}
+.booking-settings-form .ui-field>input,.booking-settings-form .ui-field>select,.booking-block-row .ui-field>input,.booking-block-row .ui-field>select{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.booking-settings-grid[hidden],.booking-block-row [hidden]{display:none!important}
+.booking-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.booking-weekdays label{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px 2px;border:1px solid var(--border,#dce1e7);border-radius:8px;min-width:0;cursor:pointer}
+.booking-weekdays label:has(input:checked){border-color:#3182f6;color:#2468bd}
+.booking-weekdays input{width:16px;height:16px;min-width:0;margin:0;accent-color:#3182f6}
+.booking-block-row{display:grid;gap:12px;min-width:0;padding:14px;border:1px solid var(--border,#dce1e7);border-radius:12px}
+.booking-block-list:empty{display:none}
+@media(max-width:360px){.booking-settings-grid{grid-template-columns:minmax(0,1fr)}}
