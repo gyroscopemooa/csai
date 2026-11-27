@@ -114,3 +114,49 @@ def reply_inquiry(token,inquiry,answer):
         resp=httpx.put(ROOT+'/v1/contents/qnas/'+inquiry,headers={'Authorization':'Bearer '+token},json={'commentContent':answer},timeout=12,follow_redirects=False)
         if resp.status_code!=204:raise SmartStoreError('답변 발송 결과 미확인')
     except (httpx.HTTPError,ValueError,TypeError):raise SmartStoreError('답변 발송 결과 미확인') from None
+
+def changed_orders(token,start,end):
+    """Fetch a complete bounded window. Never advance the caller's cursor on partial failure."""
+    from datetime import datetime
+    def parse_date(x):
+        if not isinstance(x,str) or len(x)>60:raise SmartStoreError('변경 일시 확인 필요')
+        try:
+            d=datetime.fromisoformat(x.replace('Z','+00:00'))
+            if d.tzinfo is None:raise ValueError()
+            return d.timestamp()
+        except ValueError:raise SmartStoreError('변경 일시 확인 필요') from None
+    lower,upper=parse_date(start),parse_date(end)
+    if not 0<upper-lower<=86400:raise SmartStoreError('조회 범위는 최대 24시간')
+    cursor=start;sequence=None;seen=set();items={}
+    for page in range(5):
+        params={'lastChangedFrom':cursor,'lastChangedTo':end,'limitCount':300}
+        if sequence is not None:params['moreSequence']=sequence
+        try:
+            resp=httpx.get(ROOT+'/v1/pay-order/seller/product-orders/last-changed-statuses',params=params,headers={'Authorization':'Bearer '+token},timeout=12,follow_redirects=False)
+            if not resp.is_success or len(resp.content)>3000000:raise SmartStoreError('변경 주문 조회 권한 또는 응답 확인 필요')
+            raw=resp.json()
+        except (httpx.HTTPError,ValueError,TypeError):raise SmartStoreError('변경 주문 조회 결과 미확인') from None
+        if not isinstance(raw,dict):raise SmartStoreError('변경 주문 응답 형식 오류')
+        data=raw.get('data')
+        if data is None and isinstance(raw.get('timestamp'),str) and isinstance(raw.get('traceId'),str) and 'code' not in raw:
+            if page:return list(items.values())
+            return []
+        if not isinstance(data,dict) or not isinstance(data.get('lastChangeStatuses'),list) or len(data['lastChangeStatuses'])>300:raise SmartStoreError('변경 주문 응답 형식 오류')
+        for x in data['lastChangeStatuses']:
+            if not isinstance(x,dict):raise SmartStoreError('변경 주문 항목 오류')
+            pid=x.get('productOrderId');oid=x.get('orderId');status=x.get('productOrderStatus');changed=x.get('lastChangedDate')
+            if not all(isinstance(i,str) and re.fullmatch(r'[0-9]{1,32}',i) for i in (pid,oid)) or not isinstance(status,str) or not re.fullmatch(r'[A-Z_]{1,80}',status):raise SmartStoreError('주문번호·상태 확인 필요')
+            changed_at=parse_date(changed)
+            if not lower<=changed_at<=upper:raise SmartStoreError('조회 범위 외 주문 응답')
+            safe={'reference':pid,'order_id':oid,'status':status,'changed_at':int(changed_at*1000)}
+            for k in ('claimType','claimStatus','lastChangedType'):
+                v=x.get(k)
+                safe[k]=v if isinstance(v,str) and re.fullmatch(r'[A-Z_]{1,80}',v) else ''
+            if pid not in items or items[pid]['changed_at']<=safe['changed_at']:items[pid]=safe
+        more=data.get('more')
+        if not more:return list(items.values())
+        if not isinstance(more,dict):raise SmartStoreError('페이지 정보 오류')
+        cursor=more.get('moreFrom');sequence=more.get('moreSequence')
+        if not lower<=parse_date(cursor)<=upper or type(sequence) is not int or sequence<0 or (cursor,sequence) in seen:raise SmartStoreError('페이지 정보 오류')
+        seen.add((cursor,sequence))
+    raise SmartStoreError('변경 주문 1,500건 초과 · 조회 구간 분할 필요')
