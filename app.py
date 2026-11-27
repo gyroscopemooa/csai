@@ -63,7 +63,7 @@ async def guard(req,call_next):
         if not w:return Response('Unknown or inactive domain',404)
         path=req.url.path
         if path=='/' and req.method=='GET':return RedirectResponse('/c/'+w['slug'],307)
-        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/commerce','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue','/api/customer/resume') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+|customer/commerce/[A-Za-z0-9_-]+)',path))
+        allowed=path in ('/c/'+w['slug'],'/api/config','/api/public/'+w['slug'],'/api/session','/api/chat','/api/booking/availability','/api/booking/draft','/api/customer/requests','/api/customer/commerce','/api/customer/photos','/api/customer/photos/read','/api/customer/bookings/recover','/api/customer/feedback','/api/customer/handoff','/api/customer/answer-issue','/api/customer/resume') or path.startswith('/assets/') or path.startswith('/policies/') or bool(re.fullmatch(r'/api/(?:session/[A-Za-z0-9_-]+/messages|booking/form/[A-Za-z0-9_-]+|booking/[A-Za-z0-9_-]+/confirm|customer/bookings/[A-Za-z0-9_-]+(?:/change|/recovery-code)?|customer/requests/[A-Za-z0-9_-]+|customer/commerce/[A-Za-z0-9_-]+)',path))
         if not allowed:return Response('Public consultation only',404)
         allowed_origin='https://'+host
         context=domains.current_ws.set(w['id'])
@@ -360,7 +360,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'commerce':commerce.public_enabled(c,w,agent),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'commerce':commerce.public_enabled(c,w,agent),'photos':chat_attachments.public_enabled(c,w,agent),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -421,7 +421,7 @@ def customer_handoff(body:dict):
 @app.get('/api/session/{token}/messages')
 def messages(token:str):
     with db() as c:
-        v=visitor(c,token);t=one(c,'SELECT * FROM thread WHERE visitor=? AND ws=?',(token,v['ws']));return rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? ORDER BY rowid',(v['ws'],t['id']))
+        v=visitor(c,token);t=one(c,'SELECT * FROM thread WHERE visitor=? AND ws=?',(token,v['ws']));return chat_attachments.messages(c,v['ws'],t['id'],include_id=False)
 def abort_chat_request(key,period,kind):
     """Recover once; a successful but ambiguous commit is replayed, never refunded."""
     ws,tid,client=key
@@ -716,7 +716,7 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w))}
 @app.get('/api/inbox/{i}/related')
 def related_threads(i:str,ws=Depends(ident)):
     with db() as c:
@@ -990,6 +990,7 @@ brand_calendar.register(app,ident)
 import staff_access
 import commerce
 import business_dashboard
+import chat_attachments
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

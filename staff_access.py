@@ -147,7 +147,8 @@ def staff_threads(mid:str,ws=Depends(ident)):
 def staff_detail(mid:str,tid:str,ws=Depends(ident)):
     with db() as c:
         m,w=membership(c,ws,mid);t=visible_thread(c,m,w,tid)
-        return t|{'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(m['ws'],tid,history_cutoff(w))), 'can_reply':m['role']=='agent' and t['kind']=='public'}
+        import chat_attachments
+        return t|{'messages':chat_attachments.messages(c,m['ws'],tid,history_cutoff(w)), 'can_reply':m['role']=='agent' and t['kind']=='public','photos':chat_attachments.enabled(c,m['ws'],m['agent'])}
 
 @app.post('/api/staff/{mid}/threads/{tid}')
 def staff_update(mid:str,tid:str,body:dict,ws=Depends(ident)):
