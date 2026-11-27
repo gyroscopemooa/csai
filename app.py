@@ -455,7 +455,13 @@ def chat(body:dict):
                 ops.event(c,ws,'handoff_urgent' if route_reason=='urgent' else 'handoff','담당자 확인 필요',tid)
             r={'reply':'담당자가 확인 중입니다.' if staff else '해당 업무는 자동 상담으로 제공하지 않습니다.','manual':staff,'pausedBy':pause,'policyBlocked':not staff,'remaining':remaining(c,w)}
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));
-            if staff:c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
+            if staff:
+                c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
+                if v['kind']!='test' and route_mode!='staff':
+                    # A new customer message during ongoing human handling needs attention.
+                    # Coalesce burst notifications for this thread.
+                    if not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='manual_message' AND ref=? AND created>?",(ws,tid,now()-60)):
+                        ops.event(c,ws,'manual_message','직접 상담에 새 고객 메시지',tid)
             else:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'assistant',r['reply'],now()))
             if v['kind']!='test' and not one(c,'SELECT id FROM event_log WHERE ws=? AND kind=? AND ref=?',(ws,'new',tid)):ops.event(c,ws,'new','신규 고객 상담',tid)
             return r
@@ -734,12 +740,20 @@ def staff_education_source(i:str,ws=Depends(ident)):
         require(t and t['kind'] in ('public','naver','kakao') and thread_accessible(c,w,i),'실제 고객 상담 없음 또는 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 교육할 수 없습니다.',409)
         messages=rows(c,"SELECT role,body FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid",(ws,i,history_cutoff(w)))
-        pairs=[];questions=[]
+        pairs=[];questions=[];staff=[]
+        def flush():
+            if questions and staff:pairs.append('고객: '+'\n'.join(questions)+'\n담당자: '+'\n'.join(staff))
         for m in messages:
-            if m['role']=='user':questions.append(m['body'])
-            elif m['role']=='assistant':questions=[]
+            if m['role']=='user':
+                if staff:flush();questions=[];staff=[]
+                questions.append(m['body'])
+            elif m['role']=='assistant':
+                # Keep the customer question for a subsequent human correction;
+                # never include the AI's answer in the training source.
+                if staff:flush();questions=[];staff=[]
             elif m['role']=='staff' and questions:
-                pairs.append('고객: '+'\n'.join(questions)+'\n담당자: '+m['body']);questions=[]
+                staff.append(m['body'])
+        flush()
         text=ai.clean('\n\n'.join(pairs))
         require(bool(text),'담당자가 직접 답변한 고객 질문이 없습니다.',422)
         require(len(text)<=30000,'교육 자료가 30,000자를 초과합니다. 기간 또는 내용을 나누어 등록하세요.',422)
