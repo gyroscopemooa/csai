@@ -74,7 +74,11 @@ def apply_change(c,b,r,s):
 @app.post('/api/customer/bookings/{i}/change')
 def customer_change(i:str,body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''),kind='public');require(not v.get('agent'),'브랜드별 업무 분리 준비 중',409);ws=v['ws'];w=getw(c,ws);s=loads(w['settings']);require(w['enabled'] and 'change_booking' in entitlements(w) and s['modes'].get('change')!='off');b=one(c,'SELECT * FROM booking WHERE ws=? AND id=? AND visitor=?',(ws,i,v['token']));require(b and b['status']=='confirmed','변경 가능한 본인 예약 없음',404);require(datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'지난 예약은 변경할 수 없습니다.',409);require(body.get('confirmed') is True,'고객 최종 확인 필요',422)
+        v=visitor(c,body.get('token',''),kind='public')
+        if v.get('agent'):
+            import brand_calendar
+            return brand_calendar.customer_change(c,v,i,body)
+        ws=v['ws'];w=getw(c,ws);s=loads(w['settings']);require(w['enabled'] and 'change_booking' in entitlements(w) and s['modes'].get('change')!='off');b=one(c,'SELECT * FROM booking WHERE ws=? AND id=? AND visitor=?',(ws,i,v['token']));require(b and b['status']=='confirmed','변경 가능한 본인 예약 없음',404);require(datetime.fromisoformat(b['start'])>datetime.now(timezone.utc),'지난 예약은 변경할 수 없습니다.',409);require(body.get('confirmed') is True,'고객 최종 확인 필요',422)
         action=body.get('action');require(action in ['cancel','change'],'요청 유형 오류',422);a=z=None
         if action=='change':a,z=interval(s,body.get('start',''));require(available(c,ws,a,z,i,s['buffer'],b['resource']),'예약 시간 충돌',409)
         require(not one(c,"SELECT id FROM booking_change WHERE booking=? AND state='pending'",(i,)),'이미 승인 대기 중인 요청이 있습니다.',409)
