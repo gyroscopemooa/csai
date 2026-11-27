@@ -68,3 +68,21 @@ def product_catalog(vendor,access,secret):
         if not re.fullmatch(r'[0-9]{1,30}',next_token) or next_token in seen:raise CoupangError('상품 페이지 확인 필요')
         seen.add(next_token);cursor=next_token
     raise CoupangError('상품 최대 2,000개 · 전체 목록 확인 필요')
+
+def pending_inquiries(vendor,access,secret,from_date,to_date,page):
+    path='/v2/providers/openapi/apis/api/v5/vendors/'+vendor+'/onlineInquiries'
+    d=signed_json(vendor,access,secret,path,[('inquiryStartAt',from_date),('inquiryEndAt',to_date),('vendorId',vendor),('answeredType','NOANSWER'),('pageSize',50),('pageNum',page)])
+    result=d.get('data');p=result.get('pagination') if isinstance(result,dict) else None;batch=result.get('content') if isinstance(result,dict) else None
+    if not isinstance(p,dict) or type(p.get('totalPages')) is not int or not isinstance(batch,list) or len(batch)>50:raise CoupangError('문의 목록 형식 오류')
+    items=[]
+    for x in batch:
+        if not isinstance(x,dict) or type(x.get('inquiryId')) is not int or x['inquiryId']<=0 or type(x.get('sellerProductId')) is not int or x['sellerProductId']<=0 or not isinstance(x.get('content'),str) or not isinstance(x.get('commentDtoList'),list):raise CoupangError('문의 항목 형식 오류')
+        if x['commentDtoList']:continue
+        items.append({'id':str(x['inquiryId']),'product_id':str(x['sellerProductId']),'name':'','question':x['content'],'created':text(x.get('inquiryAt'),80)})
+    return items,p['totalPages']
+
+def reply_inquiry(vendor,access,secret,inquiry,answer,wing):
+    if not isinstance(inquiry,str) or not re.fullmatch(r'[1-9][0-9]{0,31}',inquiry) or not isinstance(wing,str) or not re.fullmatch(r'[A-Za-z0-9_@.\-]{1,100}',wing):raise CoupangError('문의번호 또는 WING ID 확인 필요')
+    path='/v2/providers/openapi/apis/api/v4/vendors/'+vendor+'/onlineInquiries/'+inquiry+'/replies'
+    d=signed_json(vendor,access,secret,path,method='POST',body={'vendorId':vendor,'content':answer,'replyBy':wing})
+    if str(d.get('code'))!='200':raise CoupangError('답변 발송 결과 미확인')

@@ -93,3 +93,24 @@ def product_detail(token,product_id):
         if not isinstance(origin,dict) or not isinstance(origin.get('detailContent'),str):raise SmartStoreError('상품 상세 응답 확인 필요')
         return origin
     except (httpx.HTTPError,ValueError,TypeError):raise SmartStoreError('상품 상세 조회 결과 미확인') from None
+
+def pending_inquiries(token,from_date,to_date,page):
+    try:
+        resp=httpx.get(ROOT+'/v1/contents/qnas',params={'fromDate':from_date,'toDate':to_date,'answered':'false','page':page,'size':50},headers={'Authorization':'Bearer '+token},timeout=12,follow_redirects=False)
+        if not resp.is_success or len(resp.content)>3_000_000:raise SmartStoreError('상품 문의 조회 권한 또는 응답 확인 필요')
+        d=resp.json()
+        if not isinstance(d,dict) or not isinstance(d.get('contents'),list) or len(d['contents'])>50 or type(d.get('totalPages')) is not int:raise SmartStoreError('문의 목록 형식 오류')
+        items=[]
+        for x in d['contents']:
+            if not isinstance(x,dict) or type(x.get('questionId')) is not int or x['questionId']<=0 or type(x.get('productId')) is not int or x['productId']<=0 or not isinstance(x.get('question'),str) or type(x.get('answered')) is not bool:raise SmartStoreError('문의 항목 형식 오류')
+            if x['answered'] or x.get('answer') or x.get('answers'):continue
+            items.append({'id':str(x['questionId']),'product_id':str(x['productId']),'name':str(x.get('productName') or '')[:200],'question':x['question'],'created':str(x.get('createDate') or '')[:80]})
+        return items,d['totalPages']
+    except (httpx.HTTPError,ValueError,TypeError):raise SmartStoreError('문의 조회 결과 미확인') from None
+
+def reply_inquiry(token,inquiry,answer):
+    if not isinstance(inquiry,str) or not re.fullmatch(r'[1-9][0-9]{0,31}',inquiry):raise SmartStoreError('문의번호 형식 오류')
+    try:
+        resp=httpx.put(ROOT+'/v1/contents/qnas/'+inquiry,headers={'Authorization':'Bearer '+token},json={'commentContent':answer},timeout=12,follow_redirects=False)
+        if resp.status_code!=204:raise SmartStoreError('답변 발송 결과 미확인')
+    except (httpx.HTTPError,ValueError,TypeError):raise SmartStoreError('답변 발송 결과 미확인') from None
