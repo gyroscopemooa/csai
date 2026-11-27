@@ -81,3 +81,15 @@ def order_status(token,product_order_id):
     if not isinstance(d,dict):raise SmartStoreError('배송 응답 형식 오류')
     # Never return orderer or shipping address, phone, or raw provider response.
     return {'reference':product_order_id,'product':str(po.get('productName') or '')[:200],'status':str(po.get('productOrderStatus') or '')[:80],'delivery_status':str(d.get('deliveryStatus') or '')[:80],'carrier':str(d.get('deliveryCompany') or '')[:80],'tracking':str(d.get('trackingNumber') or '')[:100],'queried_at':int(time.time())}
+
+def product_detail(token,product_id):
+    if not isinstance(product_id,str) or not re.fullmatch(r'[0-9]{1,32}',product_id):raise SmartStoreError('상품번호 형식 오류')
+    try:
+        resp=httpx.get(ROOT+'/v2/products/channel-products/'+product_id,headers={'Authorization':'Bearer '+token},timeout=12,follow_redirects=False)
+        if not resp.is_success:raise SmartStoreError('상품 상세 조회 권한 확인 필요')
+        if len(resp.content)>3_000_000:raise SmartStoreError('상품 상세 응답 용량 한도 초과')
+        data=resp.json()
+        origin=data.get('originProduct') if isinstance(data,dict) else None
+        if not isinstance(origin,dict) or not isinstance(origin.get('detailContent'),str):raise SmartStoreError('상품 상세 응답 확인 필요')
+        return origin
+    except (httpx.HTTPError,ValueError,TypeError):raise SmartStoreError('상품 상세 조회 결과 미확인') from None

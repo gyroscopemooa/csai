@@ -56,6 +56,7 @@ def run_one(ws=None,agent=None):
             stamp=now()
             c.execute('DELETE FROM smartstore_product WHERE ws=? AND agent=?',(w,a))
             for x in items:c.execute('INSERT INTO smartstore_product VALUES(?,?,?,?,?,?,?,?)',(w,a,x['id'],x['name'],x['price'],x['stock'],dump(x),stamp))
+            c.execute('DELETE FROM smartstore_detail WHERE ws=? AND agent=? AND NOT EXISTS(SELECT 1 FROM smartstore_product p WHERE p.ws=smartstore_detail.ws AND p.agent=smartstore_detail.agent AND p.product_id=smartstore_detail.product_id)',(w,a))
             c.execute("UPDATE smartstore_connection SET state='synced',error='',last_sync=?,next_sync=?,claimed=0 WHERE ws=? AND agent=?",(stamp,stamp+INTERVAL,w,a))
     return True
 
@@ -95,6 +96,7 @@ def connect(body:dict,agent:str='',ws=Depends(ident)):
     except ss.SmartStoreError as e:require(False,str(e),422)
     with db(True) as c:
         commerce.access(c,ws,agent,True)
+        c.execute('DELETE FROM smartstore_detail WHERE ws=? AND agent=?',(ws,agent))
         c.execute('DELETE FROM smartstore_product WHERE ws=? AND agent=?',(ws,agent))
         c.execute("INSERT INTO smartstore_connection VALUES(?,?,?,?,?,1,'queued','',0,?,0) ON CONFLICT(ws,agent) DO UPDATE SET client_id=excluded.client_id,credential=excluded.credential,revision=excluded.revision,active=1,state='queued',error='',last_sync=0,next_sync=excluded.next_sync,claimed=0",(ws,agent,cid,encrypted,uid(),now()))
         return view(c,ws,agent)
@@ -115,6 +117,7 @@ def disconnect(agent:str='',ws=Depends(ident)):
     with db(True) as c:
         ops.work_scope(c,getw(c,ws),agent)
         c.execute('DELETE FROM smartstore_connection WHERE ws=? AND agent=?',(ws,agent))
+        c.execute('DELETE FROM smartstore_detail WHERE ws=? AND agent=?',(ws,agent))
         c.execute('DELETE FROM smartstore_product WHERE ws=? AND agent=?',(ws,agent))
     return {'ok':True}
 

@@ -45,7 +45,9 @@ def chat_products(c,w,agent,msg):
     from smartstore_sync import candidates
     aid=agent['id'] if agent else ''
     all_items=rows(c,'SELECT name,variant,price,url,description FROM commerce_product WHERE ws=? AND agent=? AND published=1',(w['id'],aid))+candidates(c,w['id'],aid)
-    return rank_products(all_items,msg)
+    from product_education import enrich
+    selected=rank_products(all_items,msg)
+    return [{**p,**enrich(c,w['id'],aid,p['product_id'])} if p.get('source')=='smartstore' else p for p in selected]
 
 def rank_products(items,msg):
     def norm(x):return re.sub(r'[^\w]','',x.lower())

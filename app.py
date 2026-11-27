@@ -318,6 +318,8 @@ def train(i:str,ws=Depends(ident)):
         w=getw(c,ws);j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state']=='estimated' and j['created']>now()-1800,'유효한 교육 견적 필요',409)
         source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
         if agent_id:require(branding.agent_allowed(w,agent),'추가 브랜드 상담원 권한 필요',403)
+        product_job=product_education.mapping(c,ws,i)
+        if product_job:product_education.validate_job(c,ws,product_job)
         if source.get('memory_order'):
             o=one(c,"SELECT items FROM checkout_order WHERE ws=? AND id=? AND kind='memory_import' AND status='paid'",(ws,source['memory_order']))
             require(DEMO and sandbox_allowed(c,w) and o and loads(o['items']).get('agent','')==agent_id,'유효한 기억 이전 이용권 필요',403)
@@ -341,6 +343,8 @@ def publish(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         j=one(c,'SELECT * FROM training WHERE id=? AND ws=?',(i,ws));require(j and j['state'] in ['review','published'],'승인할 결과 없음',409)
         if j['state']=='published':return {'ok':True}
+        product_job=product_education.mapping(c,ws,i)
+        if product_job:return product_education.publish(c,ws,j,product_job)
         result=loads(j['result']);w=getw(c,ws);source=loads(j['source']);agent_id=source.get('agent','');agent=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(ws,agent_id)) if agent_id else None
         if agent_id:require(branding.agent_allowed(w,agent),'추가 브랜드 상담원 권한 필요',403)
         if source.get('backup_import') and agent_id:require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent_id)),'보관된 브랜드는 복원 후 승인하세요.',409)
@@ -995,6 +999,7 @@ import web_calls
 import telegram_connection
 import commerce_import
 import smartstore_sync
+import product_education
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
