@@ -43,3 +43,5 @@ Continuation: reply draft crash recovery lazily expires abandoned requests older
 
 
 2026-11-27 brand work backend: separate work_brand mapping keeps existing rows on main; manual work, inbox conversion, customer-confirmed tasks/complaints and lead capture now use verified brand and workspace scope. Extra-brand quote/catalog/offer remains disabled. Main-only work export and external workflow remain main-only. UI integration and regression execution pending. No production deployment. Prices unchanged.
+
+2026-11-27 brand work UI: shared brand selector for CRM/work/leads; registration/edit/complete/delete and lead stage updates use selected brand, archived brand work is read-only. CRM and lead panels are now visible; main-only quote panel visible for main scope. Inbox work conversion enabled for real brand conversations except quote. JS syntax checked; browser/CI execution pending. No deployment.
