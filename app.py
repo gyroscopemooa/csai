@@ -1002,6 +1002,7 @@ import smartstore_sync
 import product_education
 import order_access
 import coupang_connection
+import coupang_catalog
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None

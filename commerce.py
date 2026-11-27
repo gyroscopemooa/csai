@@ -43,8 +43,9 @@ def public_products(c,ws,agent):
 def chat_products(c,w,agent,msg):
     if not public_enabled(c,w,agent):return []
     from smartstore_sync import candidates
+    from coupang_catalog import candidates as cp_candidates
     aid=agent['id'] if agent else ''
-    all_items=rows(c,'SELECT name,variant,price,url,description FROM commerce_product WHERE ws=? AND agent=? AND published=1',(w['id'],aid))+candidates(c,w['id'],aid)
+    all_items=rows(c,'SELECT name,variant,price,url,description FROM commerce_product WHERE ws=? AND agent=? AND published=1',(w['id'],aid))+candidates(c,w['id'],aid)+cp_candidates(c,w['id'],aid)
     from product_education import enrich
     selected=rank_products(all_items,msg)
     return [{**p,**enrich(c,w['id'],aid,p['product_id'])} if p.get('source')=='smartstore' else p for p in selected]
@@ -55,6 +56,7 @@ def rank_products(items,msg):
     def score(p):
         title=norm(p['name'])
         if not title:return 0
+        if p.get('product_id') and p['product_id'] in re.findall(r'[0-9]+',msg):return 200
         if title in query:return 100+min(len(title),50)
         overlap=sum(len(x) for x in words if len(x)>=2 and x in title and x not in {'상품','가격','배송','얼마','재고','문의','제품','있나요'})
         return overlap if overlap>=2 else 0

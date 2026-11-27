@@ -34,6 +34,8 @@ def connect(body:dict,agent:str='',ws=Depends(ident)):
     encrypted=encryption().encrypt(dump({'access':access,'secret':secret}).encode()).decode()
     with db(True) as c:
         commerce.access(c,ws,agent,True)
+        import coupang_catalog
+        coupang_catalog.clear(c,ws,agent)
         c.execute('INSERT INTO coupang_connection VALUES(?,?,?,?,?) ON CONFLICT(ws,agent) DO UPDATE SET vendor=excluded.vendor,credential=excluded.credential,verified=excluded.verified',(ws,agent,vendor,encrypted,now()))
     return {'connected':True,'vendor':vendor}
 
@@ -56,5 +58,7 @@ def lookup(body:dict,agent:str='',ws=Depends(ident)):
 def disconnect(agent:str='',ws=Depends(ident)):
     with db(True) as c:
         ops.work_scope(c,getw(c,ws),agent)
+        import coupang_catalog
+        coupang_catalog.clear(c,ws,agent)
         c.execute('DELETE FROM coupang_connection WHERE ws=? AND agent=?',(ws,agent))
     return {'ok':True}
