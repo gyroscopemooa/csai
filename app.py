@@ -651,6 +651,24 @@ def reply_assistant(body:dict,ws=Depends(ident)):
                 refund_chat(c,getw(c,ws),p,charge);c.execute("UPDATE reply_draft_request SET state='failed',result=NULL WHERE ws=? AND client=?",(ws,client))
         fail(502,'답장 생성 실패 · 사용량 복구')
 
+@app.get('/api/inbox/{i}/brief')
+def inbox_brief(i:str,ws=Depends(ident)):
+    """Read-only extractive briefing. No model calls, no inferred commitments."""
+    with db() as c:
+        w=getw(c,ws)
+        t=one(c,"SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?",(ws,i))
+        require(t and thread_accessible(c,w,i),'상담 없음 또는 조회 범위 초과',404)
+        require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담 제외',409)
+        messages=rows(c,'SELECT role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid DESC LIMIT 30',(ws,i,history_cutoff(w)))
+        note=one(c,'SELECT note,tags FROM inbox_annotation WHERE ws=? AND thread=?',(ws,i))
+        recent=[]
+        for m in messages:
+            if m['role'] in ('user','assistant','staff') and len([x for x in recent if x['role']==m['role']])<2:
+                recent.append({'role':m['role'],'body':m['body'][:500],'created':m['created'],'truncated':len(m['body'])>500})
+        recent.reverse()
+        pending=bool(messages and messages[0]['role']=='user')
+        return {'thread':i,'kind':t['kind'],'status':t['status'],'manual':bool(t['manual']),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'latest_is_customer':pending,'recent':recent,'note':note['note'] if note else '','tags':loads(note['tags']) if note else [],'mode':'extractive','limit':30}
+
 @app.get('/api/history-policy')
 def history_policy(ws=Depends(ident)):
     with db() as c:
