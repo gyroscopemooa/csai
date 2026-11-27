@@ -22,6 +22,7 @@ def default_policy():
 def init():
     with db(True) as c:
         c.executescript("""
+        CREATE TABLE IF NOT EXISTS consultation_pause(ws TEXT NOT NULL,agent TEXT NOT NULL,channel TEXT NOT NULL,PRIMARY KEY(ws,agent,channel));
         CREATE TABLE IF NOT EXISTS workflow_policy(ws TEXT NOT NULL,agent TEXT NOT NULL,config TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS archived_brand(ws TEXT NOT NULL,agent TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS answer_issue(id TEXT PRIMARY KEY,ws TEXT NOT NULL,thread TEXT NOT NULL,message TEXT NOT NULL,agent TEXT NOT NULL,note TEXT NOT NULL,state TEXT NOT NULL,created INTEGER NOT NULL,UNIQUE(ws,message));
@@ -32,6 +33,15 @@ init()
 def get_policy(c,ws,agent):
     r=one(c,'SELECT config FROM workflow_policy WHERE ws=? AND agent=?',(ws,agent))
     return loads(r['config']) if r else default_policy()
+CONSULTATION_CHANNELS=('public','naver','kakao')
+def pause_scopes(c,ws):
+    return {(r['agent'],r['channel']) for r in rows(c,'SELECT agent,channel FROM consultation_pause WHERE ws=?',(ws,))}
+def paused_by(scopes,agent,channel):
+    if channel not in CONSULTATION_CHANNELS:return ''
+    for key,reason in [(('*','*'),'account'),((agent,'*'),'brand'),(('*',channel),'channel'),((agent,channel),'brand_channel')]:
+        if key in scopes:return reason
+    return ''
+
 def valid_policy(body):
     from app import require
     p=default_policy();tasks=body.get('tasks',{});require(isinstance(tasks,dict) and set(tasks)<=set(TASKS)|{'general'} and all(v in ('auto','staff','off') for v in tasks.values()),'업무 권한 오류',422);p['tasks']=tasks
@@ -88,6 +98,22 @@ def register(app,ident):
     from app import require,bounded,visitor,limit
     import branding,ops
     def owner_brand(c,ws,agent):return branding.owned_agent(c,getw(c,ws),agent)
+    @app.get('/api/consultation-mode')
+    def modes(ws=Depends(ident)):
+        with db() as c:
+            return {'paused':[{'agent':a,'channel':ch} for a,ch in sorted(pause_scopes(c,ws))]}
+    @app.post('/api/consultation-mode')
+    def set_mode(body:dict,ws=Depends(ident)):
+        agent=body.get('agent');ch=body.get('channel');manual=body.get('manual')
+        require(isinstance(agent,str) and isinstance(ch,str) and ch in ('*',)+CONSULTATION_CHANNELS and type(manual) is bool and body.get('confirmed') is True,'상담 범위 및 변경 확인 필요',422)
+        with db(True) as c:
+            if agent!='*':owner_brand(c,ws,agent)
+            if agent not in ('','*'):require(ch in ('*','public'),'추가 브랜드 외부 채널 연동은 준비 중입니다.',409)
+            if manual:
+                c.execute('INSERT INTO consultation_pause VALUES(?,?,?) ON CONFLICT(ws,agent,channel) DO NOTHING',(ws,agent,ch))
+            else:
+                c.execute('DELETE FROM consultation_pause WHERE ws=? AND agent=? AND channel=?',(ws,agent,ch))
+            return {'paused':[{'agent':a,'channel':channel} for a,channel in sorted(pause_scopes(c,ws))]}
     @app.get('/api/workflow')
     def get(agent:str='',ws=Depends(ident)):
         with db() as c:

@@ -443,12 +443,14 @@ def chat(body:dict):
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
         route_mode,route_reason=workflow_controls.decision(workflow_controls.get_policy(c,ws,v.get('agent','')),msg,s)
-        if t['manual'] or route_mode!='auto':
-            staff=bool(t['manual'] or route_mode=='staff')
-            if staff and not t['manual']:
+        pause=workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),v.get('agent',''),t['kind'])
+        if t['manual'] or pause or route_mode!='auto':
+            staff=bool(t['manual'] or pause or route_mode=='staff')
+            # Scoped pause is independent of permanent per-thread takeover.
+            if route_mode=='staff' and not t['manual']:
                 c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
                 ops.event(c,ws,'handoff_urgent' if route_reason=='urgent' else 'handoff','담당자 확인 필요',tid)
-            r={'reply':'담당자가 확인 중입니다.' if staff else '해당 업무는 자동 상담으로 제공하지 않습니다.','manual':staff,'policyBlocked':not staff,'remaining':remaining(c,w)}
+            r={'reply':'담당자가 확인 중입니다.' if staff else '해당 업무는 자동 상담으로 제공하지 않습니다.','manual':staff,'pausedBy':pause,'policyBlocked':not staff,'remaining':remaining(c,w)}
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));
             if staff:c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
             else:c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'assistant',r['reply'],now()))
@@ -510,7 +512,8 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
             pattern='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
             sql+=" AND EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=? AND lower(m.body) LIKE ? ESCAPE '\\')"
             args.extend((cutoff,pattern))
-        return rows(c,sql+' ORDER BY created DESC',tuple(args))
+        scopes=workflow_controls.pause_scopes(c,ws)
+        return [r|{'paused_by':workflow_controls.paused_by(scopes,r['agent'],r['kind'])} for r in rows(c,sql+' ORDER BY created DESC',tuple(args))]
 @app.get('/api/history-policy')
 def history_policy(ws=Depends(ident)):
     with db() as c:
@@ -520,7 +523,7 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.get('/api/inbox/{i}/education-source')
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:

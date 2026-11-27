@@ -34,3 +34,24 @@ def test_backup_import_review_only():
     backup['faq']=[{'q':'가격','a':'200원'}]
     assert c.post('/api/workflow/backup/import',json=payload).status_code==422
     assert c.post('/api/workflow/backup/import',json={'confirmed':True,'backup':{'format':'bad'}}).status_code==422
+
+def test_scoped_manual_mode_and_resume():
+    from store import db,one,uid,now
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':[]});patch(c,{'enabled':True,'price':'100원'})
+    u,token=public(c);before=c.get('/api/me').json()['remaining']
+    def mode(agent,channel,manual):
+        return post(c,'/api/consultation-mode',{'agent':agent,'channel':channel,'manual':manual,'confirmed':True})
+    def ask(client):return post(u,'/api/chat',{'token':token,'message':'가격은?','clientMessageId':client})
+    mode('*','naver',True)
+    assert not ask('web-auto').get('manual')
+    mode('*','*',True)
+    assert ask('all-manual')['manual']
+    row=c.get('/api/inbox').json()[0];assert row['paused_by']=='account' and not row['manual']
+    assert c.get('/api/me').json()['remaining']==before-1
+    mode('','public',True);mode('*','*',False)
+    assert ask('brand-manual')['pausedBy']=='brand_channel'
+    mode('','public',False);assert not ask('resumed').get('manual')
+    post(c,'/api/inbox/'+row['id'],{'manual':True});mode('*','*',True);mode('*','*',False)
+    assert ask('individual-manual')['manual']
+    assert owner().get('/api/consultation-mode').json()=={'paused':[]}
+    assert c.post('/api/consultation-mode',json={'agent':'not-owned','channel':'public','manual':True,'confirmed':True}).status_code==403
