@@ -82,10 +82,10 @@ async def guard(req,call_next):
 def session_response(owner,verified_email=None):
     with db(True) as c:
         w=workspace(c,owner)
-        if DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and owner.startswith('demo:') and os.getenv('SEED_UI_SAMPLES')=='1':
-            demo_samples.seed_samples(c,w['id'])
         if owner.startswith('google:') and verified_email:
             c.execute('UPDATE workspace SET owner_email=? WHERE id=?',(verified_email.lower(),w['id']))
+        if is_operator(getw(c,w['id'])):
+            demo_samples.seed_samples(c,w['id'])
         t=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(t,w['id'],now()+86400*7))
         if owner.startswith('google:') and verified_email:
             c.execute('INSERT INTO session_verified_email VALUES(?,?)',(t,verified_email.lower()))
@@ -110,7 +110,7 @@ def demo_view(req:Request,body:dict,ws=Depends(ident)):
         plan='free' if mode=='free' else 'lite'
         addons=sorted(x['id'] for x in CAT['addons'] if x.get('local')) if mode=='developer' else (['extra_agent'] if mode=='subscriber_agent' else [])
         c.execute('UPDATE workspace SET plan=?,addons=?,enabled=CASE WHEN ?=\'free\' THEN 0 ELSE enabled END WHERE id=?',(plan,dump(addons),plan,target['id']))
-        if mode=='developer' and os.getenv('SEED_UI_SAMPLES')=='1':
+        if mode=='developer':
             demo_samples.seed_samples(c,target['id'])
         for acceptance in rows(c,'SELECT version,terms,privacy,ai,dpa,marketing,accepted FROM policy_acceptance WHERE ws=?',(ws,)):
             c.execute('INSERT INTO policy_acceptance VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(ws,version) DO NOTHING',(target['id'],acceptance['version'],acceptance['terms'],acceptance['privacy'],acceptance['ai'],acceptance['dpa'],acceptance['marketing'],acceptance['accepted']))
@@ -371,7 +371,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'commerce':commerce.public_enabled(c,w,agent),'photos':chat_attachments.public_enabled(c,w,agent),'files':chat_attachments.public_files_enabled(c,w,agent),'web_calls':web_calls.public_enabled(c,w,agent),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|{'hours':s.get('hours','')}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'commerce':commerce.public_enabled(c,w,agent),'photos':chat_attachments.public_enabled(c,w,agent),'files':chat_attachments.public_files_enabled(c,w,agent),'web_calls':web_calls.public_enabled(c,w,agent),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -428,7 +428,8 @@ def customer_handoff(body:dict):
         c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(w['id'],t['id']))
         if not t['manual'] or not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='handoff' AND ref=?",(w['id'],t['id'])):
             ops.event(c,w['id'],'handoff','고객의 담당자 연결 요청',t['id'])
-    return {'ok':True,'manual':True}
+        notice=workflow_controls.response_style(c,w['id'],v.get('agent',''))['message']
+    return {'ok':True,'manual':True,'notice':notice}
 @app.get('/api/session/{token}/messages')
 def messages(token:str):
     with db() as c:
@@ -486,7 +487,8 @@ def chat(body:dict):
             if calendar_config:
                 adds.add('calendar');s={**s,**{k:calendar_config[k] for k in ('timezone','open','close','duration','buffer','closed_days','fields','resources','payment_required')},'modes':dict(s['modes'],booking=calendar_config['booking_mode'])}
         quote_catalog=customer_ops.quote_catalog(c,ws,v.get('agent','')) if 'quote' in adds else []
-        s={**s,'_commerce_products':commerce.chat_products(c,w,agent,msg)}
+        response_style=workflow_controls.response_style(c,ws,v.get('agent',''))
+        s={**s,'_response_style':response_style,'_commerce_products':commerce.chat_products(c,w,agent,msg)}
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
         replay=abort_chat_request(key,p,kind)
@@ -502,9 +504,20 @@ def chat(body:dict):
         if work_kind and not (work_kind=='complaints' and s['modes'].get('complaint')=='off'):
             r['workDraft']=proposal or {'kind':work_kind,'title':msg[:120],'details':msg[:2000]}
     if r.get('unknown') and s['modes'].get('unknown')=='off':r.update({'reply':'등록된 답변이 없어 안내가 어렵습니다.','unknown':False})
+    review=r.pop('_owner_review',False)
+    handoff=review or (response_style['notify'] and r.get('unknown')) or (response_style['level']==0 and not r.get('booking') and not r.get('workDraft'))
+    if handoff:
+        retain_answer=response_style['level']==0 and not review and not r.get('unknown')
+        r['reply']=(r['reply']+'\n' if retain_answer else '')+response_style['message']
+        r.update(manual=True,ownerHandoff=True)
+        r.pop('workDraft',None)
     try:
         with db(True) as c:
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()))
+            if handoff:
+                c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
+                if v['kind']!='test':
+                    ops.event(c,ws,'handoff','사장님 확인 요청',tid)
             answer_id=uid();c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(answer_id,ws,tid,'assistant',r['reply'],now()))
             if context:c.execute('INSERT INTO answer_context VALUES(?,?,?,?)',(ws,answer_id,v.get('agent',''),dump(context)))
             if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)

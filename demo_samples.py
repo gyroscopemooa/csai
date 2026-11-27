@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 from datetime import datetime, timedelta, time as clock_time
 from zoneinfo import ZoneInfo
 from app import app, ident, require
-from store import APP_URL, DEMO, SHARED_TEST, db, getw, one, rows, now, uid, dump, loads, entitlements
+from store import APP_URL, DEMO, SHARED_TEST, db, getw, one, rows, now, uid, dump, loads, entitlements, is_operator
 
 SAMPLES = [
     ('public', 'open', False, [
@@ -97,9 +97,75 @@ SAMPLES = [
     ])
 ]
 
+# The same case follows the visitor from the inbox into the calendar and work queues.
+CASES = [
+    ('프로필 촬영', '배경색 선택', '회색 배경으로 촬영할 수 있나요?'),
+    ('가족 촬영', '유아 의자', '두 살 아이가 앉을 의자가 있나요?'),
+    ('상품 촬영', '원본 제공', '흰 배경 제품 사진의 원본도 받을 수 있나요?'),
+    ('행사 촬영', '출장 범위', '행사장으로 출장 촬영이 가능한가요?'),
+    ('여권 사진', '수령 방식', '인화물과 파일을 함께 받을 수 있나요?'),
+    ('돌 촬영', '의상 준비', '돌 촬영용 한복을 가져가야 하나요?'),
+    ('단체 촬영', '인원 변경', '예약 인원이 두 명 늘어도 되나요?'),
+    ('반려동물 촬영', '동반 조건', '고양이 두 마리와 함께 갈 수 있나요?'),
+    ('졸업 촬영', '날짜 변경', '졸업식 일정이 바뀌면 날짜를 옮길 수 있나요?'),
+    ('공연 촬영', '납품 일정', '공연 홍보에 쓸 사진을 먼저 받을 수 있나요?'),
+    ('커플 촬영', '야외 장소', '비가 오면 실내 촬영으로 바꿀 수 있나요?'),
+    ('브랜드 촬영', '사용 범위', '온라인 광고에도 사진을 쓸 수 있나요?'),
+]
+
+def assistance_examples():
+    combinations = [('web',), ('naver',), ('kakao',), ('web','naver'), ('web','kakao'), ('naver','kakao'), ('web','naver','kakao')]
+    result = []
+    for i,(service,topic,question) in enumerate(CASES):
+        details = {}
+        for k in combinations[i % len(combinations)]:
+            details[k] = {'reference': 'shop-'+str(i+1)+'.example.com' if k=='web' else '샘플 '+service,
+                          'access': '모름' if i%2 else '가능'}
+            if k=='web':
+                details[k]['platform'] = ('카페24','아임웹','자체 제작')[i%3]
+            else:
+                details[k]['existing'] = '있음' if i%2 else '없음'
+        result.append({'sample':True,'status':'review' if i%2 else 'paid','items':{'details':details,'email':'shop'+str(i+1)+'@example.com'}})
+    return result
+
+def seed_admin_cases(c, ws):
+    settings = loads(getw(c, ws)['settings'])
+    zone = ZoneInfo(settings['timezone'])
+    today = datetime.now(zone).date()
+    for index, (service, topic, question) in enumerate(CASES):
+        key = 'sample-admin-' + ws + '-' + str(index)
+        if one(c, 'SELECT thread FROM demo_sample WHERE ws=? AND thread=?', (ws, key)):
+            continue
+        visitor = uid()
+        stamp = now() - (len(CASES)-index)*3600
+        channel = ('public','naver','kakao')[index % 3]
+        c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)', (visitor, ws, now()+2592000, 'test'))
+        c.execute('INSERT INTO thread(id,ws,visitor,kind,status,manual,created) VALUES(?,?,?,?,?,?,?)',
+                  (key, ws, visitor, channel, ('open','pending','resolved')[index%3], 0, stamp))
+        c.execute('INSERT INTO demo_sample(thread,ws) VALUES(?,?)', (key, ws))
+        for offset, (role, body) in enumerate([('user','샘플 · '+question),('assistant',service+' 문의를 접수했습니다. '+topic+' 조건을 담당자가 확인하겠습니다.')]):
+            c.execute('INSERT INTO message(id,ws,thread,role,body,created) VALUES(?,?,?,?,?,?)', (uid(),ws,key,role,body,stamp+offset))
+        booking = uid()
+        start = datetime.combine(today+timedelta(days=index+3), clock_time(10+index%6), tzinfo=zone)
+        payload = {'name':'샘플 고객 '+str(index+1),'product':service,'note':question}
+        c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                  (booking,ws,visitor,start.isoformat(),(start+timedelta(minutes=settings['duration'])).isoformat(),'default',dump(payload),settings['template_version'],dump(settings['fields']),('confirmed','pending','cancelled')[index%3],1,0,uid(),stamp))
+        mark(c,ws,'booking',booking)
+        for kind, action in [('crm','고객 상담 기록'),('tasks','담당자 확인'),('quote','견적 검토'),('leads','신규 문의'),('complaints','개선 요청')]:
+            item=uid()
+            c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(item,ws,kind,'샘플 · '+service+' '+action,question,('open','pending','resolved')[index%3],stamp))
+            c.execute('INSERT INTO work_link VALUES(?,?,?,?)',(ws,key,kind,item))
+            mark(c,ws,'work',item)
+        item=uid()
+        c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(item,ws,key,'샘플 · '+question,'open',stamp))
+        mark(c,ws,'unknown',item)
+        item=uid()
+        c.execute('INSERT INTO event_log VALUES(?,?,?,?,?,0,?)',(item,ws,'booking','샘플 · '+service+' 예약 상태 안내',booking,stamp))
+        mark(c,ws,'event',item)
+
 def local_demo(c, ws):
     w = getw(c, ws)
-    require(DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost', '127.0.0.1') and w['owner'].startswith('demo:'), '로컬 데모 계정에서만 샘플을 관리할 수 있습니다.', 403)
+    require(is_operator(w) or (DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost', '127.0.0.1') and w['owner'].startswith('demo:')), '로컬 데모 계정에서만 샘플을 관리할 수 있습니다.', 403)
 
 def mark(c, ws, kind, item):
     c.execute('INSERT OR IGNORE INTO demo_sample_entity(ws,kind,id) VALUES(?,?,?)', (ws, kind, item))
@@ -139,9 +205,6 @@ def seed_related(c, ws):
 def seed_samples(c, ws):
     local_demo(c, ws)
     existing = one(c, 'SELECT COUNT(*) n FROM demo_sample WHERE ws=?', (ws,))['n']
-    if existing == len(SAMPLES):
-        seed_related(c, ws)
-        return {'count': existing, 'created': False}
     base = now() - 8 * 86400
     for index, (kind, status, manual, messages) in enumerate(SAMPLES):
         if index < existing:
@@ -153,7 +216,11 @@ def seed_samples(c, ws):
         for pos, (role, body) in enumerate(messages):
             c.execute('INSERT INTO message(id,ws,thread,role,body,created) VALUES(?,?,?,?,?,?)', (uid(), ws, thread, role, body, created + pos * 120))
     seed_related(c, ws)
-    return {'count': len(SAMPLES), 'created': True}
+    w = getw(c, ws)
+    if is_operator(w) or w['owner'].endswith(':developer'):
+        seed_admin_cases(c, ws)
+    total = one(c,'SELECT COUNT(*) n FROM demo_sample WHERE ws=?',(ws,))['n']
+    return {'count': total, 'created': total > existing}
 
 @app.post('/api/demo/samples')
 def add_samples(ws=Depends(ident)):
@@ -182,3 +249,11 @@ def remove_samples(ws=Depends(ident)):
             c.execute('DELETE FROM thread WHERE id=? AND ws=?', (item['id'], ws))
             c.execute('DELETE FROM visitor WHERE token=? AND ws=?', (item['visitor'], ws))
         return {'removed': len(found)}
+
+@app.get('/api/demo/feature-examples')
+def feature_examples(ws=Depends(ident)):
+    with db() as c:
+        local_demo(c, ws)
+        w=getw(c,ws)
+        require(is_operator(w) or w['owner'].endswith(':developer'), '관리자 샘플입니다.', 403)
+    return [{'service':service,'topic':topic,'question':question} for service,topic,question in CASES]

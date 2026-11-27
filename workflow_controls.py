@@ -22,6 +22,7 @@ def default_policy():
 def init():
     with db(True) as c:
         c.executescript("""
+        CREATE TABLE IF NOT EXISTS response_style(ws TEXT NOT NULL,agent TEXT NOT NULL,config TEXT NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS consultation_source(ws TEXT NOT NULL,thread TEXT NOT NULL,source TEXT NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS consultation_pause(ws TEXT NOT NULL,agent TEXT NOT NULL,channel TEXT NOT NULL,PRIMARY KEY(ws,agent,channel));
         CREATE TABLE IF NOT EXISTS workflow_policy(ws TEXT NOT NULL,agent TEXT NOT NULL,config TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,agent));
@@ -31,6 +32,10 @@ def init():
         CREATE TABLE IF NOT EXISTS workflow_reminder(ws TEXT NOT NULL,message TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,message));
         """)
 init()
+def response_style(c,ws,agent):
+    row=one(c,'SELECT config FROM response_style WHERE ws=? AND agent=?',(ws,agent))
+    return loads(row['config']) if row else {'level':1,'notify':False,'message':'사장님한테 물어보고 답변드려도 될까요?'}
+
 def get_policy(c,ws,agent):
     r=one(c,'SELECT config FROM workflow_policy WHERE ws=? AND agent=?',(ws,agent))
     return loads(r['config']) if r else default_policy()
@@ -99,6 +104,24 @@ def register(app,ident):
     from app import require,bounded,visitor,limit
     import branding,ops
     def owner_brand(c,ws,agent):return branding.owned_agent(c,getw(c,ws),agent)
+    @app.get('/api/response-style')
+    def read_style(agent:str='',ws=Depends(ident)):
+        with db() as c:
+            owner_brand(c,ws,agent)
+            return response_style(c,ws,agent)
+
+    @app.post('/api/response-style')
+    def save_style(body:dict,ws=Depends(ident)):
+        agent=body.get('agent','')
+        level,notify,message=(body.get(k) for k in ('level','notify','message'))
+        require(isinstance(agent,str) and type(level) is int and level in (0,1,2) and type(notify) is bool,'상담 방식 설정을 확인하세요.',422)
+        require(isinstance(message,str) and 0<len(message.strip())<=300,'안내 문구는 1~300자로 입력하세요.',422)
+        config={'level':level,'notify':notify,'message':message.strip()}
+        with db(True) as c:
+            owner_brand(c,ws,agent)
+            c.execute('INSERT INTO response_style VALUES(?,?,?) ON CONFLICT(ws,agent) DO UPDATE SET config=excluded.config',(ws,agent,dump(config)))
+        return config
+
     @app.get('/api/consultation-mode')
     def modes(ws=Depends(ident)):
         with db() as c:

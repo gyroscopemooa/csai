@@ -19,10 +19,12 @@ def test_chat_profile_default_off_and_no_usage():
     assert c.post('/api/chat-profile',json={'photo':'not-an-image'}).status_code==422
     assert c.get('/api/chat-profile').json()==p
     post(c,'/api/demo/billing',{'plan':'lite'})
-    patch(c,{'enabled':True,'brand':'업체명 수정'})
+    patch(c,{'enabled':True,'brand':'업체명 수정','hours':'평일 09:00–18:00'})
     slug=c.get('/api/me').json()['slug']
     u=TestClient(app)
-    assert u.get('/api/public/'+slug).json()['chat_profile']==p
+    public_profile=u.get('/api/public/'+slug).json()
+    assert public_profile['chat_profile']==p
+    assert public_profile['hours']=='평일 09:00–18:00'
     assert u.get('/api/chat-profile').status_code==401
     off=post(c,'/api/chat-profile',{'show_at_start':False,'photo':''})
     assert not off['show_at_start'] and not off['photo'] and len(off['links'])==2

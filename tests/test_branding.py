@@ -35,3 +35,27 @@ def test_quantity_and_brand_test_isolation():
     assert c.get('/api/me').json()['remaining']==298
     assert len(c.get('/api/inbox?agent='+a['id']).json())==1
     assert owner().post('/api/session',json={'test':True,'agent':a['id']}).status_code==403
+
+
+def test_brand_name_wave_is_public_and_preserved_per_brand():
+    c = owner()
+    guest = TestClient(app)
+    assert c.get('/api/appearance').json()['brand_name_wave'] is True
+    assert c.post('/api/appearance', json={'brand_name_wave': 'false'}).status_code == 422
+    assert guest.post('/api/appearance', json={'brand_name_wave': False}).status_code == 401
+    post(c, '/api/appearance', {'brand_name_wave': False})
+    post(c, '/api/demo/billing', {'plan': 'lite', 'addons': ['extra_agent']})
+    patch(c, {'brand': '기본 업체', 'enabled': True})
+
+    slug = c.get('/api/me').json()['slug']
+    public_url = '/api/public/' + slug
+    assert guest.get(public_url).json()['brand_name_wave'] is False
+
+    agent = post(c, '/api/agents', {'brand': '추가 업체', 'welcome': '안녕하세요', 'enabled': True})
+    agent_url = '/api/public/' + agent['slug']
+    assert guest.get(agent_url).json()['brand_name_wave'] is True
+    post(c, '/api/appearance', {'agent': agent['id'], 'brand_name_wave': False})
+    post(c, '/api/agents', {'id': agent['id'], 'brand': '이름을 바꾼 업체'})
+    post(c, '/api/appearance', {'brand_name_wave': True})
+    assert guest.get(public_url).json()['brand_name_wave'] is True
+    assert guest.get(agent_url).json()['brand_name_wave'] is False

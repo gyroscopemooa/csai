@@ -63,7 +63,7 @@ def resolve(c,slug):
     return None,None
 
 def appearance(w,s):
-    a=entitlements(w);return {'logo':s.get('logo',''),'color':s.get('color','#3182F6') if 'design' in a else '#3182F6','unbrand':bool(s.get('unbrand') and 'unbrand' in a),'theme':s.get('theme','dark') if 'design' in a else 'dark','density':s.get('density','normal') if 'design' in a else 'normal','bubble_radius':s.get('bubble_radius','rounded') if 'design' in a else 'rounded'}
+    a=entitlements(w);return {'logo':s.get('logo',''),'color':s.get('color','#3182F6') if 'design' in a else '#3182F6','unbrand':bool(s.get('unbrand') and 'unbrand' in a),'theme':s.get('theme','dark') if 'design' in a else 'dark','density':s.get('density','normal') if 'design' in a else 'normal','bubble_radius':s.get('bubble_radius','rounded') if 'design' in a else 'rounded','brand_name_wave':s.get('brand_name_wave') is not False}
 def chat_profile(s):
     p=s.get('chat_profile') or {}
     return {'show_at_start':p.get('show_at_start') is True,'title':p.get('title',''),'message':p.get('message',''),'photo':p.get('photo',''),'links':p.get('links',[]),'contacts':p.get('contacts',[]),'notice_mode':p.get('notice_mode','manual'),'manual_notice':s.get('notice','')}
@@ -166,6 +166,9 @@ def set_appearance(body:dict,ws=Depends(ident)):
         if 'color' in body:require('design' in a);require(isinstance(body['color'],str) and bool(re.fullmatch(r'#[0-9a-fA-F]{6}',body['color'])),'색상 형식 오류',422);s['color']=body['color']
         for key,choices in {'theme':{'dark','toss','messenger','premium'},'density':{'normal','compact','roomy'},'bubble_radius':{'rounded','square'}}.items():
             if key in body:require('design' in a);require(isinstance(body[key],str) and body[key] in choices,'디자인 옵션 오류',422);s[key]=body[key]
+        if 'brand_name_wave' in body:
+            require(type(body['brand_name_wave']) is bool,'업체 이름 효과 설정 오류',422)
+            s['brand_name_wave']=body['brand_name_wave']
         if 'unbrand' in body:require('unbrand' in a);s['unbrand']=body['unbrand'] is True
         if 'alias' in body:
             require(not profile,'브랜드별 별칭 연동 준비 중',409);require('custom_url' in a);alias=bounded(body['alias'],48).lower();old=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,))
@@ -195,7 +198,7 @@ def agent_save(body:dict,ws=Depends(ident)):
         s={k:bounded(body.get(k,previous.get(k,'')),1500) for k in ['brand','tone','welcome','fallback','notice','price','location','hours']}
         s['prompt']=previous.get('prompt',DEFAULT['prompt']);require('prompt' not in body or body['prompt']==s['prompt'],'상담 지침은 AI 교육에서 변경하세요.',422);require(s['brand'] and s['welcome'],'상담원 이름 및 인사말 필요',422)
         s['emoji']=body.get('emoji',previous.get('emoji')) is True
-        for key in ('logo','color','theme','density','bubble_radius','unbrand','chat_profile'):
+        for key in ('logo','color','theme','density','bubble_radius','unbrand','chat_profile','brand_name_wave'):
             if key in previous:s[key]=previous[key]
         links=body.get('links',previous.get('links',[]));require(isinstance(links,list) and len(links)<=10,'판매처 최대 10개',422);s['links']=[]
         from urllib.parse import urlsplit

@@ -57,7 +57,7 @@ const CSAISetup=(()=>{
   serial++;verified=null;pendingKey='';failedKey='';
   state={slug:me.slug,receipt:false,guide:false,dismissed:new Set(),seen:new Set(),messages:[]};
   selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);selectedBrandCount=me.brand_quantity||1;
-  try{const d=JSON.parse(sessionStorage.getItem(storageKey())||'null');if(d){if(cfg.catalog.plans.some(p=>p.id===d.plan&&p.price>0))selectedPlan=d.plan;if(Array.isArray(d.ids))selectedAdd=new Set(d.ids.filter(k=>Object.hasOwn(all(),k)));if(Number.isInteger(d.brandCount)&&d.brandCount>=1&&d.brandCount<=1000)selectedBrandCount=d.brandCount;state.receipt=!!d.receipt;state.guide=!!d.guide;state.dismissed=new Set(d.dismissed||[]);state.seen=new Set(d.seen||[]);state.messages=Array.isArray(d.messages)?d.messages.filter(m=>['user','guide'].includes(m.role)&&typeof m.text==='string').slice(-20):[];}}catch{}
+  try{const d=JSON.parse(sessionStorage.getItem(storageKey())||'null');if(d){if(cfg.catalog.plans.some(p=>p.id===d.plan&&p.price>0))selectedPlan=d.plan;if(Array.isArray(d.ids))selectedAdd=new Set(d.ids.filter(k=>Object.hasOwn(all(),k)));if(Number.isInteger(d.brandCount)&&d.brandCount>=1&&d.brandCount<=1000)selectedBrandCount=d.brandCount;state.receipt=!!d.receipt;state.guide=!state.receipt&&!!d.guide;state.dismissed=new Set(d.dismissed||[]);state.seen=new Set(d.seen||[]);state.messages=Array.isArray(d.messages)?d.messages.filter(m=>['user','guide'].includes(m.role)&&typeof m.text==='string').slice(-20):[];}}catch{}
  }
  function current(){return normalize(cfg.catalog,[...selectedAdd]);}
  function plan(){return cfg.catalog.plans.find(p=>p.id===selectedPlan)||cfg.catalog.plans.find(p=>p.id==='lite');}
@@ -74,13 +74,18 @@ const CSAISetup=(()=>{
  }
  const button=(label,action,value='')=>'<button type="button" data-setup-action="'+escape(action)+'" data-setup-value="'+escape(value)+'">'+escape(label)+'</button>';
  const line=(name,price,other='')=>'<div class="setup-line"><span>'+escape(name)+'</span><b>'+escape(price)+'</b>'+other+'</div>';
+ function setupConsultationLink(){
+  return '<div class="setup-suggestion"><b>전체 세팅 대행</b><small>'+escape(setupEstimate)+'</small><small>'+escape(setupCallback)+'</small>'+button('상담 요청하기','setup-consultation')+'</div>';
+ }
  function receipt(){
-  const el=document.getElementById('setup-receipt');if(!el)return;
-  let result;try{result=current();}catch(err){el.innerHTML='<p>'+escape(err.message)+'</p>';return;}
+  const el=document.getElementById('setup-receipt');if(!el||!state.receipt)return;
+  const body=el.querySelector('.setup-panel-body');
+  let result;try{result=current();}catch(err){body.innerHTML='<p>'+escape(err.message)+'</p>';return;}
   const p=plan(),by=all(),brandExtra=result.keys.includes('extra_agent')?(selectedBrandCount-1)*by.extra_agent.price:0,amount=p.price+result.amount+brandExtra,old=cfg.catalog.plans.find(x=>x.id===me.plan),oldAmount=(old?.price||0)+(me.plan==='free'?0:normalize(cfg.catalog,me.addons||[]).amount+Math.max(0,(me.brand_quantity||0)-1)*by.extra_agent.price),delta=amount-oldAmount;
   const key=JSON.stringify([p.id,result.keys,selectedBrandCount]),matched=verified?.key===key;
   const recommendation=cheaper(cfg.catalog,result.keys);
-  let content='<div class="setup-receipt-head"><strong>나의 구독 구성</strong><span>예상 월 <b>'+won(matched?verified.amount:amount)+'</b></span>'+button(state.receipt?'접기':'구성표 보기','receipt')+'</div>';
+  el.querySelector('.setup-receipt-estimate').innerHTML='예상 월 <b>'+won(matched?verified.amount:amount)+'</b>';
+  let content='';
   if(state.receipt){
    content+='<div class="setup-receipt-body"><p class="muted">선택한 상품만 반영됩니다. 아직 결제되지 않았습니다.</p><label>기본 상담 요금제<select data-setup-plan>'+cfg.catalog.plans.map(x=>'<option value="'+escape(x.id)+'" '+(p.id===x.id?'selected':'')+'>'+escape(x.name+' · '+x.quantity.toLocaleString()+'회 · '+won(x.price))+'</option>').join('')+'</select></label>'+line(p.name+' 기본 상담',won(p.price));
    content+=result.keys.length?result.keys.map(k=>line(by[k].name+(k==='extra_agent'?' × '+selectedBrandCount:''),won(by[k].price*(k==='extra_agent'?selectedBrandCount:1)),button('제외','remove',k))).join(''):'<p class="muted">추가한 기능이 없습니다.</p>';
@@ -91,7 +96,11 @@ const CSAISetup=(()=>{
    if(recommendation)content+='<div class="setup-suggestion"><b>패키지 적용 시 월 '+won(recommendation.saving)+' 절약 가능</b><small>선택한 기능을 모두 유지하는 구성입니다. 준비 중 기능의 실제 제공 여부는 별도 확인하세요.</small>'+button('절약 구성 확인·적용','optimize')+'</div>';
    content+='<div class="setup-actions">'+button('요금제 및 결제 확인','navigate','pricing')+(failedKey===key?button('견적 다시 확인','retry'):'')+'</div></div>';
   }
-  el.innerHTML=content;
+  const restorePlanFocus=body.contains(document.activeElement)&&document.activeElement.matches('[data-setup-plan]');
+  const scroll=el.scrollTop;
+  body.innerHTML=content+setupConsultationLink();
+  el.scrollTop=scroll;
+  if(restorePlanFocus)body.querySelector('[data-setup-plan]')?.focus({preventScroll:true});
  }
  function quote(){
   const p=plan(),r=current();if(!p.price)return;
@@ -100,17 +109,97 @@ const CSAISetup=(()=>{
   api('/api/billing/quote',{kind:'subscription',plan:p.id,addons:r.keys,brand_quantity:r.keys.includes('extra_agent')?selectedBrandCount:0}).then(q=>{if(request!==serial||JSON.stringify([plan().id,current().keys,selectedBrandCount])!==key)return;verified={key,amount:q.amount};}).catch(()=>{if(request===serial&&JSON.stringify([plan().id,current().keys,selectedBrandCount])===key)failedKey=key;}).finally(()=>{if(request!==serial)return;pendingKey='';receipt();if(state?.receipt)quote();});
  }
  function guide(){
-  const el=document.getElementById('setup-guide');if(!el)return;
+  const el=document.getElementById('setup-guide');if(!el||!state.guide)return;
+  const body=el.querySelector('.setup-panel-body');
   const r=prompt(),key=route+':'+r[2],active=!state.dismissed.has(key);
-  let html='<div class="setup-guide-head"><strong>설정 도우미</strong>'+button(state.guide?'접기':'도움 받기','guide')+'</div>';
+  let html='';
   if(state.guide){
    if(active&&!state.seen.has(key)){state.seen.add(key);state.messages.push({role:'guide',text:r[0]});}
    html+='<div class="setup-dialogue" role="log" aria-label="설정 안내 대화">'+state.messages.slice(-20).map(m=>'<div class="setup-message '+(m.role==='user'?'setup-user':'')+'">'+escape(m.text)+'</div>').join('')+'</div>';
    html+='<div class="setup-replies">'+(active?button(r[1],'reply',r[2])+button('나중에 할게요','dismiss',key):button('현재 페이지 안내 다시 보기','reopen',key))+button('전체 요금제 보기','navigate','pricing')+'</div><small>상황별 자동 안내 · AI 크레딧 차감 없음</small>';
   }
-  el.innerHTML=html;const log=el.querySelector('.setup-dialogue');if(log)log.scrollTop=log.scrollHeight;
+  body.innerHTML=html+setupConsultationLink();const log=el.querySelector('.setup-dialogue');if(log)log.scrollTop=log.scrollHeight;
  }
- function redraw(){receipt();guide();save();if(state.receipt)quote();}
+ function openPanel(panel){state.receipt=panel==='receipt';state.guide=panel==='guide';}
+ const panelNames=['receipt','guide'];
+ const transitions=new WeakMap();
+ const motionPreference=matchMedia('(prefers-reduced-motion: reduce)');
+ function animatePanel(panel,trigger,opening,finish){
+  const end=panel.getBoundingClientRect(),start=trigger.getBoundingClientRect();
+  if(motionPreference.matches||!panel.animate||!end.width||!end.height||!start.height){finish();return;}
+  const sx=start.width/end.width,sy=start.height/end.height;
+  const bubbleStyle=getComputedStyle(trigger),panelStyle=getComputedStyle(panel);
+  const pill={
+   transform:`translate(${start.left-end.left}px,${start.top-end.top}px) scale(${sx},${sy})`,
+   borderRadius:`${start.height/(2*sx)}px / ${start.height/(2*sy)}px`,
+   backgroundColor:bubbleStyle.backgroundColor,borderColor:bubbleStyle.borderColor,
+   boxShadow:'0 0 0 transparent',
+  };
+  const expanded={transform:'none',borderRadius:panelStyle.borderRadius,backgroundColor:panelStyle.backgroundColor,
+   borderColor:panelStyle.borderColor,boxShadow:panelStyle.boxShadow};
+  const source=trigger.querySelector('.setup-bubble-title'),target=panel.querySelector('.setup-panel-title');
+  const a=source.getBoundingClientRect(),b=target.getBoundingClientRect();
+  const title=source.cloneNode(true);
+  title.classList.add('setup-morph-title');title.setAttribute('aria-hidden','true');
+  Object.assign(title.style,{left:a.left+'px',top:a.top+'px',color:bubbleStyle.color});
+  panel.parentElement.append(title);
+  const timing={duration:390,easing:'cubic-bezier(.22,.82,.24,1)',fill:'both',direction:opening?'normal':'reverse'};
+  const surface=panel.animate([pill,expanded],timing);
+  const words=title.animate([{transform:'none',color:bubbleStyle.color},{transform:`translate(${b.left-a.left}px,${b.top-a.top}px)`,color:panelStyle.color}],timing);
+  const content=panel.querySelector('.setup-panel-inner').animate([{opacity:0},{opacity:0,offset:.45},{opacity:1}],timing);
+  const label=target.animate([{opacity:0},{opacity:0,offset:.99},{opacity:1}],timing);
+  panel.dataset.morphing=opening?'opening':'closing';
+  const cleanup=()=>{
+   transitions.delete(panel);delete panel.dataset.morphing;title.remove();
+   surface.cancel();words.cancel();content.cancel();label.cancel();
+  };
+  transitions.set(panel,cleanup);
+  surface.onfinish=()=>{finish();cleanup();};
+ }
+ function syncPanels(dock){
+  const next=panelNames.find(name=>state[name]);
+  const canAnimate=dock.dataset.ready==='true';
+  for(const name of panelNames){
+   if(name===next)continue;
+   const panel=dock.querySelector('#setup-'+name),trigger=dock.querySelector('[aria-controls="setup-'+name+'"]');
+   const wasOpen=trigger.getAttribute('aria-expanded')==='true';
+   if(!wasOpen&&!(next&&panel.dataset.morphing==='closing'))continue;
+   const returnFocus=panel.dataset.returnFocus==='true';
+   delete panel.dataset.returnFocus;
+   transitions.get(panel)?.();
+   trigger.setAttribute('aria-expanded','false');panel.inert=true;
+   const finish=()=>{
+    panel.hidden=true;trigger.classList.remove('is-morphed');
+    if(returnFocus&&!next&&trigger.isConnected)trigger.focus({preventScroll:true});
+   };
+   if(next||!canAnimate)finish();else animatePanel(panel,trigger,false,finish);
+  }
+  if(next){
+   const panel=dock.querySelector('#setup-'+next),trigger=dock.querySelector('[aria-controls="setup-'+next+'"]');
+   if(trigger.getAttribute('aria-expanded')!=='true'){
+    transitions.get(panel)?.();
+    panel.inert=false;panel.hidden=false;
+    trigger.setAttribute('aria-expanded','true');trigger.classList.add('is-morphed');
+    if(canAnimate)animatePanel(panel,trigger,true,()=>{});
+   }
+  }
+  dock.dataset.ready='true';
+ }
+ function redraw(){
+  const dock=document.querySelector('.setup-dock');
+  receipt();guide();if(dock)syncPanels(dock);save();if(state.receipt)quote();
+ }
+ function closePanel(dock,restoreFocus){
+  const name=panelNames.find(name=>state?.[name]);
+  if(!name)return;
+  dock.querySelector('#setup-'+name).dataset.returnFocus=String(restoreFocus);
+  openPanel(null);redraw();
+ }
+ document.addEventListener('pointerdown',ev=>{
+  if(!state?.receipt&&!state?.guide)return;
+  const dock=document.querySelector('.setup-dock');
+  if(dock&&ev.target instanceof Element&&!dock.contains(ev.target)&&!ev.target.closest('.modal'))closePanel(dock,false);
+ });
  function changed(){failedKey='';if(plan().id==='free'&&selectedAdd.size)selectedPlan='lite';redraw();if(route==='pricing')render();}
  function add(k){
   initialize();if(!all()[k])return;
@@ -120,7 +209,7 @@ const CSAISetup=(()=>{
   if(!featureSet(old).has(k)&&!(k==='channels'&&old.features.has('naver')&&old.features.has('kakao'))){
    let candidate=[...old.keys,k];try{const next=normalize(cfg.catalog,candidate);if([...wanted].some(id=>!featureSet(next).has(id)))throw Error('coverage');selectedAdd=new Set(next.keys);}catch{selectedAdd=new Set(normalize(cfg.catalog,[...wanted]).keys);}
   }
-  state.receipt=true;toast('구독 구성에 추가했습니다. 아직 결제되지 않았습니다.');changed();
+  openPanel('receipt');toast('구독 구성에 추가했습니다. 아직 결제되지 않았습니다.');changed();
  }
  function preview(k){
   const a=all()[k];if(!a)return;
@@ -130,10 +219,12 @@ const CSAISetup=(()=>{
  function event(ev){
   const b=ev.target.closest('[data-setup-action]');if(!b)return;
   const action=b.dataset.setupAction,v=b.dataset.setupValue;
-  if(action==='receipt')state.receipt=!state.receipt;
-  else if(action==='guide')state.guide=!state.guide;
-  else if(action==='navigate'){if(v==='receipt')state.receipt=true;else go(v);}
-  else if(action==='reply'){const r=prompt();state.messages.push({role:'user',text:r[1]});if(all()[v]){state.messages.push({role:'guide',text:(descriptions[v]||all()[v].name+' 기능을 확인할 수 있습니다.')+' 월 '+won(all()[v].price)+'입니다. 원하시면 구독 구성에 추가하세요.'});preview(v);}else if(v==='receipt'){state.receipt=true;state.messages.push({role:'guide',text:'선택 내역과 월 요금을 구성표에서 확인하세요.'});}else go(v.startsWith('route:')?v.slice(6):v);}
+  if(action==='setup-consultation'){closePanel(ev.currentTarget,false);openSetupConsultation();return;}
+  if(action==='close-panel'){closePanel(ev.currentTarget,true);return;}
+  const direct=action==='receipt'||action==='guide';
+  if(direct)openPanel(action);
+  else if(action==='navigate'){if(v==='receipt')openPanel('receipt');else go(v);}
+  else if(action==='reply'){const r=prompt();state.messages.push({role:'user',text:r[1]});if(all()[v]){state.messages.push({role:'guide',text:(descriptions[v]||all()[v].name+' 기능을 확인할 수 있습니다.')+' 월 '+won(all()[v].price)+'입니다. 원하시면 구독 구성에 추가하세요.'});preview(v);}else if(v==='receipt'){openPanel('receipt');state.messages.push({role:'guide',text:'선택 내역과 월 요금을 구성표에서 확인하세요.'});}else go(v.startsWith('route:')?v.slice(6):v);}
   else if(action==='dismiss'){state.dismissed.add(v);state.messages.push({role:'user',text:'나중에 할게요'},{role:'guide',text:'필요해지면 언제든 다시 확인할 수 있습니다.'});}
   else if(action==='reopen'){state.dismissed.delete(v);state.seen.delete(v);}
   else if(action==='remove'){
@@ -143,13 +234,42 @@ const CSAISetup=(()=>{
   }else if(action==='optimize'){const rec=cheaper(cfg.catalog,current().keys);if(rec&&confirm('선택한 기능을 유지하면서 월 '+won(rec.saving)+' 절약되는 패키지 구성으로 변경할까요?')){selectedAdd=new Set(rec.keys);changed();return;}}
   else if(action==='retry'){failedKey='';verified=null;}
   redraw();
+  if(direct||((action==='navigate'||action==='reply')&&v==='receipt')){
+   const name=panelNames.find(name=>state[name]);
+   if(name)ev.currentTarget.querySelector('#setup-'+name).focus({preventScroll:true});
+  }
+ }
+ function setupPanel(name,title,icon){
+  return `<section id="setup-${name}" aria-labelledby="setup-${name}-title" tabindex="-1" hidden inert>
+   <div class="setup-panel-inner"><header class="setup-panel-head setup-${name}-head">
+    <span class="setup-panel-title" id="setup-${name}-title">${uiIcon(icon)}<strong>${title}</strong></span>
+    ${name==='receipt'?'<span class="setup-receipt-estimate"></span>':''}
+    <button type="button" data-setup-action="close-panel" class="setup-panel-close" aria-label="${title} 닫기">${uiIcon('chevron-down')}</button>
+   </header><div class="setup-panel-body"></div></div>
+  </section>`;
  }
  function mount(){
   if(publicMode||!me||!me.policy?.accepted)return;
   const main=document.querySelector('.layout main');if(!main)return;
   initialize();
-  let el=document.getElementById('setup-receipt');if(!el){el=document.createElement('section');el.id='setup-receipt';el.setAttribute('aria-label','구독 구성표');main.prepend(el);el.addEventListener('click',event);el.addEventListener('change',ev=>{if(ev.target.matches('[data-setup-plan]')){selectedPlan=ev.target.value;changed();}});}
-  el=document.getElementById('setup-guide');if(!el){el=document.createElement('aside');el.id='setup-guide';el.setAttribute('aria-label','설정 도우미');main.append(el);el.addEventListener('click',event);}
+  if(!main.querySelector('.setup-dock')){
+   const dock=document.createElement('div');
+   dock.className='setup-dock';
+   dock.innerHTML=`<div class="setup-bubbles">
+    <button type="button" data-setup-action="receipt" aria-controls="setup-receipt" aria-expanded="false"><span class="setup-bubble-title">${uiIcon('receipt')}구독 구성</span></button>
+    <button type="button" data-setup-action="guide" aria-controls="setup-guide" aria-expanded="false"><span class="setup-bubble-title">${uiIcon('message-circle')}설정 도우미</span></button>
+   </div>
+   ${setupPanel('receipt','구독 구성','receipt')}
+   ${setupPanel('guide','설정 도우미','message-circle')}`;
+   dock.addEventListener('click',event);
+   dock.addEventListener('change',ev=>{if(ev.target.matches('[data-setup-plan]')){selectedPlan=ev.target.value;changed();}});
+   dock.addEventListener('keydown',ev=>{
+    if(ev.key!=='Escape'||(!state.receipt&&!state.guide))return;
+    ev.preventDefault();ev.stopPropagation();
+    closePanel(dock,true);
+   });
+   main.append(dock);
+  }
   redraw();
  }
  function afterPurchase(){if(!state||state.slug!==me.slug)return;selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons||[]);selectedBrandCount=me.brand_quantity||1;verified=null;failedKey='';pendingKey='';serial++;save();}

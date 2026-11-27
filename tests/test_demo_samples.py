@@ -38,26 +38,26 @@ def test_sample_data_is_isolated_per_local_demo_owner():
 def test_developer_sample_booking_and_work_follow_conversations():
     c=local_client()
     assert c.post('/api/demo/view',json={'mode':'developer'}).status_code==200
-    assert c.post('/api/demo/samples').json()['count']==9
+    assert c.post('/api/demo/samples').json()['count']==21
     bookings=c.get('/api/bookings').json()
-    assert len(bookings)==1 and bookings[0]['sample'] and bookings[0]['status']=='confirmed'
+    assert len(bookings)==13 and bookings[0]['sample'] and bookings[0]['status']=='confirmed'
     with db() as connection:
         ws=one(connection,'SELECT id FROM workspace WHERE slug=?',(c.get('/api/me').json()['slug'],))['id']
         assert available(connection,ws,bookings[0]['start'],bookings[0]['end'])
     linked=c.get('/api/inbox/'+bookings[0]['sample_thread']).json()
     assert linked['sample'] and any('예약이 확정되었습니다' in m['body'] for m in linked['messages'])
     works=c.get('/api/work').json()
-    assert len(works)==3 and all(x['sample'] for x in works)
+    assert len(works)==63 and all(x['sample'] for x in works)
     assert all(c.get('/api/inbox/'+x['sample_thread']).json()['sample'] for x in works)
     assert c.get('/api/stats').json()['threads']==0
     events=c.get('/api/events').json()
     assert any(x['sample'] and x['ref']==bookings[0]['id'] for x in events)
     unknown=c.get('/api/unknown').json()
-    assert len(unknown)==1 and unknown[0]['sample']
+    assert len(unknown)==13 and unknown[0]['sample']
     assert c.post('/api/faq',json={'q':unknown[0]['q'],'a':'가짜 답변','unknown':unknown[0]['id']}).status_code==409
     assert c.post('/api/bookings/'+bookings[0]['id'],json={'action':'cancel'}).status_code==409
     assert c.delete('/api/work/'+works[0]['id']).status_code==409
-    assert c.delete('/api/demo/samples').json()['removed']==9
+    assert c.delete('/api/demo/samples').json()['removed']==21
     assert c.get('/api/bookings').json()==[]
     assert c.get('/api/work').json()==[]
     assert c.get('/api/unknown').json()==[]

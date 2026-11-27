@@ -121,7 +121,7 @@ with sync_playwright() as pw:
     if not desktop.locator(".training-attachments").evaluate("(el) => el.open"):
         desktop.locator(".training-attachments summary").click()
     desktop.locator("#training-conversation").fill("고객: 예약 가능한가요?\n나: 날짜 알려주시면 확인해드릴게요.")
-    desktop.get_by_role("button", name="보내기 · 비용 확인").click()
+    desktop.get_by_role("button", name="분석 비용 확인").click()
     desktop.locator("#estimate .training-turn").wait_for()
     desktop.get_by_role("button", name="분석 시작").click()
     desktop.locator(".training-dialogue .training-turn.assistant").last.get_by_text("더 고칠 점이 있다면", exact=False).wait_for()
@@ -150,10 +150,10 @@ with sync_playwright() as pw:
         desktop.get_by_role("button", name="연결 샘플 9건 넣기").click()
         desktop.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 9")
     assert desktop.locator(".inbox-entry").count() >= 9
-    assert desktop.locator(".sample-tag").count() >= 9
+    assert desktop.locator(".inbox-entry .sample-tag").count() == 0
     desktop.wait_for_timeout(500)
     desktop.screenshot(path=str(OUT / "live_inbox_toolbar_desktop.png"))
-    desktop.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
+    desktop.locator(".inbox-entry").last.click()
     desktop.get_by_text("메시지 22개").wait_for()
     assert desktop.locator(".inbox-conversation").evaluate("el => el.scrollHeight > el.clientHeight")
     assert desktop.locator(".inbox-list").evaluate("el => el.scrollHeight > el.clientHeight")
@@ -243,7 +243,7 @@ with sync_playwright() as pw:
         mobile.get_by_role("button", name="연결 샘플 9건 넣기").click()
         mobile.wait_for_function("document.querySelectorAll('.inbox-entry').length >= 9")
     assert mobile.locator(".inbox-entry").count() >= 9
-    mobile.locator(".inbox-entry").last.get_by_role("button", name="열기").click()
+    mobile.locator(".inbox-entry").last.click()
     mobile.get_by_text("메시지 22개").wait_for()
     assert mobile.evaluate("document.documentElement.scrollWidth <= innerWidth")
     mobile.locator(".inbox-conversation").scroll_into_view_if_needed()

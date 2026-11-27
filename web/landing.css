@@ -5,7 +5,7 @@
 .landing-benefits .landing-benefits-kicker{text-align:center}
 .landing-benefits h2{font-size:clamp(32px,5.5vw,56px);line-height:1.18;letter-spacing:-.055em;font-weight:800;margin:0 0 24px;word-break:keep-all;text-align:center}
 #landing-benefit-title {
-  font-family: 'Noto Sans KR', 'Noto Sans CJK KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-family: 'Noto Sans KR', 'Noto Sans CJK KR', 'Apple SD Gothic Neo', 'Gulim', 'Malgun Gothic', sans-serif;
   font-size: clamp(28px, 5.5vw, 56px);
   font-weight: 700;
   letter-spacing: 0;

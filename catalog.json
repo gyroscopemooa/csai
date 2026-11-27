@@ -1,4 +1,5 @@
 {
+  "assistance": {"fees": {"web": 19000, "naver": 29000, "kakao": 49000}, "discounts": [0, 0, 5000, 10000]},
   "memory_import": {"name": "외부 AI 기억 이전 이용권", "price": 19900, "max_batches": 120},
   "plans": [
     {

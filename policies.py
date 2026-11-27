@@ -34,10 +34,16 @@ def register(app, ident, require):
         body = ''.join('<section><h2>'+html.escape(heading)+'</h2>'+''.join('<p>'+html.escape(paragraph)+'</p>' for paragraph in paragraphs)+'</section>' for heading, paragraphs in sections)
         info = business_info()
         contact = '<footer><strong>CS AI 운영 사업자</strong><p>'+html.escape(info['name'] or '사업자 정보 확정 전')+'</p>'+(('<p>문의: <a href="mailto:'+html.escape(info['email'], quote=True)+'">'+html.escape(info['email'])+'</a></p>') if info['email'] else '')+'</footer>'
-        links = '<nav aria-label="다른 정책">'+''.join('<a href="/policies/'+html.escape(key, quote=True)+'">'+html.escape(value[0])+'</a>' for key,value in DOCUMENTS.items())+'</nav>'
-        style='body{font:16px/1.75 system-ui,sans-serif;color:#202632;max-width:780px;padding:24px;margin:auto}a{color:#2879e5}h1{line-height:1.25}h2{font-size:21px;margin:0 0 12px}section{padding:20px 0;border-top:1px solid #e5e8eb}p{margin:12px 0}nav{display:flex;flex-wrap:wrap;gap:8px 16px;margin:18px 0 36px}footer{border-top:1px solid #e5e8eb;margin-top:28px;padding:20px 0;color:#596579}.draft{padding:12px 16px;border-radius:10px;background:#fff5df;color:#7a5300}'
-        draft = '<p class="draft"><strong>개발용 초안 · 법률 검토 및 운영 정보 확정 전</strong><br>실제 결제·정식 서비스에 적용되는 최종 조건이 아닙니다.</p>' if not APPROVED else ''
-        return HTMLResponse('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+html.escape(title)+' · CS AI</title><style>'+style+'</style><a href="/">CS AI로 돌아가기</a><h1>'+html.escape(title)+'</h1>'+draft+links+body+contact+'</html>')
+        links = '<nav class="ui-flow-links" aria-label="다른 정책">'+''.join('<a href="/policies/'+html.escape(key, quote=True)+'">'+html.escape(value[0])+'</a>' for key,value in DOCUMENTS.items())+'</nav>'
+        draft = '<p class="ui-flow-notice" data-tone="development"><span><strong>개발용 초안 · 법률 검토 및 운영 정보 확정 전</strong><br>실제 결제·정식 서비스에 적용되는 최종 조건이 아닙니다.</span></p>' if not APPROVED else ''
+        return HTMLResponse(f'''<!doctype html><html lang="ko"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)} · CS AI</title><link rel="stylesheet" href="/assets/design-system.css">
+</head><body class="ui-policy-page"><main class="ui-policy-document">
+<header class="ui-flow-heading"><a class="ui-policy-brand" href="/" aria-label="CS AI로 돌아가기"><b>CS</b> AI</a>
+<h1>{html.escape(title)}</h1></header>
+{draft}{links}<article>{body}</article>{contact}
+</main></body></html>''')
 
     @app.get('/api/policies/status')
     def policy_status(ws=Depends(ident)):

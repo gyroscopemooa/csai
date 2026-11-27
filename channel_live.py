@@ -321,7 +321,7 @@ def process_one(ws=None):
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']
         if r.get('booking') or r.get('workDraft'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+(profile['slug'] if profile else w['slug'])
         if ch=='instagram':ok=True;state='held'
-        elif ch in ('naver','telegram','line') and r.get('manual'):ok=True;state='held'
+        elif ch in ('naver','telegram','line') and r.get('manual') and not r.get('ownerHandoff'):ok=True;state='held'
         elif ch=='line':
             from line_connection import reply_enabled
             from integrations import line_transport as lt
