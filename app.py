@@ -358,7 +358,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':not agent and 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if not agent and k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if not agent and k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -462,6 +462,10 @@ def chat(body:dict):
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
         c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking','quote','tasks','complaints','crm','leads'} if agent else set())
+        if agent:
+            calendar_config=brand_calendar.public_config(c,w,agent)
+            if calendar_config:
+                adds.add('calendar');s={**s,**{k:calendar_config[k] for k in ('timezone','open','close','duration','buffer','closed_days','fields','resources','payment_required')},'modes':dict(s['modes'],booking=calendar_config['booking_mode'])}
         quote_catalog=rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1 ORDER BY name LIMIT 100',(ws,)) if 'quote' in adds else []
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
@@ -821,30 +825,39 @@ def booking_view(b,secret=False):
 @app.get('/api/booking/form/{token}')
 def form(token:str):
     with db() as c:
-        v=visitor(c,token);require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);s=loads(w['settings']);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));return {k:s[k] for k in ['fields','template_version','timezone','duration','open','close','payment_required']}|{'resources':s.get('resources',[{'id':'default','name':'기본 담당자'}])}
+        v=visitor(c,token);w=getw(c,v['ws']);s=loads(w['settings']);
+        if v.get('agent'):w,s=brand_calendar.customer_scope(c,v,allow_test=True)
+        else:require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']))
+        return {k:s[k] for k in ['fields','template_version','timezone','duration','open','close','payment_required']}|{'resources':s.get('resources',[{'id':'default','name':'기본 담당자'}])}
 @app.post('/api/booking/availability')
 def availability(body:dict):
     with db() as c:
-        v=visitor(c,body.get('token',''));require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);require('calendar' in entitlements(w) and (v['kind']=='test' or w['enabled']));s=loads(w['settings'])
+        v=visitor(c,body.get('token',''));w=getw(c,v['ws']);s=loads(w['settings'])
+        if v.get('agent'):w,s=brand_calendar.customer_scope(c,v,allow_test=True)
+        else:require('calendar' in entitlements(w) and (v['kind']=='test' or w['enabled']))
         try:date=datetime.strptime(body['date'],'%Y-%m-%d').date()
         except Exception:fail(422,'날짜 형식 오류')
         resource=resource_id(s,body);start=datetime.fromisoformat(f'{date}T{s["open"]}');close=datetime.fromisoformat(f'{date}T{s["close"]}');out=[]
         while start+timedelta(minutes=s['duration']+s['buffer'])<=close:
             try:a,b=interval(s,start.isoformat());
             except HTTPException:start+=timedelta(minutes=30);continue
-            if available(c,v['ws'],a,b,buffer=s['buffer'],resource=resource):out.append(start.strftime('%H:%M'))
+            if (brand_calendar.available(c,v['ws'],v['agent'],a,b,s['buffer'],resource) if v.get('agent') else available(c,v['ws'],a,b,buffer=s['buffer'],resource=resource)):out.append(start.strftime('%H:%M'))
             start+=timedelta(minutes=30)
         return out
 @app.post('/api/booking/draft')
 def draft(body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''));require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);s=loads(w['settings']);t=trial(c,w);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));require(v['kind']=='public','관리자 테스트에서는 실제 예약을 생성하지 않습니다.',409)
+        v=visitor(c,body.get('token',''))
+        if v.get('agent'):return brand_calendar.customer_draft(c,v,body)
+        w=getw(c,v['ws']);s=loads(w['settings']);t=trial(c,w);require('calendar' in entitlements(w) and s['modes'].get('booking')!='off' and (v['kind']=='test' or w['enabled']));require(v['kind']=='public','관리자 테스트에서는 실제 예약을 생성하지 않습니다.',409)
         if t:require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
         require(body.get('version')==s['template_version'],'양식 변경됨. 다시 확인하세요.',409);data=validate_fields(s,body.get('payload',{}));resource=resource_id(s,body);a,b=interval(s,body.get('start',''));require(available(c,v['ws'],a,b,buffer=s['buffer'],resource=resource),'선택한 시간이 이미 예약되었습니다.',409);i=uid();t=uid();c.execute("UPDATE booking SET status='superseded' WHERE ws=? AND visitor=? AND status='draft'",(v['ws'],v['token']));c.execute('INSERT INTO booking VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,v['ws'],v['token'],a,b,resource,dump(data),s['template_version'],dump(s['fields']),'draft',0,0,t,now()));return booking_view(one(c,'SELECT * FROM booking WHERE id=?',(i,)),True)
 @app.post('/api/booking/{i}/confirm')
 def confirm(i:str,body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''));require(not v.get('agent'),'브랜드별 예약 분리 준비 중',409);w=getw(c,v['ws']);s=loads(w['settings']);b=one(c,'SELECT * FROM booking WHERE id=? AND ws=? AND visitor=?',(i,v['ws'],v['token']));require(b and secrets.compare_digest(b['token'],str(body.get('confirmation',''))),'예약 확인 권한 없음');require('calendar' in entitlements(w) and w['enabled'] and s['modes'].get('booking')!='off')
+        v=visitor(c,body.get('token',''))
+        if v.get('agent'):return brand_calendar.customer_confirm(c,v,i,body)
+        w=getw(c,v['ws']);s=loads(w['settings']);b=one(c,'SELECT * FROM booking WHERE id=? AND ws=? AND visitor=?',(i,v['ws'],v['token']));require(b and secrets.compare_digest(b['token'],str(body.get('confirmation',''))),'예약 확인 권한 없음');require('calendar' in entitlements(w) and w['enabled'] and s['modes'].get('booking')!='off')
         require(b['status']!='superseded','이전 양식은 변경되었습니다. 최신 양식을 확인하세요.',409)
         if b['status']!='draft':return booking_view(b)
         if trial(c,w):require(trial_bookings_remaining(c,w)>0,'초청 체험 예약 한도를 모두 사용했습니다.',402)
