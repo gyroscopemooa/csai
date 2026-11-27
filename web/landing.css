@@ -4,6 +4,13 @@
 .landing-benefits-kicker{color:#3182f6;font-size:13px;font-weight:750;letter-spacing:1.5px;margin:0 0 18px}
 .landing-benefits .landing-benefits-kicker{text-align:center}
 .landing-benefits h2{font-size:clamp(32px,5.5vw,56px);line-height:1.18;letter-spacing:-.055em;font-weight:800;margin:0 0 24px;word-break:keep-all;text-align:center}
+#landing-benefit-title {
+  font-family: 'Noto Sans KR', 'Noto Sans CJK KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-size: clamp(28px, 5.5vw, 56px);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
 .landing-benefits .landing-lead{font-size:clamp(15px,2vw,19px);line-height:1.85;color:#6b7684;max-width:760px;margin:0 auto 48px;word-break:keep-all;text-align:center}
 .landing-benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;counter-reset:benefit}
 .landing-benefit{background:#f5f7fa;border:1px solid #edf0f4;border-radius:24px;padding:30px;min-width:0}
