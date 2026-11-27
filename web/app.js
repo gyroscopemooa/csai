@@ -671,11 +671,12 @@ async function setConsultationMode(agent,channel,manual){if(!confirm(manual?'이
 
 let externalReplyBusy=false,externalReplyDraft=null;
 function externalReplyControls(t){
- const info=t.channel_reply||{},jobs=info.jobs||[];
+ const info=t.channel_reply||{},jobs=info.jobs||[],inbound=info.inbound||[];
  const statuses={queued:'발송 대기',running:'발송 중',sent:'발송 확인',failed:'발송 취소·실패',unknown:'발송 결과 미확인'};
  const history=jobs.map(x=>'<p class="muted">'+e(statuses[x.status]||x.status)+' · '+e(new Date(x.created*1000).toLocaleString('ko-KR'))+(x.error?' · '+e(x.error):'')+'</p>').join('');
+ const autoHistory=inbound.map(x=>'<p class="muted">'+e(({sent:'외부 응답 전송 확인',held:'수동 상담 접수',failed:'외부 응답 실패·미확인',running:'외부 응답 처리 중',cancelled:'처리 취소'})[x.status]||x.status)+' · '+e(new Date(x.created*1000).toLocaleString('ko-KR'))+(x.error?' · '+e(x.error):'')+'</p>').join('');
  const busy=jobs.some(x=>['queued','running'].includes(x.status));
- return (t.kind==='naver'&&info.available?label('네이버 톡톡 직접 답변','<textarea id="external-reply" maxlength="1000"></textarea>')+(busy?'<p class="muted">이전 답변 발송 중</p>':btn('네이버로 전송','sendExternalReply()','primary')):'<p class="muted">'+(t.kind==='kakao'?'카카오 상담톡 별도 연동 전에는 채널 관리자에서 직접 답변하세요.':'네이버 직접 발송 허용 및 새 고객 메시지 수신 후 전송할 수 있습니다.')+'</p>')+history+btn('발송 상태 새로고침','render()');
+ return (t.kind==='naver'&&info.available?label('네이버 톡톡 직접 답변','<textarea id="external-reply" maxlength="1000"></textarea>')+(busy?'<p class="muted">이전 답변 발송 중</p>':btn('네이버로 전송','sendExternalReply()','primary')):'<p class="muted">'+(t.kind==='kakao'?'카카오 상담톡 별도 연동 전에는 채널 관리자에서 직접 답변하세요.':'네이버 직접 발송 허용 및 새 고객 메시지 수신 후 전송할 수 있습니다.')+'</p>')+history+(autoHistory?'<details><summary>외부 채널 처리 내역</summary>'+autoHistory+'</details>':'')+btn('발송 상태 새로고침','render()');
 }
 async function sendExternalReply(){
  if(externalReplyBusy)return;

@@ -43,7 +43,8 @@ def test_staff_outbound_success_and_idempotency(monkeypatch):
     monkeypatch.setattr(channel_live.httpx,'post',lambda *a,**k:(_ for _ in ()).throw(TimeoutError()))
     post(c,path,body|{'client':'test2'})
     assert channel_live.process_staff_one(ws)
-    assert c.get('/api/inbox/'+tid).json()['channel_reply']['jobs'][0]['status'] in ('unknown','sent')
+    jobs=c.get('/api/inbox/'+tid).json()['channel_reply']['jobs']
+    assert {x['status'] for x in jobs}=={'unknown','sent'}
     assert not channel_live.process_staff_one(ws)
     assert len(c.get('/api/inbox/'+tid).json()['messages'])==1
 

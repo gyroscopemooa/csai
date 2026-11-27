@@ -14,6 +14,7 @@ def init_channels():
         c.executescript('''
         CREATE TABLE IF NOT EXISTS channel_link(ws TEXT NOT NULL,channel TEXT NOT NULL,secret_hash TEXT NOT NULL UNIQUE,secret TEXT NOT NULL,credential TEXT NOT NULL,partner TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(ws,channel));
         CREATE TABLE IF NOT EXISTS channel_destination(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,link_hash TEXT NOT NULL,partner TEXT NOT NULL,recipient TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE TABLE IF NOT EXISTS channel_job_thread(ws TEXT NOT NULL,job TEXT NOT NULL,thread TEXT NOT NULL,PRIMARY KEY(ws,job));
         CREATE TABLE IF NOT EXISTS channel_staff_outbox(id TEXT PRIMARY KEY,ws TEXT NOT NULL,thread TEXT NOT NULL,client TEXT NOT NULL,channel TEXT NOT NULL,link_hash TEXT NOT NULL,partner TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL,error TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,UNIQUE(ws,thread,client));
         CREATE TABLE IF NOT EXISTS channel_job(id TEXT PRIMARY KEY,ws TEXT NOT NULL,channel TEXT NOT NULL,event_key TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL,error TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,UNIQUE(ws,channel,event_key));
         ''')
@@ -49,7 +50,8 @@ def staff_info(c,ws,t):
     try:available=bool(staff_destination(c,ws,t))
     except Exception:pass
     jobs=rows(c,'SELECT id,status,error,created,updated FROM channel_staff_outbox WHERE ws=? AND thread=? ORDER BY created DESC LIMIT 20',(ws,t['id']))
-    return {'available':available,'jobs':jobs}
+    inbound=rows(c,'SELECT j.id,j.status,j.error,j.created,j.updated FROM channel_job j JOIN channel_job_thread jt ON jt.ws=j.ws AND jt.job=j.id WHERE j.ws=? AND jt.thread=? ORDER BY j.created DESC LIMIT 20',(ws,t['id']))
+    return {'available':available,'jobs':jobs,'inbound':inbound}
 
 def staff_pending(c,ws,thread):
     return one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND thread=? AND status IN ('queued','running')",(ws,thread))
@@ -122,13 +124,13 @@ def setup(ch:str,body:dict,ws=Depends(ident)):
     if ch=='naver':require(cred,'보내기 API Authorization 필요',422)
     if ch=='kakao' and body.get('active'):require(bool(os.getenv('KAKAO_CALLBACK_HOSTS')),'공식 콜백 호스트 확인 후 등록 필요',503)
     with db(True) as c:
-        require(ch in entitlements(getw(c,ws)));require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status IN ('queued','running')",(ws,ch)),'직접 답변 발송 완료 후 연결을 변경하세요.',409);old=one(c,'SELECT * FROM channel_link WHERE ws=? AND channel=?',(ws,ch));st=unlock(old['secret']) if old and old['partner']==partner else secrets.token_urlsafe(32)
+        require(ch in entitlements(getw(c,ws)));require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'외부 메시지 처리 완료 후 연결을 변경하세요.',409);require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status IN ('queued','running')",(ws,ch)),'직접 답변 발송 완료 후 연결을 변경하세요.',409);old=one(c,'SELECT * FROM channel_link WHERE ws=? AND channel=?',(ws,ch));st=unlock(old['secret']) if old and old['partner']==partner else secrets.token_urlsafe(32)
         active=int(body.get('active') is True);require(not active or enabled(),'HTTPS 및 서버 연동 활성화 필요',503)
         c.execute('INSERT INTO channel_link VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,channel) DO UPDATE SET secret_hash=excluded.secret_hash,secret=excluded.secret,credential=excluded.credential,partner=excluded.partner,active=excluded.active',(ws,ch,digest(st),lock_text(st),lock_text(cred),partner,active))
     return {'webhook':APP_URL+'/hooks/'+ch+'/'+st,'active':bool(active)}
 @app.post('/api/integrations/channels/{ch}/disconnect')
 def disconnect(ch:str,ws=Depends(ident)):
-    with db(True) as c:require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'직접 답변 발송 완료 후 연결을 해제하세요.',409);c.execute("UPDATE channel_staff_outbox SET status='failed',error='연결 해제',body='',updated=? WHERE ws=? AND channel=? AND status='queued'",(now(),ws,ch));c.execute('DELETE FROM channel_link WHERE ws=? AND channel=?',(ws,ch));c.execute("UPDATE channel_job SET status='cancelled',body='' WHERE ws=? AND channel=? AND status='queued'",(ws,ch))
+    with db(True) as c:require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'외부 메시지 처리 완료 후 연결을 해제하세요.',409);require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'직접 답변 발송 완료 후 연결을 해제하세요.',409);c.execute("UPDATE channel_staff_outbox SET status='failed',error='연결 해제',body='',updated=? WHERE ws=? AND channel=? AND status='queued'",(now(),ws,ch));c.execute('DELETE FROM channel_link WHERE ws=? AND channel=?',(ws,ch));c.execute('DELETE FROM channel_destination WHERE ws=? AND channel=?',(ws,ch));c.execute("UPDATE channel_job SET status='cancelled',body='' WHERE ws=? AND channel=? AND status='queued'",(ws,ch))
     return {'ok':True}
 @app.post('/hooks/{ch}/{secret}')
 def ingress(ch:str,secret:str,body:dict,req:Request):
@@ -151,6 +153,8 @@ def ingress(ch:str,secret:str,body:dict,req:Request):
 def process_one(ws=None):
     """Returns True if a job was handled. Ambiguous outbound failure is not auto-retried."""
     with db(True) as c:
+        # Stale claims are marked unknown, not retried. Allow a later message to proceed.
+        c.execute("UPDATE channel_job SET status='failed',error='처리 결과 미확인 · 재전송 금지',body='',updated=? WHERE status='running' AND updated<?",(now(),now()-900))
         sql="SELECT * FROM channel_job j WHERE status='queued' AND NOT EXISTS(SELECT 1 FROM channel_staff_outbox o WHERE o.ws=j.ws AND o.channel=j.channel AND o.status='running') AND NOT EXISTS(SELECT 1 FROM channel_job r WHERE r.ws=j.ws AND r.channel=j.channel AND r.status='running')";args=()
         if ws:sql+=' AND j.ws=?';args=(ws,)
         j=one(c,sql+' ORDER BY rowid LIMIT 1',args)
@@ -169,17 +173,19 @@ def process_one(ws=None):
             if not token or not t or not dest or dest['link_hash']!=link['secret_hash'] or dest['partner']!=link['partner'] or not one(c,'SELECT token FROM visitor WHERE ws=? AND token=? AND expires>?',(ws,token,now())):
                 token=uid();tid=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,ws,now()+86400,'public'));c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(tid,ws,token,ch,now(),int(loads(w['settings']).get('consultation_mode')=='staff')));c.execute('INSERT INTO channel_session VALUES(?,?,?,?) ON CONFLICT(ws,channel,external_user) DO UPDATE SET token=excluded.token',(ws,ch,external,token))
             else:tid=t['id']
+            c.execute('INSERT INTO channel_job_thread VALUES(?,?,?) ON CONFLICT(ws,job) DO NOTHING',(ws,j['id'],tid))
             c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch=='naver' else '',now()))
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']
         if r.get('booking'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+w['slug']
         if ch=='naver' and r.get('manual'):ok=True;state='held'
         elif ch=='naver':resp=httpx.post('https://gw.talk.naver.com/chatbot/v1/event',headers={'Authorization':unlock(link['credential'])},json=naver_out(body['user'],reply),timeout=10,follow_redirects=False);ok=naver_success(resp)
         else:
+            if now()-j['created']>55:raise RuntimeError('카카오 콜백 유효 시간 초과 · 답변 전송 안 됨')
             if not checked_callback(body['target']):raise RuntimeError('콜백 호스트 불일치')
             resp=httpx.post(body['target'],json=kakao_out(reply),timeout=10,follow_redirects=False);ok=resp.is_success and resp.json().get('status')=='SUCCESS'
         if not ok:raise RuntimeError('외부 채널 응답 실패')
     except Exception as e:state='failed';error=type(e).__name__+': '+('외부 채널 처리 실패 또는 응답 미확인' if not isinstance(e,RuntimeError) else str(e)[:100])
-    with db(True) as c:c.execute('UPDATE channel_job SET status=?,error=?,body=\'\',updated=? WHERE id=?',(state,error,now(),j['id']))
+    with db(True) as c:c.execute('UPDATE channel_job SET status=?,error=?,body=\'\',updated=? WHERE id=? AND status=\'running\'',(state,error,now(),j['id']))
     return True
 @app.post('/api/integrations/channel-jobs/process')
 def process(ws=Depends(ident)):
