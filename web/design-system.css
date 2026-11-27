@@ -1404,8 +1404,11 @@ input.ui-switch[type="checkbox"] { width: 36px; height: 20px; border: 0; }
 @media (pointer: coarse) {
   .reply-history-keys { display: none; }
 }
-.inbox-toolbar-actions { margin: 0; }
-.inbox-toolbar-actions .ui-button { min-height: var(--ds-control-md); }
+.inbox-toolbar-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 0; }
+.inbox-tool-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 8px; min-width: 0; }
+.inbox-toolbar-actions .ui-button { min-height: var(--ds-control-md); width: 100%; padding-inline: 6px; font-size: var(--ds-text-xs); white-space: normal; }
+.inbox-tool-row .inbox-completion-control { justify-content: center; font-size: var(--ds-text-xs); gap: 5px; }
+.inbox-tool-links .ui-button { background: transparent; }
 @container (min-width: 780px) {
   .inbox-filter { grid-template-columns: minmax(450px, 3fr) minmax(240px, 2fr); }
 }
@@ -1582,3 +1585,10 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .assistance-strip > .ui-inline { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
 .assistance-strip > .ui-inline > :is(h2,p) { margin:0; }
 .assistance-strip .ui-helper { flex:1 1 auto; }
+
+/* Keep message copying available without adding a full button row to every bubble. */
+.inbox-conversation .bubble > .ui-copy-message { display: inline-flex; vertical-align: middle; align-items: center; justify-content: center; width: 32px; min-width: 32px; height: 32px; min-height: 32px; margin: 0 0 0 4px; padding: 5px; border-radius: 7px; opacity: .8; }
+.inbox-conversation .bubble > .ui-copy-message > .ui-copy-clip { display: none; }
+.inbox-conversation .bubble > .ui-copy-message:is(:hover,:focus-visible,[data-copied]) { opacity: 1; }
+.inbox-conversation .bubble > [data-chat-copy-text] { display: inline; }
+@media(max-width:700px){.inbox-toolbar-actions .inbox-tool-links .ui-button { min-height: 36px; }.inbox-toolbar-actions .inbox-tool-row .ui-button { padding-block: 6px; }}
