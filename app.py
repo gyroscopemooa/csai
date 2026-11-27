@@ -521,6 +521,7 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
         for r in items:
             m=one(c,"SELECT COUNT(*) AS n,COALESCE(MAX(m.rowid),0) AS last_customer FROM message m WHERE m.ws=? AND m.thread=? AND m.role='user' AND m.created>=? AND m.rowid>COALESCE((SELECT seen FROM inbox_read WHERE ws=? AND thread=?),0)",(ws,r['id'],cutoff,ws,r['id']))
             last=one(c,'SELECT created AS activity,rowid AS seq FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid DESC LIMIT 1',(ws,r['id'],cutoff))
+            r['assignment']=one(c,'SELECT assignee,priority,due_date FROM inbox_assignment WHERE ws=? AND thread=?',(ws,r['id'])) or {'assignee':'','priority':'normal','due_date':''}
             r.update(unread=0 if r['sample'] or r['kind']=='test' else m['n'],activity=last['activity'] if last else r['created'],activity_seq=last['seq'] if last else 0,paused_by=workflow_controls.paused_by(scopes,r['agent'],r['kind']))
         return sorted(items,key=lambda r:(r['activity'],r['activity_seq'],r['id']),reverse=True)
 @app.post('/api/inbox/{i}/read')
@@ -531,6 +532,30 @@ def inbox_mark_read(i:str,body:dict,ws=Depends(ident)):
         m=one(c,"SELECT rowid AS seq FROM message WHERE ws=? AND thread=? AND id=? AND role='user' AND created>=?",(ws,i,body.get('message'),history_cutoff(w)))
         require(m,'확인한 고객 메시지가 필요합니다.',422)
         c.execute('INSERT INTO inbox_read VALUES(?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET seen=excluded.seen WHERE inbox_read.seen<excluded.seen',(ws,i,m['seq']))
+    return {'ok':True}
+
+@app.get('/api/inbox/{i}/assignment')
+def inbox_assignment(i:str,ws=Depends(ident)):
+    with db() as c:
+        w=getw(c,ws);t=one(c,'SELECT kind FROM thread WHERE ws=? AND id=?',(ws,i))
+        require(t and thread_accessible(c,w,i),'상담 없음',404)
+        require(t['kind']!='test' and not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'실제 상담만 배정 가능',409)
+        return one(c,'SELECT assignee,priority,due_date,updated FROM inbox_assignment WHERE ws=? AND thread=?',(ws,i)) or {'assignee':'','priority':'normal','due_date':'','updated':0}
+
+@app.post('/api/inbox/{i}/assignment')
+def save_inbox_assignment(i:str,body:dict,ws=Depends(ident)):
+    name=body.get('assignee','');priority=body.get('priority','normal');due=body.get('due_date','')
+    require(isinstance(name,str) and len(name.strip())<=80 and isinstance(priority,str) and priority in ('low','normal','high','urgent') and isinstance(due,str),'담당자 또는 우선순위 오류',422)
+    if due:
+        try:
+            require(bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}',due)),'기한 형식 오류',422)
+            datetime.strptime(due,'%Y-%m-%d')
+        except ValueError:fail(422,'기한 형식 오류')
+    with db(True) as c:
+        w=getw(c,ws);t=one(c,'SELECT kind FROM thread WHERE ws=? AND id=?',(ws,i))
+        require(t and thread_accessible(c,w,i),'상담 없음',404)
+        require(t['kind']!='test' and not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'실제 상담만 배정 가능',409)
+        c.execute('INSERT INTO inbox_assignment VALUES(?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET assignee=excluded.assignee,priority=excluded.priority,due_date=excluded.due_date,updated=excluded.updated',(ws,i,name.strip(),priority,due,now()))
     return {'ok':True}
 
 @app.get('/api/inbox/{i}/annotation')
