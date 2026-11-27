@@ -701,7 +701,7 @@ def export(ws=Depends(ident)):
         require(len(rr)<=50000,'상담 기록이 너무 많습니다. 관리자에게 문의하세요.',422)
         add_sheet(b,'상담 기록',['상담 ID','역할','본문','일시 UTC'],[(r['thread'],r['role'],r['body'],datetime.fromtimestamp(r['created'],timezone.utc).isoformat()) for r in rr])
         if 'crm' in a:
-            contacts=rows(c,'SELECT id,name,email,phone,notes FROM crm_contact WHERE ws=? ORDER BY updated DESC',(ws,))
+            contacts=rows(c,"SELECT id,name,email,phone,notes FROM crm_contact WHERE ws=? AND agent='' ORDER BY updated DESC",(ws,))
             add_sheet(b,'고객',['고객 ID','이름','이메일','전화번호','메모'],[tuple(r[k] for k in ('id','name','email','phone','notes')) for r in contacts])
         if 'calendar' in a:
             reservations=rows(c,"SELECT b.id,b.start,b.end,b.status FROM booking b WHERE b.ws=? AND b.status NOT IN ('draft','superseded') AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id) ORDER BY b.start",(ws,))

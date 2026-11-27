@@ -21,6 +21,9 @@ def init():
         CREATE TABLE IF NOT EXISTS quote_suggestion(ws TEXT NOT NULL,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,items TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS quote_offer(id TEXT PRIMARY KEY,ws TEXT NOT NULL,work TEXT NOT NULL REFERENCES work(id) ON DELETE CASCADE,thread TEXT NOT NULL REFERENCES thread(id) ON DELETE CASCADE,items TEXT NOT NULL,amount INTEGER NOT NULL CHECK(amount>=0),note TEXT NOT NULL,status TEXT NOT NULL,created INTEGER NOT NULL,sent INTEGER);
         """)
+        if "agent" not in [r[1] for r in c.execute("PRAGMA table_info(crm_contact)")]:
+            c.execute("ALTER TABLE crm_contact ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+        c.execute("CREATE INDEX IF NOT EXISTS crm_contact_scope ON crm_contact(ws,agent,updated)")
 init()
 
 def access(c,ws,key):require(key in entitlements(getw(c,ws)))
@@ -74,37 +77,50 @@ def contact_fields(body,old=None):
     require(not out['phone'] or bool(re.fullmatch(r'[+\d ()-]{7,40}',out['phone'])),'전화번호 형식 오류',422)
     return out
 
-def link_contact(c,ws,i,thread):
-    require(one(c,"SELECT id FROM thread WHERE id=? AND ws=? AND kind<>'test'",(thread,ws)),'고객 상담 없음',404)
+def crm_access(c,ws,agent,write=False):
+    import branding
+    access(c,ws,'crm')
+    require(isinstance(agent,str),'브랜드 형식 오류',422)
+    w=getw(c,ws);branding.owned_agent(c,w,agent)
+    if agent and write:
+        require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent)),'보관된 브랜드입니다.',409)
+    return w
+
+def link_contact(c,ws,i,thread,agent):
+    require(one(c,"SELECT t.id FROM thread t JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE t.id=? AND t.ws=? AND t.kind<>'test' AND COALESCE(v.agent,'')=? AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(thread,ws,agent)),'같은 브랜드의 실제 고객 상담만 연결 가능합니다.',404)
+    require(thread_accessible(c,getw(c,ws),thread),'상담 조회 범위 초과',404)
     c.execute('INSERT INTO crm_thread VALUES(?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET contact=excluded.contact',(ws,i,thread))
 
 @app.get('/api/crm/contacts')
-def contacts(ws=Depends(ident)):
+def contacts(agent:str='',ws=Depends(ident)):
     with db() as c:
-        access(c,ws,'crm');result=rows(c,'SELECT * FROM crm_contact WHERE ws=? ORDER BY updated DESC LIMIT 500',(ws,))
-        for r in result:r['threads']=rows(c,'SELECT thread FROM crm_thread WHERE ws=? AND contact=?',(ws,r['id']))
+        w=crm_access(c,ws,agent);result=rows(c,'SELECT * FROM crm_contact WHERE ws=? AND agent=? ORDER BY updated DESC LIMIT 500',(ws,agent))
+        for r in result:
+            links=rows(c,"SELECT l.thread FROM crm_thread l JOIN thread t ON t.ws=l.ws AND t.id=l.thread JOIN visitor v ON v.ws=t.ws AND v.token=t.visitor WHERE l.ws=? AND l.contact=? AND COALESCE(v.agent,'')=? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id)",(ws,r['id'],agent))
+            r['threads']=[x for x in links if thread_accessible(c,w,x['thread'])]
         return result
 
 @app.post('/api/crm/contacts')
 def contact_create(body:dict,ws=Depends(ident)):
-    f=contact_fields(body);i=uid()
+    f=contact_fields(body);i=uid();agent=body.get('agent','')
     with db(True) as c:
-        access(c,ws,'crm');c.execute('INSERT INTO crm_contact VALUES(?,?,?,?,?,?,?,?)',(i,ws,f['name'],f['email'],f['phone'],f['notes'],now(),now()))
-        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100))
-    return {'id':i}
+        crm_access(c,ws,agent,True);c.execute('INSERT INTO crm_contact(id,ws,name,email,phone,notes,created,updated,agent) VALUES(?,?,?,?,?,?,?,?,?)',(i,ws,f['name'],f['email'],f['phone'],f['notes'],now(),now(),agent))
+        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100),agent)
+    return {'id':i,'agent':agent}
 
 @app.patch('/api/crm/contacts/{i}')
 def contact_edit(i:str,body:dict,ws=Depends(ident)):
+    agent=body.get('agent','')
     with db(True) as c:
-        access(c,ws,'crm');r=one(c,'SELECT * FROM crm_contact WHERE id=? AND ws=?',(i,ws));require(r,'고객 없음',404);f=contact_fields(body,r)
-        c.execute('UPDATE crm_contact SET name=?,email=?,phone=?,notes=?,updated=? WHERE id=? AND ws=?',(f['name'],f['email'],f['phone'],f['notes'],now(),i,ws))
-        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100))
+        crm_access(c,ws,agent,True);r=one(c,'SELECT * FROM crm_contact WHERE id=? AND ws=? AND agent=?',(i,ws,agent));require(r,'고객 없음',404);f=contact_fields(body,r)
+        c.execute('UPDATE crm_contact SET name=?,email=?,phone=?,notes=?,updated=? WHERE id=? AND ws=? AND agent=?',(f['name'],f['email'],f['phone'],f['notes'],now(),i,ws,agent))
+        if body.get('thread'):link_contact(c,ws,i,bounded(body['thread'],100),agent)
     return {'ok':True}
 
 @app.delete('/api/crm/contacts/{i}')
-def contact_delete(i:str,ws=Depends(ident)):
+def contact_delete(i:str,agent:str='',ws=Depends(ident)):
     with db(True) as c:
-        access(c,ws,'crm');require(one(c,'SELECT id FROM crm_contact WHERE id=? AND ws=?',(i,ws)),'고객 없음',404);c.execute('DELETE FROM crm_contact WHERE id=? AND ws=?',(i,ws))
+        crm_access(c,ws,agent);require(one(c,'SELECT id FROM crm_contact WHERE id=? AND ws=? AND agent=?',(i,ws,agent)),'고객 없음',404);c.execute('DELETE FROM crm_contact WHERE id=? AND ws=? AND agent=?',(i,ws,agent))
     return {'ok':True}
 
 @app.get('/api/quotes/items')
