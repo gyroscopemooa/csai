@@ -216,7 +216,7 @@ function modal(title,html,{closeLabel='닫기',dismissOnBackdrop=true,canClose,o
 async function act(fn){try{await fn()}catch(x){toast(x.message)}}
 async function refresh(){me=await api('/api/me')}
 async function switchDemoView(mode){if(educationBusy){toast('진행 중인 교육 작업을 마친 뒤 전환해 주세요.');return;}if(!['free','subscriber','subscriber_agent','developer'].includes(mode))return;await act(async()=>{await api('/api/demo/view',{mode});chatSession=null;chatMessages=[];threadId=null;previewAgent='';brandEditor='';inboxAgent='all';qualityAgent='';calendarAgent='';crmAgent='';calendarProfile=null;calendarRange=null;calendarRangeAnchor='';calendarRangeMode=false;selectedDate=null;estimate=null;educationAgent='';trainingChat=[];resetEducationDraft();$('#education-workspace')?.remove();await refresh();await render();toast('로컬 화면을 전환했습니다. 실제 결제는 없습니다.')})}
-function freeFeaturePreview(){return me?.plan==='free'&&!me.operator;}
+function freeFeaturePreview(){return me?.plan==='free'&&!me.operator&&!me.trial;}
 function previewNotice(key,description){
  const action=key?`CSAISetup.add('${key}')`:"go('pricing')";
  const addon=key?cfg.catalog.addons.find(a=>a.id===key):null;
@@ -2217,18 +2217,18 @@ const oldAlerts=alerts;
 alerts=async function(){
  let html=await oldAlerts();
  html+=focusEvents(await api('/api/events'));
- if(!has('email'))return html;
- const n=await api('/api/notifications');
+ const readOnly=!has('email');if(readOnly&&!freeFeaturePreview())return html;
+ const n=readOnly?{settings:{email:'',enabled:false},deliveries:[],live_enabled:false,auto_enabled:false}:await api('/api/notifications');
  const status=n.live_enabled?'실제 발송 활성화 · 검증 필요':cfg.demo?'로컬 모의 전송 · 이메일은 발송되지 않음':'실제 발송 비활성화';
  const controls=stack(
   actionGroup({keepSize:true},
-   btn('저장',"act(async()=>{await api('/api/notifications',{email:val('notify-email'),enabled:checked('notify-enabled')});render()})"),
-   btn('대기 알림 보내기',"act(async()=>{let r=await api('/api/notifications/dispatch',{});toast('처리 '+r.results.length+'건');render()})",'primary')
+   btn('저장',readOnly?"CSAISetup.preview('email')":"act(async()=>{await api('/api/notifications',{email:val('notify-email'),enabled:checked('notify-enabled')});render()})"),
+   btn('대기 알림 보내기',readOnly?"CSAISetup.preview('email')":"act(async()=>{let r=await api('/api/notifications/dispatch',{});toast('처리 '+r.results.length+'건');render()})",'primary')
   )+
   helperText(status+' / 관련 알림 옵션 필요 / '+(n.auto_enabled?'자동 발송 설정 ON (워커 실행 필요)':'현재 수동 전송')),
   {gap:'compact'}
  );
- return html+card('이메일 알림',stack(
+ return html+(readOnly?previewNotice('email','이메일 알림 설정 체험'):'')+card('이메일 알림',stack(
   `<div class="alert-fields">${stack(label('수신 주소',input('notify-email',n.settings.email||n.verified_email||'','email'))+
    helperText(cfg.demo?'개발 환경에서는 발송하지 않습니다.':'실제 이메일은 확인된 로그인 주소로만 발송합니다.')+
    `<label><input type="checkbox" class="ui-switch" id="notify-enabled" ${n.settings.enabled?'checked':''}> 전송 활성화</label>`)}</div>`+
@@ -2662,10 +2662,10 @@ function developerKeyList(keys){
   ||emptyState('발급한 키가 없습니다.');
 }
 async function developer(){
- if(!has('external_api'))return pageTop('개발자 센터','구매한 기능을 외부 서비스에서 호출합니다.')+locked('external_api','API 키와 상담·예약·업무·교육 API를 제공합니다.');
- const x=await api('/api/developer/keys');
+ const readOnly=!has('external_api');if(readOnly&&!freeFeaturePreview())return pageTop('개발자 센터','구매한 기능을 외부 서비스에서 호출합니다.')+locked('external_api','API 키와 상담·예약·업무·교육 API를 제공합니다.');
+ const x=readOnly?{scopes:[],keys:[]}:await api('/api/developer/keys');
  const summary=developerSetupStatus(x);
- const tasks=card('API 연동 체크리스트',`<div id="developer-tasks" data-summary="${e(JSON.stringify(summary))}">${developerTaskList(summary)}</div>`+
+ const tasks=card('API 연동 체크리스트',`<div id="developer-tasks" data-summary="${e(JSON.stringify(summary))}">${readOnly?helperText('구독 후 API 권한 및 키 발급 상태를 확인할 수 있습니다.'):developerTaskList(summary)}</div>`+
   actionFooter([btn('상태 새로고침','refreshDeveloperTasks(this)','secondary ui-sm')],{divided:false}));
  const form=card('API 키 발급',`<form onsubmit="event.preventDefault();createDevKey(this)">
   ${label('키 이름',input('dev-key-name','외부 서비스'))}
@@ -2674,12 +2674,13 @@ async function developer(){
   </fieldset>
   ${actionFooter(['<button id="dev-issue-button" class="ui-button primary" type="submit">API 키 발급</button>'],{divided:false})}
  </form>`);
- return pageTop('개발자 센터','서버 전용 API 키 · 기존 상담량 및 교육 크레딧 사용')+
+ return (readOnly?previewNotice('external_api','API 연동 화면 체험'):'')+pageTop('개발자 센터','서버 전용 API 키 · 기존 상담량 및 교육 크레딧 사용')+
   splitContent(tasks,form,{balanced:true})+
   card('API 키 관리',`<div id="developer-key-list">${developerKeyList(x.keys)}</div>`)+
   card('개발 문서','<p>Authorization: Bearer YOUR_KEY</p><p>POST /v1/chat/sessions → POST /v1/chat</p><p>구매 기능에 따라 예약, 업무, 교육, 통계 API를 사용할 수 있습니다.</p><a href="/api/docs" target="_blank" rel="noopener noreferrer">API 문서 열기</a><p class="muted">키는 서버 환경변수에 보관하고 브라우저 코드에 노출하지 마세요.</p>');
 }
 async function refreshDeveloperTasks(button){
+ if(!requirePreviewAccess('external_api'))return;
  const panel=$('#developer-tasks'),issue=$('#dev-issue-button');
  if(button.disabled||issue.disabled)return;
  button.disabled=true;button.setAttribute('aria-busy','true');
@@ -2694,6 +2695,7 @@ async function refreshDeveloperTasks(button){
  finally{button.disabled=false;button.removeAttribute('aria-busy');}
 }
 async function createDevKey(form){
+ if(!requirePreviewAccess('external_api'))return;
  const button=form.querySelector('[type="submit"]');
  const panel=$('#developer-tasks');
  if(button.disabled||!panel)return;
@@ -2774,29 +2776,29 @@ async function analyticsPanel(){let r=await api('/api/analytics?days='+analytics
 const reportAlerts=alerts;
 alerts=async function(){
  const html=await reportAlerts();
- if(!has('report'))return html;
- const r=await api('/api/reports');
+ const readOnly=!has('report');if(readOnly&&!freeFeaturePreview())return html;
+ const r=readOnly?{settings:{frequency:'daily',enabled:false},worker_enabled:false,reports:[]}:await api('/api/reports');
  const settings=stack(label('생성 주기',select('report-frequency',[['daily','매일'],['weekly','매주']],r.settings.frequency))+
   `<label><input class="check" type="checkbox" id="report-enabled" ${r.settings.enabled?'checked':''}> 자동 생성</label>`);
  const actions=stack(helperText(`${r.worker_enabled?'자동 워커 설정됨':'자동 워커 환경 설정 필요'} · 지난 완료 기간 기준 집계`)+
   actionGroup({keepSize:true},btn('설정 저장','saveReportSettings()','primary'),btn('리포트 생성','generateReport()')),{gap:'compact'});
  const reports=r.reports.map(x=>`<div class="line"><b>${e(x.period)}</b><p>고객 상담 ${x.summary.threads}건 · 완료 ${x.summary.resolved}건 · 미학습 ${x.summary.unknown}건 · 메시지 ${x.summary.messages}개</p></div>`).join('');
- return html+card('일간·주간 상담 리포트',stack(`<div class="alert-fields">${settings}</div>`+actions+
+ return html+(readOnly?previewNotice('report','상담 리포트 설정 체험'):'')+card('일간·주간 상담 리포트',stack(`<div class="alert-fields">${settings}</div>`+actions+
   (reports?divider()+section('report-history','생성 내역',reports):'')));
 }
-async function saveReportSettings(){await act(async()=>{await api('/api/reports/settings',{frequency:val('report-frequency'),enabled:checked('report-enabled')});toast('설정 저장 완료');render()})}
-async function generateReport(){await act(async()=>{await api('/api/reports/generate',{});toast('리포트 생성 완료');render()})}
+async function saveReportSettings(){if(!requirePreviewAccess('report'))return;await act(async()=>{await api('/api/reports/settings',{frequency:val('report-frequency'),enabled:checked('report-enabled')});toast('설정 저장 완료');render()})}
+async function generateReport(){if(!requirePreviewAccess('report'))return;await act(async()=>{await api('/api/reports/generate',{});toast('리포트 생성 완료');render()})}
 
 const pushAlerts=alerts;
 alerts=async function(){
  const html=await pushAlerts();
- if(!has('push'))return html+locked('push','브라우저가 닫혀 있어도 지원되는 기기에서 업무 알림을 받을 수 있습니다.');
- const r=await api('/api/push'),current=localStorage.getItem('csai-push-id');
+ const readOnly=!has('push');if(readOnly&&!freeFeaturePreview())return html+locked('push','브라우저가 닫혀 있어도 지원되는 기기에서 업무 알림을 받을 수 있습니다.');
+ const r=readOnly?{configured:false,live:false,devices:[],kinds:[],deliveries:[]}:await api('/api/push'),current=localStorage.getItem('csai-push-id');
  const status=r.configured?(r.live?'실제 발송 활성화 · 기기 확인 필요':'모의 발송 모드'):'VAPID 환경변수 설정 필요';
  const settings=stack(
   helperText(status+' · 구매한 알림 종류만 발송 · HTTPS 필요. iPhone은 홈 화면에 추가 후 실행하세요.')+
   helperText('화면이 닫혀 있을 때는 기기의 기본 알림음·진동 설정을 따릅니다. 무음 및 방해금지 설정을 강제로 해제하지 않습니다.')+
-  actionGroup({keepSize:true},btn('이 기기 알림 등록','registerPush()','primary'),btn('이 기기 알림 해제','unregisterPush()'),btn('기기 알림 테스트','testPushOnDevice()')),
+  actionGroup({keepSize:true},btn('이 기기 알림 등록',readOnly?"CSAISetup.preview('push')":'registerPush()','primary'),btn('이 기기 알림 해제',readOnly?"CSAISetup.preview('push')":'unregisterPush()'),btn('기기 알림 테스트',readOnly?"CSAISetup.preview('push')":'testPushOnDevice()')),
   {gap:'compact'});
  const devices=r.devices.map(d=>`<div class="line">
   <b>${d.id===current?'현재 기기':'등록 기기'}</b><p>${e(new Date(d.created*1000).toLocaleString())}</p>
@@ -2808,10 +2810,10 @@ alerts=async function(){
  </div>`).join('');
  const sound=section('foreground-sound','화면이 열려 있을 때 추가 효과음',stack(
   helperText('이 브라우저에서 직접 켜면 화면이 열린 동안만 효과음을 재생합니다. 백그라운드 커스텀 사운드는 지원하지 않습니다.')+
-  actionGroup({keepSize:true},btn('효과음 켜기·미리 듣기','enableForegroundSound()'),btn('효과음 끄기','disableForegroundSound()')),
+  actionGroup({keepSize:true},btn('효과음 켜기·미리 듣기',readOnly?"CSAISetup.preview('push')":'enableForegroundSound()'),btn('효과음 끄기',readOnly?"CSAISetup.preview('push')":'disableForegroundSound()')),
   {gap:'compact'}));
  const deliveries=r.deliveries.map(d=>helperText(new Date(d.created*1000).toLocaleString()+' · '+d.status)).join('');
- return html+card('모바일·PC 웹 푸시 알림',stack(settings+
+ return html+(readOnly?previewNotice('push','기기 알림 설정 체험'):'')+card('모바일·PC 웹 푸시 알림',stack(settings+
   (devices?divider()+section('push-devices','등록 기기',devices):'')+divider()+sound+
   (deliveries?divider()+section('push-deliveries','웹 푸시 발송 내역',stack(deliveries,{gap:'compact'})):'')
  ));
@@ -2830,8 +2832,8 @@ async function unregisterPush(){await act(async()=>{let id=localStorage.getItem(
 async function removePush(id){if(!confirm('이 기기의 푸시 등록을 해제할까요?'))return;await act(async()=>{if(localStorage.getItem('csai-push-id')===id){await unregisterPush();return}await api('/api/push/'+id,undefined,'DELETE');render()})}
 
 const domainChannels=channels;
-channels=async function(){let html=await domainChannels();if(!has('domain'))return html+locked('domain','보유한 도메인에서 고객 상담을 제공합니다.');let r=await api('/api/domains'),d=r.domain;return html+card('자체 도메인',label('고객 상담 도메인',input('domain-host',d?.hostname||'','text','chat.example.com'))+btn('등록','saveDomain()','primary')+`<p class="muted">${r.configured?'Cloudflare 확인 설정 완료':'운영자 Cloudflare for SaaS 설정 필요'}</p>`+(d?`<p>상태: ${d.active?'DNS·HTTPS 검증 완료':'확인 대기'}</p><p class="muted">아래 DNS 레코드를 추가하고 운영자가 Custom Hostname 및 TLS 인증서를 연결한 후 확인하세요.</p>`+table(['종류','이름','값'],[['TXT',d.txt_name,d.txt_value],['CNAME',d.hostname,r.target||'운영자 설정 필요']])+actionGroup({keepSize:true},btn('DNS 및 HTTPS 확인','verifyDomain()'),btn('연결 해제','removeDomain()'))+(d.active?`<p><a href="https://${e(d.hostname)}" target="_blank" rel="noopener noreferrer">고객 상담 열기</a></p>`:''):''))};
-async function saveDomain(){await act(async()=>{await api('/api/domains',{hostname:val('domain-host')});render()})}
+channels=async function(){let html=await domainChannels();const readOnly=!has('domain');if(readOnly&&!freeFeaturePreview())return html+locked('domain','보유한 도메인에서 고객 상담을 제공합니다.');let r=readOnly?{domain:null,configured:false}:await api('/api/domains'),d=r.domain;return html+(readOnly?previewNotice('domain','자체 도메인 설정 체험'):'')+card('자체 도메인',label('고객 상담 도메인',input('domain-host',d?.hostname||'','text','chat.example.com'))+btn('등록','saveDomain()','primary')+`<p class="muted">${r.configured?'Cloudflare 확인 설정 완료':'운영자 Cloudflare for SaaS 설정 필요'}</p>`+(d?`<p>상태: ${d.active?'DNS·HTTPS 검증 완료':'확인 대기'}</p><p class="muted">아래 DNS 레코드를 추가하고 운영자가 Custom Hostname 및 TLS 인증서를 연결한 후 확인하세요.</p>`+table(['종류','이름','값'],[['TXT',d.txt_name,d.txt_value],['CNAME',d.hostname,r.target||'운영자 설정 필요']])+actionGroup({keepSize:true},btn('DNS 및 HTTPS 확인','verifyDomain()'),btn('연결 해제','removeDomain()'))+(d.active?`<p><a href="https://${e(d.hostname)}" target="_blank" rel="noopener noreferrer">고객 상담 열기</a></p>`:''):''))};
+async function saveDomain(){if(!requirePreviewAccess('domain'))return;await act(async()=>{await api('/api/domains',{hostname:val('domain-host')});render()})}
 async function verifyDomain(){await act(async()=>{await api('/api/domains/verify',{});toast('DNS·HTTPS 확인 완료');render()})}
 async function removeDomain(){if(!confirm('자체 도메인 연결을 해제할까요?'))return;await act(async()=>{await api('/api/domains',undefined,'DELETE');render()})}
 
@@ -2860,10 +2862,10 @@ invites=async function(){let html=await messageInvites(),xs=await api('/api/oper
 async function verifyMessagePhone(ws,phone){if(!confirm('번호 소유권 및 수신 동의를 실제로 확인했습니까?'))return;await act(async()=>{await api('/api/operator/message-notifications/'+ws+'/verify',{phone,confirmed:true});render()})}
 
 const customDeveloper=developer;
-developer=async function(){let html=await customDeveloper();if(!has('custom_integration')||!has('external_api'))return html+locked('custom_integration','직접 승인한 업무를 외부 서비스의 서버 API로 실행하고 결과를 회수합니다.');let r=await api('/api/custom-workflows'),work=await api('/api/work');return html+card('맞춤 외부 업무 API',`<p class="muted">외부 시스템은 custom:jobs 권한 키로 대기 업무를 조회하고 claim → complete 순서로 실행합니다. 승인하지 않은 고객정보는 자동으로 보내지 않습니다.</p>`+label('업무 이름',input('custom-name'))+label('업무 설명',ta('custom-desc'))+btn('업무 등록','saveCustomWorkflow()','primary')+r.workflows.map(x=>`<div class="line"><b>${e(x.name)}</b><p>${e(x.description)} · ${x.active?'활성':'중지'}</p>${x.active?btn('중지',`disableCustomWorkflow('${x.id}')`):''}</div>`).join(''))+card('외부 실행 요청',label('업무 방식',select('custom-flow',r.workflows.filter(x=>x.active).map(x=>[x.id,x.name]),''))+label('연결 업무',select('custom-work',work.map(x=>[x.id,x.title]),''))+label('외부 전달 데이터 (JSON)',ta('custom-payload','{}'))+btn('내용 확인 및 실행 대기 등록','createCustomJob()','primary')+r.jobs.map(x=>`<div class="line"><b>${e(x.state)}</b><p>${e(x.result||'결과 대기')}</p>${x.state==='queued'?btn('취소',`cancelCustomJob('${x.id}')`):''}</div>`).join(''))};
-async function saveCustomWorkflow(){await act(async()=>{await api('/api/custom-workflows',{name:val('custom-name'),description:val('custom-desc')});render()})}
+developer=async function(){let html=await customDeveloper();const readOnly=!has('custom_integration')||!has('external_api');if(readOnly&&!freeFeaturePreview())return html+locked('custom_integration','직접 승인한 업무를 외부 서비스의 서버 API로 실행하고 결과를 회수합니다.');let r=readOnly?{workflows:[],jobs:[]}:await api('/api/custom-workflows'),work=readOnly?[]:await api('/api/work');return html+(readOnly?previewNotice('custom_integration','맞춤 외부 업무 설정 체험'):'')+card('맞춤 외부 업무 API',`<p class="muted">외부 시스템은 custom:jobs 권한 키로 대기 업무를 조회하고 claim → complete 순서로 실행합니다. 승인하지 않은 고객정보는 자동으로 보내지 않습니다.</p>`+label('업무 이름',input('custom-name'))+label('업무 설명',ta('custom-desc'))+btn('업무 등록','saveCustomWorkflow()','primary')+r.workflows.map(x=>`<div class="line"><b>${e(x.name)}</b><p>${e(x.description)} · ${x.active?'활성':'중지'}</p>${x.active?btn('중지',`disableCustomWorkflow('${x.id}')`):''}</div>`).join(''))+card('외부 실행 요청',label('업무 방식',select('custom-flow',r.workflows.filter(x=>x.active).map(x=>[x.id,x.name]),''))+label('연결 업무',select('custom-work',work.map(x=>[x.id,x.title]),''))+label('외부 전달 데이터 (JSON)',ta('custom-payload','{}'))+btn('내용 확인 및 실행 대기 등록','createCustomJob()','primary')+r.jobs.map(x=>`<div class="line"><b>${e(x.state)}</b><p>${e(x.result||'결과 대기')}</p>${x.state==='queued'?btn('취소',`cancelCustomJob('${x.id}')`):''}</div>`).join(''))};
+async function saveCustomWorkflow(){if(!requirePreviewAccess('custom_integration')||!requirePreviewAccess('external_api'))return;await act(async()=>{await api('/api/custom-workflows',{name:val('custom-name'),description:val('custom-desc')});render()})}
 async function disableCustomWorkflow(id){if(!confirm('업무를 중지하고 아직 실행되지 않은 요청을 취소할까요?'))return;await act(async()=>{await api('/api/custom-workflows/'+id+'/disable',{});render()})}
-async function createCustomJob(){if(!confirm('선택한 외부 시스템에 입력한 데이터가 전달될 수 있습니다. 계속할까요?'))return;await act(async()=>{await api('/api/custom-jobs',{workflow:val('custom-flow'),work:val('custom-work'),payload:JSON.parse(val('custom-payload')),confirmed:true});render()})}
+async function createCustomJob(){if(!requirePreviewAccess('custom_integration')||!requirePreviewAccess('external_api'))return;if(!confirm('선택한 외부 시스템에 입력한 데이터가 전달될 수 있습니다. 계속할까요?'))return;await act(async()=>{await api('/api/custom-jobs',{workflow:val('custom-flow'),work:val('custom-work'),payload:JSON.parse(val('custom-payload')),confirmed:true});render()})}
 async function cancelCustomJob(id){await act(async()=>{await api('/api/custom-jobs/'+id+'/cancel',{});render()})}
 
 async function sandboxFail(id){if(!confirm('테스트 주문을 결제 실패 상태로 변경할까요?'))return;await act(async()=>{await api('/api/billing/orders/'+id+'/sandbox-fail',{});await refresh();render()})}
