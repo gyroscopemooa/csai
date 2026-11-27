@@ -44,9 +44,16 @@ def link_by_hash(c,ch,key,ws=None):
         r=base|{'agent':''} if base else None
     return r if r and (ws is None or r['ws']==ws) else None
 
+def channel_allowed(w,ch):
+    if ch=='telegram':return telegram_enabled()
+    if ch=='line':
+        from line_connection import enabled as line_enabled
+        return line_enabled()
+    return ch in entitlements(w)
+
 def permitted_link(c,w,link):
     import branding
-    if not w or not link or not link['active'] or not public_access(w) or (link['channel'] not in entitlements(w) if link['channel']!='telegram' else not telegram_enabled()):return False
+    if not w or not link or not link['active'] or not public_access(w) or (not channel_allowed(w,link['channel'])):return False
     agent=link['agent']
     if not agent:return bool(w['enabled'])
     a=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(w['id'],agent))
@@ -54,7 +61,7 @@ def permitted_link(c,w,link):
 
 def session_key(link,user):
     # Preserve existing main-channel customer IDs and isolate additional brands.
-    return digest(link['secret_hash']+':'+user) if link['agent'] or link['channel']=='telegram' else digest(user)
+    return digest(link['secret_hash']+':'+user) if link['agent'] or link['channel'] in ('telegram','line') else digest(user)
 
 def staff_enabled():
     return enabled() and os.getenv('ENABLE_NAVER_STAFF_SEND','0')=='1'
@@ -114,8 +121,9 @@ def process_staff_one(ws=None):
         c.execute("UPDATE channel_staff_outbox SET status='unknown',error='발송 결과 확인 필요',body='',updated=? WHERE status='running' AND updated<?",(now(),now()-120))
         if not (staff_enabled() or telegram_enabled()):return False
         sql="SELECT * FROM channel_staff_outbox o WHERE o.status='queued' AND NOT EXISTS(SELECT 1 FROM channel_job j WHERE j.ws=o.ws AND j.channel=o.channel AND j.status='running') AND NOT EXISTS(SELECT 1 FROM channel_staff_outbox r WHERE r.ws=o.ws AND r.channel=o.channel AND r.status='running')"
-        args=()
-        if ws:sql+=' AND o.ws=?';args=(ws,)
+        channels=[ch for ch,on in [('naver',staff_enabled()),('telegram',telegram_enabled())] if on]
+        sql+=' AND o.channel IN ('+','.join('?' for _ in channels)+')';args=tuple(channels)
+        if ws:sql+=' AND o.ws=?';args+=(ws,)
         j=one(c,sql+' ORDER BY o.created,o.id LIMIT 1',args)
         if not j:return False
         c.execute("UPDATE channel_staff_outbox SET status='running',updated=? WHERE id=?",(now(),j['id']))
@@ -299,12 +307,21 @@ def process_one(ws=None):
             if not token or not t or not dest or dest['link_hash']!=link['secret_hash'] or dest['partner']!=link['partner'] or not one(c,'SELECT token FROM visitor WHERE ws=? AND token=? AND agent=? AND expires>?',(ws,token,agent,now())):
                 token=uid();tid=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind,agent) VALUES(?,?,?,?,?)',(token,ws,now()+86400,'public',agent));c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(tid,ws,token,ch,now(),int(settings.get('consultation_mode')=='staff')));c.execute('INSERT INTO channel_session VALUES(?,?,?,?) ON CONFLICT(ws,channel,external_user) DO UPDATE SET token=excluded.token',(ws,ch,external,token))
             else:tid=t['id']
+            if ch=='line':
+                from line_connection import reply_enabled
+                # No paid push fallback. Expired or disabled reply tokens enter the manual inbox without AI charge.
+                if not reply_enabled() or now()-j['created']>20:c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
             c.execute('INSERT INTO channel_customer_thread VALUES(?,?,?,?,?) ON CONFLICT(ws,thread) DO NOTHING',(ws,tid,ch,link['secret_hash'],external))
             c.execute('INSERT INTO channel_job_thread VALUES(?,?,?) ON CONFLICT(ws,job) DO NOTHING',(ws,j['id'],tid))
             c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch in ('naver','telegram') else '',now()))
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']
         if r.get('booking') or r.get('workDraft'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+(profile['slug'] if profile else w['slug'])
-        if ch in ('naver','telegram') and r.get('manual'):ok=True;state='held'
+        if ch in ('naver','telegram','line') and r.get('manual'):ok=True;state='held'
+        elif ch=='line':
+            from line_connection import reply_enabled
+            from integrations import line_transport as lt
+            if not reply_enabled() or now()-j['created']>50:raise RuntimeError('LINE 답장 가능 시간 초과 또는 발송 비활성화')
+            lt.reply(loads(unlock(link['credential']))['token'],body['target'],reply);ok=True
         elif ch=='telegram':tg.send_text(unlock(link['credential']),body['user'],reply);ok=True
         elif ch=='naver':resp=httpx.post('https://gw.talk.naver.com/chatbot/v1/event',headers={'Authorization':unlock(link['credential'])},json=naver_out(body['user'],reply),timeout=10,follow_redirects=False);ok=naver_success(resp)
         else:
