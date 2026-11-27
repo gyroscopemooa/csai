@@ -86,3 +86,20 @@ def reply_inquiry(vendor,access,secret,inquiry,answer,wing):
     path='/v2/providers/openapi/apis/api/v4/vendors/'+vendor+'/onlineInquiries/'+inquiry+'/replies'
     d=signed_json(vendor,access,secret,path,method='POST',body={'vendorId':vendor,'content':answer,'replyBy':wing})
     if str(d.get('code'))!='200':raise CoupangError('답변 발송 결과 미확인')
+
+def positive_id(value):
+    return isinstance(value,str) and re.fullmatch(r'[1-9][0-9]{0,31}',value)
+
+def product_detail(vendor,access,secret,pid):
+    if not positive_id(pid):raise CoupangError('등록상품번호 오류')
+    data=signed_json(vendor,access,secret,PRODUCT_PATH+'/'+pid).get('data')
+    if not isinstance(data,dict) or str(data.get('sellerProductId'))!=pid or data.get('vendorId')!=vendor:raise CoupangError('상품 또는 판매자 불일치')
+    return data
+
+def inventory(vendor,access,secret,item_id):
+    if not positive_id(item_id):raise CoupangError('옵션번호 오류')
+    path='/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/'+item_id+'/inventories'
+    d=signed_json(vendor,access,secret,path).get('data')
+    if not isinstance(d,dict) or type(d.get('amountInStock')) is not int or not 0<=d['amountInStock']<=1000000000 or type(d.get('salePrice')) is not int or not 0<=d['salePrice']<=1000000000 or type(d.get('onSale')) is not bool:raise CoupangError('옵션 재고·가격 응답 형식 오류')
+    if 'vendorItemId' in d and str(d['vendorItemId'])!=item_id:raise CoupangError('옵션번호 불일치')
+    return {'item_id':item_id,'stock':d['amountInStock'],'price':d['salePrice'],'on_sale':d['onSale'],'queried_at':int(time.time())}

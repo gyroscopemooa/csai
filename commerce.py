@@ -48,7 +48,8 @@ def chat_products(c,w,agent,msg):
     all_items=rows(c,'SELECT name,variant,price,url,description FROM commerce_product WHERE ws=? AND agent=? AND published=1',(w['id'],aid))+candidates(c,w['id'],aid)+cp_candidates(c,w['id'],aid)
     from product_education import enrich
     selected=rank_products(all_items,msg)
-    return [{**p,**enrich(c,w['id'],aid,p['product_id'])} if p.get('source')=='smartstore' else p for p in selected]
+    from coupang_detail import enrich as cp_enrich
+    return [{**p,**enrich(c,w['id'],aid,p['product_id'])} if p.get('source')=='smartstore' else {**p,**cp_enrich(c,w['id'],aid,p['product_id'])} if p.get('source')=='coupang' else p for p in selected]
 
 def rank_products(items,msg):
     def norm(x):return re.sub(r'[^\w]','',x.lower())

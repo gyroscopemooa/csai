@@ -26,6 +26,8 @@ def view(c,ws,agent):
     return {'available':configured(),'connected':bool(connection(c,ws,agent)),'active':bool(r and r['active']),'state':r['state'] if r else 'disabled','error':r['error'] if r else '', 'last_sync':r['last_sync'] if r else 0,'count':one(c,'SELECT COUNT(*) n FROM coupang_catalog_product WHERE ws=? AND agent=?',(ws,agent))['n'],'education_credits':0}
 
 def clear(c,ws,agent):
+    import coupang_detail
+    coupang_detail.clear(c,ws,agent)
     c.execute('DELETE FROM coupang_catalog_job WHERE ws=? AND agent=?',(ws,agent))
     c.execute('DELETE FROM coupang_catalog_product WHERE ws=? AND agent=?',(ws,agent))
 
@@ -75,6 +77,8 @@ def tick():
         else:
             stamp=now();c.execute('DELETE FROM coupang_catalog_product WHERE ws=? AND agent=?',(ws,a))
             for x in items:c.execute('INSERT INTO coupang_catalog_product VALUES(?,?,?,?,?)',(ws,a,x['id'],dump(x),stamp))
+            import coupang_detail
+            coupang_detail.prune(c,ws,a)
             c.execute("UPDATE coupang_catalog_job SET state='synced',error='',last_sync=?,next_sync=?,claim='',claimed=0 WHERE ws=? AND agent=?",(stamp,stamp+INTERVAL,ws,a))
     return True
 

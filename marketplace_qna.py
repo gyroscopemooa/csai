@@ -75,14 +75,16 @@ def snapshot(c,ws,agent,provider,i):
             if p['product_id']==i:return {**p,**product_education.enrich(c,ws,agent,i)}
     else:
         for p in catalog.candidates(c,ws,agent):
-            if p['product_id']==i:return p
+            if p['product_id']==i:
+                from coupang_detail import enrich
+                return {**p,**enrich(c,ws,agent,i)}
     return None
 
 def safe_product(p):
     # Use only selected product fields; no orders, customer records or credentials.
     if not p:return {}
     # All text is treated as data, not instructions.
-    out={k:p[k] for k in ('name','price','discount','availability','category','fees','description','detail_fees','approved_product_facts','approved_product_faq','as_of','detail_as_of','source','product_id') if k in p}
+    out={k:p[k] for k in ('name','price','discount','availability','category','fees','description','detail_fees','approved_product_facts','approved_product_faq','as_of','detail_as_of','source','product_id','display_name','options') if k in p}
     def clean_value(v):
         if isinstance(v,str):return ai.clean(v)
         if isinstance(v,list):return [clean_value(x) for x in v]

@@ -1004,6 +1004,7 @@ import order_access
 import coupang_connection
 import coupang_catalog
 import marketplace_qna
+import coupang_detail
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
