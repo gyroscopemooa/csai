@@ -96,6 +96,8 @@ def connect(body:dict,agent:str='',ws=Depends(ident)):
     except ss.SmartStoreError as e:require(False,str(e),422)
     with db(True) as c:
         commerce.access(c,ws,agent,True)
+        import order_access
+        order_access.clear(c,ws,agent)
         c.execute('DELETE FROM smartstore_detail WHERE ws=? AND agent=?',(ws,agent))
         c.execute('DELETE FROM smartstore_product WHERE ws=? AND agent=?',(ws,agent))
         c.execute("INSERT INTO smartstore_connection VALUES(?,?,?,?,?,1,'queued','',0,?,0) ON CONFLICT(ws,agent) DO UPDATE SET client_id=excluded.client_id,credential=excluded.credential,revision=excluded.revision,active=1,state='queued',error='',last_sync=0,next_sync=excluded.next_sync,claimed=0",(ws,agent,cid,encrypted,uid(),now()))
@@ -117,6 +119,8 @@ def disconnect(agent:str='',ws=Depends(ident)):
     with db(True) as c:
         ops.work_scope(c,getw(c,ws),agent)
         c.execute('DELETE FROM smartstore_connection WHERE ws=? AND agent=?',(ws,agent))
+        import order_access
+        order_access.clear(c,ws,agent)
         c.execute('DELETE FROM smartstore_detail WHERE ws=? AND agent=?',(ws,agent))
         c.execute('DELETE FROM smartstore_product WHERE ws=? AND agent=?',(ws,agent))
     return {'ok':True}
