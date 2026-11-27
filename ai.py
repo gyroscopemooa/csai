@@ -153,6 +153,8 @@ def answer(msg,history,settings,faq,published,addons,booking_context=None,quote_
     # Optional candidate retrieval; the default path and all answer checks stay unchanged.
     from knowledge_retrieval import maybe_select_faq
     relevant=maybe_select_faq(msg,all_faq,relevant,live_model=bool(KEY))
+    from contextual_knowledge import maybe_contextual_candidates
+    relevant=maybe_contextual_candidates(msg,history,all_faq,relevant,live_model=bool(KEY))
     rules=sorted(published.get('rules',[]),key=lambda x:score(msg,x),reverse=True)[:4]
     if not KEY and DEMO:
         if relevant and score(msg,relevant[0]['q'])>.55:return {'reply':relevant[0]['a'],'unknown':False,'_context':{'type':'matched_faq','faq':[relevant[0]]}}
