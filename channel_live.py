@@ -14,6 +14,8 @@ def init_channels():
         c.executescript('''
         CREATE TABLE IF NOT EXISTS channel_link(ws TEXT NOT NULL,channel TEXT NOT NULL,secret_hash TEXT NOT NULL UNIQUE,secret TEXT NOT NULL,credential TEXT NOT NULL,partner TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(ws,channel));
         CREATE TABLE IF NOT EXISTS channel_destination(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,link_hash TEXT NOT NULL,partner TEXT NOT NULL,recipient TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE TABLE IF NOT EXISTS channel_customer_thread(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,connection TEXT NOT NULL,customer_hash TEXT NOT NULL,PRIMARY KEY(ws,thread));
+        CREATE INDEX IF NOT EXISTS channel_customer_lookup ON channel_customer_thread(ws,channel,connection,customer_hash);
         CREATE TABLE IF NOT EXISTS channel_job_thread(ws TEXT NOT NULL,job TEXT NOT NULL,thread TEXT NOT NULL,PRIMARY KEY(ws,job));
         CREATE TABLE IF NOT EXISTS channel_staff_outbox(id TEXT PRIMARY KEY,ws TEXT NOT NULL,thread TEXT NOT NULL,client TEXT NOT NULL,channel TEXT NOT NULL,link_hash TEXT NOT NULL,partner TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL,error TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,UNIQUE(ws,thread,client));
         CREATE TABLE IF NOT EXISTS channel_job(id TEXT PRIMARY KEY,ws TEXT NOT NULL,channel TEXT NOT NULL,event_key TEXT NOT NULL,body TEXT NOT NULL,status TEXT NOT NULL,error TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,UNIQUE(ws,channel,event_key));
@@ -186,6 +188,7 @@ def process_one(ws=None):
             if not token or not t or not dest or dest['link_hash']!=link['secret_hash'] or dest['partner']!=link['partner'] or not one(c,'SELECT token FROM visitor WHERE ws=? AND token=? AND expires>?',(ws,token,now())):
                 token=uid();tid=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,ws,now()+86400,'public'));c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(tid,ws,token,ch,now(),int(loads(w['settings']).get('consultation_mode')=='staff')));c.execute('INSERT INTO channel_session VALUES(?,?,?,?) ON CONFLICT(ws,channel,external_user) DO UPDATE SET token=excluded.token',(ws,ch,external,token))
             else:tid=t['id']
+            c.execute('INSERT INTO channel_customer_thread VALUES(?,?,?,?,?) ON CONFLICT(ws,thread) DO NOTHING',(ws,tid,ch,link['secret_hash'],external))
             c.execute('INSERT INTO channel_job_thread VALUES(?,?,?) ON CONFLICT(ws,job) DO NOTHING',(ws,j['id'],tid))
             c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch=='naver' else '',now()))
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']

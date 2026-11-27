@@ -444,6 +444,7 @@ def chat(body:dict):
         require(v['kind']=='test' or ((agent or w['enabled']) and public_access(w)),'상담 비활성화')
         require(one(c,'SELECT count(*) AS n FROM request WHERE ws=? AND thread=? AND created>?',(ws,tid,now()-60))['n']<12,'잠시 후 다시 문의하세요.',429)
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)),'이전 응답 처리 중입니다.',409)
+        if t['status']=='resolved':c.execute("UPDATE thread SET status='open' WHERE ws=? AND id=?",(ws,tid))
         route_mode,route_reason=workflow_controls.decision(workflow_controls.get_policy(c,ws,v.get('agent','')),msg,s)
         pause=workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),v.get('agent',''),t['kind'])
         if t['manual'] or pause or route_mode!='auto':
@@ -641,7 +642,26 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+@app.get('/api/inbox/{i}/related')
+def related_threads(i:str,ws=Depends(ident)):
+    with db() as c:
+        w=getw(c,ws);require(thread_accessible(c,w,i),'상담 없음',404)
+        key=one(c,'SELECT channel,connection,customer_hash FROM channel_customer_thread WHERE ws=? AND thread=?',(ws,i))
+        if not key:return {'verified':False,'threads':[]}
+        rs=rows(c,"SELECT t.id,t.created,t.status,t.kind,COALESCE((SELECT MAX(m.created) FROM message m WHERE m.ws=t.ws AND m.thread=t.id),t.created) AS activity FROM thread t JOIN channel_customer_thread k ON k.ws=t.ws AND k.thread=t.id WHERE t.ws=? AND k.channel=? AND k.connection=? AND k.customer_hash=? AND t.id<>? ORDER BY activity DESC LIMIT 100",(ws,key['channel'],key['connection'],key['customer_hash'],i))
+        return {'verified':True,'threads':[x for x in rs if thread_accessible(c,w,x['id'])][:30]}
+
+@app.get('/api/inbox-channel-metrics')
+def inbox_channel_metrics(days:int=30,ws=Depends(ident)):
+    require(days in (7,30,90),'조회 기간 오류',422)
+    with db() as c:
+        w=getw(c,ws);cutoff=max(history_cutoff(w),now()-days*86400)
+        channels=rows(c,"SELECT t.kind AS channel,COUNT(DISTINCT t.id) AS threads,SUM(CASE WHEN m.role='user' THEN 1 ELSE 0 END) AS inbound,SUM(CASE WHEN m.role='assistant' THEN 1 ELSE 0 END) AS ai_messages,SUM(CASE WHEN m.role='staff' THEN 1 ELSE 0 END) AS staff_messages FROM thread t JOIN message m ON m.ws=t.ws AND m.thread=t.id WHERE t.ws=? AND m.created>=? AND t.kind<>'test' AND NOT EXISTS(SELECT 1 FROM demo_sample d WHERE d.ws=t.ws AND d.thread=t.id) GROUP BY t.kind",(ws,cutoff))
+        delivery=rows(c,"SELECT channel,status,COUNT(*) AS n FROM channel_job WHERE ws=? AND created>=? GROUP BY channel,status",(ws,cutoff))
+        staff=rows(c,"SELECT channel,status,COUNT(*) AS n FROM channel_staff_outbox WHERE ws=? AND created>=? GROUP BY channel,status",(ws,cutoff))
+        return {'days':days,'since':cutoff,'channels':channels,'auto_delivery':delivery,'staff_delivery':staff,'note':'AI 저장 메시지는 외부 발송 성공을 의미하지 않으며 매출과 원가 귀속은 별도 집계가 필요합니다.'}
+
 @app.get('/api/inbox/{i}/education-source')
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:
@@ -680,6 +700,11 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 읽기 전용입니다.',409)
+        if body.get('resume_on_close') is True:
+            require(body.get('status')=='resolved' and not body.get('reply') and 'manual' not in body,'완료 후 AI 복귀 요청 형식 오류',422)
+            require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
+            require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
+            c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
         if 'manual' in body:
             require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(type(body['manual']) is bool,'상담 방식 오류',422)
