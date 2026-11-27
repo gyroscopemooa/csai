@@ -143,3 +143,13 @@ main>.top{animation:cs-enter var(--motion-enter) var(--motion-ease) both}
 #profile-current-photo{margin:12px 0}
 #profile-editor-links{margin-bottom:8px}
 @media(max-width:480px){.profile-edit-link{grid-template-columns:minmax(0,1fr) auto}.profile-edit-link .profile-link-name{grid-column:1/-1}.chat-profile-card{gap:9px;padding:12px}.chat-profile-photo{width:60px;height:60px}}
+
+.chat-profile-contacts{display:grid;gap:6px;margin-top:8px}
+.chat-profile-contacts .profile-contact{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid #e8edf2;border-radius:8px;color:#25334a;background:#f7f9fc;text-decoration:none;overflow-wrap:anywhere}
+.chat-profile-contacts a.profile-contact strong{color:#236fde}
+.chat-profile-contacts .profile-contact span{font-size:11px;color:#687587}
+.chat-profile-contacts .profile-contact strong{font-size:13px;margin:0}
+.phone .notice .chat-profile-card{max-width:100%;margin:8px 0}
+.chat-manual-notice{white-space:pre-wrap;overflow-wrap:anywhere}
+.profile-edit-contact{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr) auto;align-items:center;gap:8px;margin:8px 0}
+@media(max-width:600px){.profile-edit-contact{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}.profile-edit-contact .profile-contact-kind{grid-column:1/-1}.profile-edit-contact .profile-contact-name{grid-column:1/-1}.profile-edit-contact .profile-contact-value{grid-column:1/3}}
