@@ -23,6 +23,8 @@ def tick_once():
     if channel_live.enabled():
         try:
             for _ in range(10):
+                if not channel_live.process_staff_one():break
+            for _ in range(10):
                 if not channel_live.process_one():break
         except Exception as exc:logging.error('Channel processing failed: %s',type(exc).__name__)
 

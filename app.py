@@ -525,7 +525,7 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.get('/api/inbox/{i}/education-source')
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:
@@ -565,6 +565,7 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 읽기 전용입니다.',409)
         if 'manual' in body:
+            require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(type(body['manual']) is bool,'상담 방식 오류',422)
             require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
             c.execute('UPDATE thread SET manual=? WHERE id=?',(int(body['manual']),i))
