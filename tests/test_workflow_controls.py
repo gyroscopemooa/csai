@@ -55,3 +55,16 @@ def test_scoped_manual_mode_and_resume():
     assert ask('individual-manual')['manual']
     assert owner().get('/api/consultation-mode').json()=={'paused':[]}
     assert c.post('/api/consultation-mode',json={'agent':'not-owned','channel':'public','manual':True,'confirmed':True}).status_code==403
+
+def test_web_source_attribution_is_not_a_channel_override():
+    c=owner();post(c,'/api/demo/billing',{'plan':'lite','addons':[]});patch(c,{'enabled':True})
+    slug=c.get('/api/me').json()['slug']
+    from fastapi.testclient import TestClient
+    from app import app
+    u=TestClient(app)
+    for source in ('link','widget','naver'):
+        r=post(u,'/api/session',{'slug':slug,'source':source})
+        detail=c.get('/api/inbox/'+r['thread']).json()
+        assert detail['kind']=='public'
+        assert detail['source']==(source if source in ('link','widget') else '')
+    assert all(x['kind']=='public' for x in c.get('/api/inbox').json())

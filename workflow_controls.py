@@ -22,6 +22,7 @@ def default_policy():
 def init():
     with db(True) as c:
         c.executescript("""
+        CREATE TABLE IF NOT EXISTS consultation_source(ws TEXT NOT NULL,thread TEXT NOT NULL,source TEXT NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS consultation_pause(ws TEXT NOT NULL,agent TEXT NOT NULL,channel TEXT NOT NULL,PRIMARY KEY(ws,agent,channel));
         CREATE TABLE IF NOT EXISTS workflow_policy(ws TEXT NOT NULL,agent TEXT NOT NULL,config TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS archived_brand(ws TEXT NOT NULL,agent TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(ws,agent));

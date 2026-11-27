@@ -373,6 +373,8 @@ def create_session(body:dict,req:Request):
         if agent:c.execute('UPDATE visitor SET agent=? WHERE token=?',(agent['id'],token))
         i=uid();staff=kind=='public' and branding.brand_settings(w,agent).get('consultation_mode')=='staff'
         c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(i,w['id'],token,kind,now(),int(staff)))
+        if kind=='public' and body.get('source') in ('link','widget'):
+            c.execute('INSERT INTO consultation_source VALUES(?,?,?)',(w['id'],i,body['source']))
     return {'token':token,'thread':i}
 @app.post('/api/customer/resume')
 def customer_resume(body:dict,req:Request,response:Response):
@@ -502,7 +504,7 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
     q=bounded(q,100).lower()
     with db() as c:
         w=getw(c,ws);cutoff=history_cutoff(w)
-        sql="SELECT COALESCE((SELECT v.agent FROM visitor v WHERE v.token=thread_outer.visitor AND v.ws=thread_outer.ws),'') AS agent,id,kind,status,manual,created,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))"
+        sql="SELECT COALESCE((SELECT v.agent FROM visitor v WHERE v.token=thread_outer.visitor AND v.ws=thread_outer.ws),'') AS agent,id,kind,status,manual,created,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread_outer.ws AND cs.thread=thread_outer.id),'') AS source,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))"
         args=[cutoff,ws,cutoff,cutoff]
         if agent!='all':
             branding.owned_agent(c,w,agent)
@@ -523,7 +525,7 @@ def history_policy(ws=Depends(ident)):
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
+        w=getw(c,ws);t=one(c,'SELECT id,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),'') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return t|{'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'messages':rows(c,'SELECT id,role,body,created FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid',(ws,i,history_cutoff(w)))}
 @app.get('/api/inbox/{i}/education-source')
 def staff_education_source(i:str,ws=Depends(ident)):
     with db() as c:
