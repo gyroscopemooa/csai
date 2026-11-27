@@ -35,8 +35,9 @@ def test_brand_channel_isolation_and_disconnect(monkeypatch):
         return c.post('/hooks/naver/'+secret,json={'event':'send','partner':partner,'user':'same-customer','textContent':{'text':text}})
     assert incoming(main,'main-partner','가격은?').status_code==200
     assert incoming(extra,'brand-partner','가격은?').status_code==200
+    slug=c.get('/api/me').json()['slug']
     with db() as conn:
-        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(c.get('/api/me').json()['slug'],))['id']
+        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(slug,))['id']
     assert channel_live.process_one(ws)
     assert channel_live.process_one(ws)
     assert {x[0]:x[1]['textContent']['text'] for x in sent}=={'main-token':'기본 가격','brand-token':'추가 가격'}
