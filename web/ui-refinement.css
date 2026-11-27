@@ -365,3 +365,27 @@
   .menu-order-footer { padding-inline: 16px; }
   .menu-order-moves button { width: 44px; min-height: 44px; }
 }
+
+/* Dashboard setup consultation: compact, isolated banner. */
+.layout main .card.dashboard-setup-strip {
+ display:grid; grid-template-columns:minmax(0,1fr) auto;
+ align-items:center; gap:6px 12px; padding:12px 16px; border-radius:14px;
+}
+.layout main .dashboard-setup-strip .dashboard-setup-copy { min-width:0; }
+.layout main .dashboard-setup-strip .dashboard-setup-title {
+ display:block; font-size:15px; font-weight:700; line-height:1.35; margin:0 0 4px;
+}
+.layout main .dashboard-setup-strip .dashboard-setup-price {
+ display:block; font-size:12px; line-height:1.5; color:#6b7684; margin:0; word-break:keep-all;
+}
+.layout main .dashboard-setup-strip .dashboard-setup-price span { display:inline-block; }
+.layout main .dashboard-setup-strip .dashboard-setup-action {
+ width:auto; min-width:0; min-height:44px; margin:0; padding:8px 11px;
+ font-size:13px; font-weight:650; white-space:nowrap; align-self:center;
+}
+@media(max-width:640px) {
+ .layout main .card.dashboard-setup-strip { padding:10px 12px; gap:6px 8px; }
+ .layout main .dashboard-setup-strip .dashboard-setup-title { font-size:14px; margin-bottom:2px; }
+ .layout main .dashboard-setup-strip .dashboard-setup-price { font-size:11px; }
+ .layout main .dashboard-setup-strip .dashboard-setup-action { padding:6px 9px; font-size:12px; }
+}
