@@ -32,3 +32,25 @@ def test_delivery_issue_scope():
         i=uid();conn.execute('INSERT INTO channel_job VALUES(?,?,?,?,?,?,?,?,?)',(i,ws,'naver',uid(),'','failed','provider failure',now(),now()))
     assert any(x['id']==i for x in c.get('/api/channel-delivery-issues').json())
     assert not any(x['id']==i for x in other.get('/api/channel-delivery-issues').json())
+
+
+def test_brief_uses_visible_records_and_is_tenant_scoped():
+    c=owner();other=owner()
+    slug=c.get('/api/me').json()['slug']
+    with db(True) as conn:
+        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(slug,))['id']
+        tid,token=uid(),uid()
+        conn.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,ws,now()+86400,'public'))
+        conn.execute('INSERT INTO thread(id,ws,visitor,kind,created) VALUES(?,?,?,?,?)',(tid,ws,token,'public',now()))
+        for role,body in [('user','old secret'),('user','배송 문의'),('assistant','안내 내용'),('staff','확인 중'),('user','추가 질문')]:
+            created=now()-365*86400 if body=='old secret' else now()
+            conn.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,role,body,created))
+    post(c,'/api/inbox/'+tid+'/annotation',{'note':'담당자 확인','tags':['배송']})
+    before=c.get('/api/me').json()['remaining']
+    path='/api/inbox/'+tid+'/brief'
+    assert other.get(path).status_code==404
+    result=c.get(path).json()
+    assert result['mode']=='extractive' and result['latest_is_customer']
+    assert result['note']=='담당자 확인' and result['tags']==['배송']
+    assert [m['body'] for m in result['recent']]==['배송 문의','안내 내용','확인 중','추가 질문']
+    assert c.get('/api/me').json()['remaining']==before
