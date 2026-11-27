@@ -1,7 +1,7 @@
 """Single-process worker. Run separately or via the optional FastAPI lifespan, not both."""
 import time,os,logging
 import app
-import notifications,channel_live,google_calendar,reporting,push_notifications,domains,message_notifications,workflow_controls,smartstore_sync,coupang_catalog,order_sync,coupang_order_sync
+import notifications,channel_live,google_calendar,reporting,push_notifications,domains,message_notifications,workflow_controls,smartstore_sync,coupang_catalog,order_sync,coupang_order_sync,marketplace_auto
 from store import DEMO
 logging.basicConfig(level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s')
 
@@ -12,6 +12,7 @@ def tick_once():
         ('ENABLE_SMARTSTORE_ORDER_SYNC',order_sync.tick),
         ('ENABLE_COUPANG_CATALOG',coupang_catalog.tick),
         ('ENABLE_COUPANG_ORDER_SYNC',coupang_order_sync.tick),
+        ('ENABLE_MARKETPLACE_QNA_AUTO',marketplace_auto.tick),
         ('ENABLE_AUTO_WORKFLOW_REMINDERS',workflow_controls.tick_reminders),
         ('ENABLE_AUTO_MESSAGES',message_notifications.tick),
         ('ENABLE_AUTO_DOMAINS',domains.tick),

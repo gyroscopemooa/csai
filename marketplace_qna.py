@@ -92,6 +92,9 @@ def safe_product(p):
         return v
     return clean_value(out)
 
+def blocked_send(c,ws,agent,provider,i):
+    return bool(one(c,"SELECT remote_id FROM marketplace_qna WHERE ws=? AND agent=? AND provider=? AND remote_id=? AND state IN ('sending','sent','unknown')",(ws,agent,provider,i)))
+
 def readable(r):
     return {k:r[k] for k in ('remote_id','product_id','name','question','created','state','draft','seen')}
 
@@ -179,7 +182,7 @@ def send(body:dict,agent:str='',ws=Depends(ident)):
     with db() as c:
         commerce.access(c,ws,agent,True);conn=connection(c,ws,agent,provider);fp=conn_hash(conn);r=read_ticket(c,ws,agent,provider,i,fp)
         if r['state']=='sent':return {'state':'sent','duplicate':True}
-        require(r['state'] in ('pending','draft'),'발송 중 또는 결과 미확인 · 판매처 확인 필요',409)
+        require(r['state'] in ('pending','draft') and not blocked_send(c,ws,agent,provider,i),'발송 중 또는 결과 미확인 · 판매처 확인 필요',409)
     # Re-check remote unanswered question before sending. A provider-side concurrent manual reply
     # can still race this read; production send stays disabled until this risk is reviewed.
     try:items,_=fetch_pending(provider,conn)
@@ -187,7 +190,7 @@ def send(body:dict,agent:str='',ws=Depends(ident)):
     require(i in items and question_hash(items[i])==r['fingerprint'],'문의 변경·답변 완료 또는 조회 범위 초과',409)
     with db(True) as c:
         checked_connection(c,ws,agent,provider,conn);cur=read_ticket(c,ws,agent,provider,i,fp)
-        require(cur['state'] in ('pending','draft') and cur['fingerprint']==r['fingerprint'],'문의 상태 변경됨',409)
+        require(cur['state'] in ('pending','draft') and cur['fingerprint']==r['fingerprint'] and not blocked_send(c,ws,agent,provider,i),'문의 상태 변경됨',409)
         attempt=uid()
         c.execute("UPDATE marketplace_qna SET state='sending',attempt=?,seen=? WHERE ws=? AND agent=? AND provider=? AND remote_id=? AND connection=?",(attempt,now(),ws,agent,provider,i,fp))
     try:
