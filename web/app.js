@@ -1309,28 +1309,12 @@ function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).
 let calendarAgent='',calendarProfile=null;
 let calFilter='confirmed',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='',calendarMotion=null,calendarRecords=[];
 function calendarRangeContains(date){return !!calendarRange&&date>=calendarRange.start&&date<=calendarRange.end}
-function calendarRangeSet(start,end){
- if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||start>end){toast('시작일과 종료일을 확인하세요.');return;}
- calendarRangeMode=true;calendarRange={start,end};calendarRangeAnchor='';selectedDate=start;
- if(calendarMotion){calendarMotion.setRange(start,end);return;}
- const [y,m]=start.split('-').map(Number);calendarMonth=new Date(y,m-1,1);render();
-}
 async function calendarRangeToggle(){
  calendarRangeMode=!calendarRangeMode;
  calendarRangeAnchor='';
  calendarRange=null;
  await render();
  $('#calendar-period-toggle')?.focus();
-}
-function calendarRangeFields(day){
- if(!calendarRangeMode)return '';
- return `<div class="calendar-range-control">
-  <p class="ui-helper" id="range-status" role="status">${calendarRangeAnchor?'종료일을 선택하세요. 날짜 위에 마우스를 올리면 범위가 미리 표시됩니다.':'시작일과 종료일을 누르거나 날짜를 드래그하세요. 날짜를 직접 입력할 수도 있습니다.'}</p>
-  <form class="calendar-range-fields" onsubmit="event.preventDefault();calendarRangeSet(val('range-start'),val('range-end'))">
-   ${dateRangePicker('range',{start:calendarRange?.start||day,end:calendarRange?.end||day})}
-   <button type="submit" class="ui-button primary">조회</button>
-  </form>
- </div>`;
 }
 const calendarFilters=[['all','전체'],['confirmed','확정'],['pending','승인·결제 대기']];
 const calendarPending=b=>b.status==='pending'||b.status==='pending_payment';
@@ -1411,7 +1395,6 @@ function mountCalendarMotion(){
  const counts={};for(const b of calendarFiltered(calendarRecords)){const d=localDate(b.start);counts[d]=(counts[d]||0)+1;}
  calendarMotion=DBMotion.calendar(root,{year:calendarMonth.getFullYear(),month:calendarMonth.getMonth(),range:calendarRangeMode,day:calendarDay(),start:calendarRange?.start,end:calendarRangeAnchor?null:calendarRange?.end,anchor:calendarRangeAnchor,counts},st=>{
   calendarMonth=new Date(st.year,st.month,1);selectedDate=st.day;calendarRangeAnchor=st.anchor?st.start:'';calendarRange=calendarRangeMode&&st.start?{start:st.start,end:st.end||st.start}:null;
-  if($('#range-start')){$('#range-start').value=st.start||st.day;$('#range-end').value=st.end||st.start||st.day;$('#range-status').textContent=st.anchor?'종료일을 선택하세요. 날짜 위에 마우스를 올리면 범위가 미리 표시됩니다.':'시작일과 종료일을 누르거나 날짜를 드래그하세요. 날짜를 직접 입력할 수도 있습니다.';}
   updateCalendarPanels();
  });
 }
@@ -1471,13 +1454,12 @@ async function calendar(){
   <section class="calendar-section" aria-labelledby="calendar-lookup-heading">
    <h2 id="calendar-lookup-heading">일정 조회</h2>
    ${calendarStatusFilters()}
-   <div id="calendar-range-controls" ${calendarRangeMode?'':'hidden'}>${calendarRangeFields(calendarDay())}</div>
    <div class="calendar-lookup-grid">
     ${calendarGrid('db-calendar',`<div class="calendar-grid-tools">
-     <button id="calendar-period-toggle" type="button" class="ui-button ${calendarRangeMode?'secondary':'primary'} ui-sm" aria-expanded="${calendarRangeMode}" aria-controls="calendar-range-controls" onclick="calendarRangeToggle()">
+     <button id="calendar-period-toggle" type="button" class="ui-button ${calendarRangeMode?'secondary':'primary'} ui-sm" aria-pressed="${calendarRangeMode}" onclick="calendarRangeToggle()">
       ${uiIcon('calendar-days')}${calendarRangeMode?'하루 보기':'기간 선택'}
      </button>
-     ${helperText(calendarRangeMode?'시작일을 고른 뒤 마우스를 움직여 범위를 미리 보세요.':'시작일부터 종료일까지 조회')}
+     ${helperText(calendarRangeMode?'시작일과 종료일을 선택하면 자동 조회됩니다.':'날짜를 선택하면 자동 조회됩니다.')}
     </div>`)}
     <section id="calendar-results" class="calendar-grid-panel calendar-results" aria-labelledby="calendar-results-heading">${calendarList(bookings)}</section>
    </div>
