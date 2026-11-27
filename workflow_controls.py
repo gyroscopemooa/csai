@@ -34,7 +34,7 @@ init()
 def get_policy(c,ws,agent):
     r=one(c,'SELECT config FROM workflow_policy WHERE ws=? AND agent=?',(ws,agent))
     return loads(r['config']) if r else default_policy()
-CONSULTATION_CHANNELS=('public','naver','kakao','telegram','line')
+CONSULTATION_CHANNELS=('public','naver','kakao','telegram','line','instagram')
 def pause_scopes(c,ws):
     return {(r['agent'],r['channel']) for r in rows(c,'SELECT agent,channel FROM consultation_pause WHERE ws=?',(ws,))}
 def paused_by(scopes,agent,channel):

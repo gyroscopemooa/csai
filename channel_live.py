@@ -49,6 +49,9 @@ def channel_allowed(w,ch):
     if ch=='line':
         from line_connection import enabled as line_enabled
         return line_enabled()
+    if ch=='instagram':
+        from instagram_connection import enabled as instagram_enabled
+        return instagram_enabled()
     return ch in entitlements(w)
 
 def permitted_link(c,w,link):
@@ -61,7 +64,7 @@ def permitted_link(c,w,link):
 
 def session_key(link,user):
     # Preserve existing main-channel customer IDs and isolate additional brands.
-    return digest(link['secret_hash']+':'+user) if link['agent'] or link['channel'] in ('telegram','line') else digest(user)
+    return digest(link['secret_hash']+':'+user) if link['agent'] or link['channel'] in ('telegram','line','instagram') else digest(user)
 
 def staff_enabled():
     return enabled() and os.getenv('ENABLE_NAVER_STAFF_SEND','0')=='1'
@@ -307,6 +310,7 @@ def process_one(ws=None):
             if not token or not t or not dest or dest['link_hash']!=link['secret_hash'] or dest['partner']!=link['partner'] or not one(c,'SELECT token FROM visitor WHERE ws=? AND token=? AND agent=? AND expires>?',(ws,token,agent,now())):
                 token=uid();tid=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind,agent) VALUES(?,?,?,?,?)',(token,ws,now()+86400,'public',agent));c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(tid,ws,token,ch,now(),int(settings.get('consultation_mode')=='staff')));c.execute('INSERT INTO channel_session VALUES(?,?,?,?) ON CONFLICT(ws,channel,external_user) DO UPDATE SET token=excluded.token',(ws,ch,external,token))
             else:tid=t['id']
+            if ch=='instagram':c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
             if ch=='line':
                 from line_connection import reply_enabled
                 # No paid push fallback. Expired or disabled reply tokens enter the manual inbox without AI charge.
@@ -316,7 +320,8 @@ def process_one(ws=None):
             c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch in ('naver','telegram') else '',now()))
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']
         if r.get('booking') or r.get('workDraft'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+(profile['slug'] if profile else w['slug'])
-        if ch in ('naver','telegram','line') and r.get('manual'):ok=True;state='held'
+        if ch=='instagram':ok=True;state='held'
+        elif ch in ('naver','telegram','line') and r.get('manual'):ok=True;state='held'
         elif ch=='line':
             from line_connection import reply_enabled
             from integrations import line_transport as lt
