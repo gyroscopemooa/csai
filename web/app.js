@@ -305,7 +305,7 @@ async function channels(){
     {k:'external_api',name:'외부 API',desc:'자체 서비스와 상담 기능 연동',icon:'</>',action:'상세 안내',click:"channelHelp('external_api')",price:'월 '+price('external_api')},
   ];
   const pack=addon('channels');
-  return pageTop('외부 채널 연동','나의 클론 상담사를 원하는 채널에 배치하세요.')+card('채널 상담 모드',consultationControls(modes,[],true))+`<section class="channel-panel"><h2>상담 채널 연결</h2><p class="channel-intro">고객이 편한 곳에서 CS AI 상담사를 만나도록 설정하세요.</p><div class="channel-list">${items.map(x=>`<div class="channel-item"><span class="channel-icon ${x.k}">${x.k==='naver'?'<img src="/assets/naver-n.svg" alt="">':x.k==='kakao'?'<img src="/assets/kakao-talk.svg" alt="">':e(x.icon)}</span><div class="channel-info"><strong>${e(x.name)}</strong><span>${e(x.desc)}</span><small class="${x.k==='chat'?'included':''}">${e(x.price)}</small></div><button class="channel-action" onclick="${x.click}">${e(x.action)}</button></div>${cfg.demo&&has(x.k)&&['naver','kakao'].includes(x.k)?`<div class="channel-test">${btn('메시지 테스트',`channelModal('${x.k}')`)}</div>`:''}`).join('')}</div></section><section class="channel-bundle"><strong>${e(pack.name)}</strong><p><b>월 ${money(pack.price)}</b> <s>월 ${money(addon('naver').price+addon('kakao').price)}</s></p><span>두 채널을 함께 이용할 때 매월 ${money(addon('naver').price+addon('kakao').price-pack.price)} 할인</span>${btn('통합 연동 자세히 보기',"go('addons')")}</section>`+channelRoadmap()+card('채널 발송 관리',btn('처리 대기·실패·미확인','showDeliveryIssues()'))}
+  return pageTop('외부 채널 연동','나의 클론 상담사를 원하는 채널에 배치하세요.')+card('채널 상담 모드',consultationControls(modes,[],true))+`<section class="channel-panel"><h2>상담 채널 연결</h2><p class="channel-intro">고객이 편한 곳에서 CS AI 상담사를 만나도록 설정하세요.</p><div class="channel-list">${items.map(x=>`<div class="channel-item"><span class="channel-icon ${x.k}">${x.k==='naver'?'<img src="/assets/naver-n.svg" alt="">':x.k==='kakao'?'<img src="/assets/kakao-talk.svg" alt="">':e(x.icon)}</span><div class="channel-info"><strong>${e(x.name)}</strong><span>${e(x.desc)}</span><small class="${x.k==='chat'?'included':''}">${e(x.price)}</small></div><button class="channel-action" onclick="${x.click}">${e(x.action)}</button></div>${cfg.demo&&has(x.k)&&['naver','kakao'].includes(x.k)?`<div class="channel-test">${btn('메시지 테스트',`channelModal('${x.k}')`)}</div>`:''}`).join('')}</div></section><section class="channel-bundle"><strong>${e(pack.name)}</strong><p><b>월 ${money(pack.price)}</b> <s>월 ${money(addon('naver').price+addon('kakao').price)}</s></p><span>두 채널을 함께 이용할 때 매월 ${money(addon('naver').price+addon('kakao').price-pack.price)} 할인</span>${btn('통합 연동 자세히 보기',"go('addons')")}</section>`+card('카카오 상담톡 계약 방식','<p>기존 딜러 계약 연결 또는 CS AI 선불 이용 방식 중 선택할 수 있습니다. 계약·실제 발송·과금은 준비 중입니다.</p>'+btn('상담톡 연동 신청','openKakaoConsultRequest()','primary'))+channelRoadmap()+card('채널 발송 관리',btn('처리 대기·실패·미확인','showDeliveryIssues()'))}
 function widgetCodeModal(){modal('홈페이지 위젯 코드',label('사이트에 삽입할 코드',ta('widget-code',`<iframe src="${location.origin}/widget/${me.slug}" title="AI 고객센터" width="380" height="650" style="border:0"></iframe>`))+btn('코드 복사',"act(async()=>{await navigator.clipboard.writeText(val('widget-code'));toast('복사했습니다')})"))}
 function channelHelp(k){let a=cfg.catalog.addons.find(x=>x.id===k);modal(a.name,`<p>월 ${money(a.price)} 추가 옵션입니다.</p><p>${a.local?'로컬 구현이 있습니다. 공개 HTTPS 환경은 별도 검증이 필요합니다.':'공식 권한 및 실계정 검증 전까지 연결과 실제 판매를 차단합니다.'}</p>${btn('기능 미리보기',`CSAISetup.preview('${k}')`)}${btn('구독 구성에 추가',`CSAISetup.add('${k}')`,'primary')}`)}
 function table(headers,rs){return `<div class="wrap"><table><thead><tr>${headers.map(x=>`<th>${e(x)}</th>`).join('')}</tr></thead><tbody>${rs.map(r=>`<tr>${r.map(x=>`<td>${e(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
@@ -762,3 +762,29 @@ function insertAssistantDraft(i,tid){const x=replyAssistantResults[i];if(threadI
 async function closeAndResumeAI(){if(!confirm('상담을 완료하고 이 고객의 개별 수동 설정을 해제할까요? 전체·브랜드·채널 수동 설정은 유지됩니다.'))return;await updateThread({status:'resolved',resume_on_close:true})}
 async function showRelatedThreads(){const id=threadId;await act(async()=>{const r=await api('/api/inbox/'+enc(id)+'/related');modal('동일 고객 이전 상담',r.verified?(r.threads.map(t=>'<div class="line"><strong>'+e(new Date(t.activity*1000).toLocaleString('ko-KR'))+'</strong> · '+e(states[t.status]||t.status)+btn('상담 열기',`openDeliveryThread('${t.id}')`)+'</div>').join('')||'<p>연결된 이전 상담이 없습니다.</p>'):'<p>이 상담은 검증된 외부 고객 식별 정보가 없습니다. 새로 수신한 메시지부터 같은 채널·연결 내 고객 이력을 연결합니다.</p>')})}
 async function showChannelMetrics(days=30){await act(async()=>{const r=await api('/api/inbox-channel-metrics?days='+days);modal('채널별 상담 통계',[7,30,90].map(n=>btn(n+'일',`showChannelMetrics(${n})`)).join('')+'<p class="muted">'+e(r.note)+'</p>'+ (r.channels.map(x=>'<div class="line"><strong>'+e(channelNames[x.channel]||x.channel)+'</strong><p>상담 '+x.threads+' · 고객 메시지 '+x.inbound+' · AI 기록 '+x.ai_messages+' · 담당자 답변 '+x.staff_messages+'</p></div>').join('')||'<p>상담 기록이 없습니다.</p>')+'<h3>외부 처리 상태</h3>'+r.auto_delivery.concat(r.staff_delivery.map(x=>({...x,staff:true}))).map(x=>'<p>'+e(channelNames[x.channel]||x.channel)+' · '+(x.staff?'직접':'자동')+' · '+e(x.status)+' '+x.n+'건</p>').join(''))})}
+
+let kakaoConsultAgent='';
+async function openKakaoConsultRequest(agent=''){await act(async()=>{
+ const brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available&&!x.archived):[];
+ const r=await api('/api/kakao-consultation/request?agent='+enc(agent)),v=r.request||{};
+ kakaoConsultAgent=agent;
+ modal('카카오 상담톡 연결 신청',brandSelect('consult-kakao-brand',brands,agent,'openKakaoConsultRequest(this.value)')+
+ '<p class="muted">현재 연결 신청 정보만 저장합니다. 실제 API 연결, 비용 결제, 메시지 발송은 아직 지원하지 않습니다. 비밀번호와 API 키는 입력하지 마세요.</p>'+
+ label('계약 방식',select('consult-kakao-mode',[['own_contract','기존 딜러 계약 사용 · 공급료 직접 납부'],['managed_prepaid','CS AI 공급 계약 사용 · 선불 방식 예정']],v.mode||'own_contract').replace('<select','<select onchange="syncKakaoConsultMode()"'))+
+ label('카카오 비즈니스 채널 ID 또는 이름',input('consult-kakao-channel',v.channel_ref||''))+
+ '<div id="consult-kakao-own">'+label('계약한 공식 딜러사',input('consult-kakao-dealer',v.dealer||''))+'</div>'+
+ '<div id="consult-kakao-managed">'+label('희망 월 사용 예산 (원)','<input id="consult-kakao-budget" type="number" min="1000" max="10000000" value="'+e(String(v.budget_krw||10000))+'">')+'<p class="muted">예산 희망치이며 실제 충전·과금 한도가 아닙니다. 공급 단가와 차감 방식이 확정되면 별도 고지합니다.</p></div>'+
+ '<label><input type="checkbox" id="consult-kakao-confirm"> 연결 신청이며 계약 및 결제가 완료되지 않음을 확인했습니다.</label>'+
+ btn('신청 정보 저장','saveKakaoConsultRequest()','primary')+(r.request?btn('신청 취소','cancelKakaoConsultRequest()'):'')+
+ '<p class="muted">상태: '+(r.request?'계약 및 연동 검토 대기':'미신청')+'</p>');
+ syncKakaoConsultMode();
+})}
+function syncKakaoConsultMode(){const own=val('consult-kakao-mode')==='own_contract';$('#consult-kakao-own').hidden=!own;$('#consult-kakao-managed').hidden=own;}
+async function saveKakaoConsultRequest(){await act(async()=>{
+ const mode=val('consult-kakao-mode'),own=mode==='own_contract';
+ if(!$('#consult-kakao-confirm')?.checked)throw Error('신청 내용을 확인하세요.');
+ const agent=kakaoConsultAgent;
+ await api('/api/kakao-consultation/request',{agent,mode,dealer:own?val('consult-kakao-dealer').trim():'',channel_ref:val('consult-kakao-channel').trim(),budget_krw:own?0:Number(val('consult-kakao-budget')),confirmed:true});
+ toast('연동 신청 정보를 저장했습니다.');await openKakaoConsultRequest(agent);
+})}
+async function cancelKakaoConsultRequest(){if(!confirm('상담톡 연동 신청을 취소할까요?'))return;await act(async()=>{const agent=kakaoConsultAgent;await api('/api/kakao-consultation/request?agent='+enc(agent),undefined,'DELETE');await openKakaoConsultRequest(agent)})}

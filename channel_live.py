@@ -12,6 +12,7 @@ from integrations.channels import naver_in,naver_out,kakao_in,kakao_out
 def init_channels():
     with db(True) as c:
         c.executescript('''
+        CREATE TABLE IF NOT EXISTS kakao_consult_request(ws TEXT NOT NULL,agent TEXT NOT NULL,mode TEXT NOT NULL,dealer TEXT NOT NULL,channel_ref TEXT NOT NULL,budget_krw INTEGER NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS channel_link(ws TEXT NOT NULL,channel TEXT NOT NULL,secret_hash TEXT NOT NULL UNIQUE,secret TEXT NOT NULL,credential TEXT NOT NULL,partner TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(ws,channel));
         CREATE TABLE IF NOT EXISTS channel_destination(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,link_hash TEXT NOT NULL,partner TEXT NOT NULL,recipient TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS channel_customer_thread(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,connection TEXT NOT NULL,customer_hash TEXT NOT NULL,PRIMARY KEY(ws,thread));
@@ -125,6 +126,41 @@ def delivery_issues(ws=Depends(ident)):
                 if item['thread'] and not thread_accessible(c,w,item['thread']):continue
                 result.append(item|{'origin':origin})
         return sorted(result,key=lambda x:(x['updated'],x['id']),reverse=True)[:100]
+
+def consult_request_view(c,ws,agent):
+    r=one(c,'SELECT mode,dealer,channel_ref,budget_krw,updated FROM kakao_consult_request WHERE ws=? AND agent=?',(ws,agent))
+    return {'agent':agent,'request':r,'status':'pending_contract' if r else 'not_requested','active':False,'billing_enabled':False,'unit_price_krw':None,'prepaid_required':True}
+
+@app.get('/api/kakao-consultation/request')
+def consult_request_status(agent:str='',ws=Depends(ident)):
+    import branding
+    with db() as c:
+        branding.owned_agent(c,getw(c,ws),agent)
+        return consult_request_view(c,ws,agent)
+
+@app.post('/api/kakao-consultation/request')
+def consult_request_save(body:dict,ws=Depends(ident)):
+    import branding
+    agent=body.get('agent','');mode=body.get('mode');budget=body.get('budget_krw',0)
+    require(isinstance(agent,str) and len(agent)<=100 and mode in ('own_contract','managed_prepaid') and body.get('confirmed') is True,'연동 유형 및 신청 확인 필요',422)
+    dealer=bounded(body.get('dealer',''),100);channel=bounded(body.get('channel_ref',''),200)
+    require(channel,'카카오 비즈니스 채널 ID 또는 이름 필요',422)
+    require(type(budget) is int and 0<=budget<=10000000,'희망 월 예산 범위 오류',422)
+    if mode=='own_contract':require(dealer and budget==0,'직접 계약은 딜러사명 필요, CS AI 충전 예산 없음',422)
+    else:require(not dealer and budget>=1000,'CS AI 공급 방식 희망 예산 1,000원 이상',422)
+    with db(True) as c:
+        branding.owned_agent(c,getw(c,ws),agent)
+        if agent:require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent)),'보관된 브랜드입니다.',409)
+        c.execute('INSERT INTO kakao_consult_request VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,agent) DO UPDATE SET mode=excluded.mode,dealer=excluded.dealer,channel_ref=excluded.channel_ref,budget_krw=excluded.budget_krw,updated=excluded.updated',(ws,agent,mode,dealer,channel,budget,now()))
+        return consult_request_view(c,ws,agent)
+
+@app.delete('/api/kakao-consultation/request')
+def consult_request_cancel(agent:str='',ws=Depends(ident)):
+    import branding
+    with db(True) as c:
+        branding.owned_agent(c,getw(c,ws),agent)
+        c.execute('DELETE FROM kakao_consult_request WHERE ws=? AND agent=?',(ws,agent))
+    return {'ok':True}
 
 @app.get('/api/integrations/channels/{ch}')
 def status(ch:str,ws=Depends(ident)):
