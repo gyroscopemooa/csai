@@ -14,6 +14,8 @@ def init_channels():
         c.executescript('''
         CREATE TABLE IF NOT EXISTS kakao_consult_request(ws TEXT NOT NULL,agent TEXT NOT NULL,mode TEXT NOT NULL,dealer TEXT NOT NULL,channel_ref TEXT NOT NULL,budget_krw INTEGER NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,agent));
         CREATE TABLE IF NOT EXISTS channel_link(ws TEXT NOT NULL,channel TEXT NOT NULL,secret_hash TEXT NOT NULL UNIQUE,secret TEXT NOT NULL,credential TEXT NOT NULL,partner TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(ws,channel));
+        CREATE TABLE IF NOT EXISTS channel_brand_link(ws TEXT NOT NULL,agent TEXT NOT NULL,channel TEXT NOT NULL,secret_hash TEXT NOT NULL UNIQUE,secret TEXT NOT NULL,credential TEXT NOT NULL,partner TEXT NOT NULL,active INTEGER NOT NULL,PRIMARY KEY(ws,agent,channel));
+        CREATE TABLE IF NOT EXISTS channel_job_scope(ws TEXT NOT NULL,job TEXT NOT NULL,agent TEXT NOT NULL,PRIMARY KEY(ws,job));
         CREATE TABLE IF NOT EXISTS channel_destination(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,link_hash TEXT NOT NULL,partner TEXT NOT NULL,recipient TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS channel_customer_thread(ws TEXT NOT NULL,thread TEXT NOT NULL,channel TEXT NOT NULL,connection TEXT NOT NULL,customer_hash TEXT NOT NULL,PRIMARY KEY(ws,thread));
         CREATE INDEX IF NOT EXISTS channel_customer_lookup ON channel_customer_thread(ws,channel,connection,customer_hash);
@@ -27,6 +29,30 @@ def digest(s):return hashlib.sha256(s.encode()).hexdigest()
 def lock_text(t):return encryption().encrypt(t.encode()).decode()
 def unlock(t):return encryption().decrypt(t.encode()).decode()
 
+def scoped_link(c,ws,ch,agent=''):
+    if agent:return one(c,'SELECT * FROM channel_brand_link WHERE ws=? AND agent=? AND channel=?',(ws,agent,ch))
+    r=one(c,'SELECT * FROM channel_link WHERE ws=? AND channel=?',(ws,ch))
+    return r|{'agent':''} if r else None
+
+def link_by_hash(c,ch,key,ws=None):
+    r=one(c,'SELECT * FROM channel_brand_link WHERE channel=? AND secret_hash=? AND active=1',(ch,key))
+    if not r:
+        base=one(c,'SELECT * FROM channel_link WHERE channel=? AND secret_hash=? AND active=1',(ch,key))
+        r=base|{'agent':''} if base else None
+    return r if r and (ws is None or r['ws']==ws) else None
+
+def permitted_link(c,w,link):
+    import branding
+    if not w or not link or not link['active'] or not public_access(w) or link['channel'] not in entitlements(w):return False
+    agent=link['agent']
+    if not agent:return bool(w['enabled'])
+    a=one(c,'SELECT * FROM agent_profile WHERE ws=? AND id=?',(w['id'],agent))
+    return bool(branding.agent_allowed(w,a) and a['enabled'] and not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(w['id'],agent)))
+
+def session_key(link,user):
+    # Preserve existing main-channel customer IDs and isolate additional brands.
+    return digest(link['secret_hash']+':'+user) if link['agent'] else digest(user)
+
 def staff_enabled():
     return enabled() and os.getenv('ENABLE_NAVER_STAFF_SEND','0')=='1'
 
@@ -38,14 +64,14 @@ def naver_success(resp):
 def staff_destination(c,ws,t):
     if not staff_enabled() or t['kind']!='naver':return None
     w=getw(c,ws)
-    if not w or not w['enabled'] or not public_access(w) or 'naver' not in entitlements(w):return None
+    if not w:return None
     target=one(c,"SELECT * FROM channel_destination WHERE ws=? AND thread=? AND channel='naver'",(ws,t['id']))
-    link=one(c,"SELECT * FROM channel_link WHERE ws=? AND channel='naver' AND active=1",(ws,))
-    if not target or not link or target['link_hash']!=link['secret_hash'] or target['partner']!=link['partner']:return None
+    link=link_by_hash(c,'naver',target['link_hash'],ws) if target else None
+    if not target or not permitted_link(c,w,link) or target['partner']!=link['partner']:return None
     # Only the current live conversation may be used to send; no guessed recipient, no expired old thread.
-    ss=one(c,"SELECT token FROM channel_session WHERE ws=? AND channel='naver' AND external_user=?",(ws,digest(unlock(target['recipient']))))
-    v=one(c,"SELECT token FROM visitor WHERE ws=? AND token=? AND expires>?",(ws,t['visitor'],now()))
-    if not ss or not v or ss['token']!=t['visitor']:return None
+    ss=one(c,"SELECT token FROM channel_session WHERE ws=? AND channel='naver' AND external_user=?",(ws,session_key(link,unlock(target['recipient']))))
+    v=one(c,"SELECT token,agent FROM visitor WHERE ws=? AND token=? AND expires>?",(ws,t['visitor'],now()))
+    if not ss or not v or v['agent']!=link['agent'] or ss['token']!=t['visitor']:return None
     return target,link
 
 def staff_info(c,ws,t):
@@ -162,32 +188,63 @@ def consult_request_cancel(agent:str='',ws=Depends(ident)):
         c.execute('DELETE FROM kakao_consult_request WHERE ws=? AND agent=?',(ws,agent))
     return {'ok':True}
 
+def validate_scope(c,ws,agent):
+    import branding
+    require(isinstance(agent,str) and len(agent)<=100,'브랜드 형식 오류',422)
+    w=getw(c,ws);branding.owned_agent(c,w,agent)
+    return w
+
 @app.get('/api/integrations/channels/{ch}')
-def status(ch:str,ws=Depends(ident)):
+def status(ch:str,agent:str='',ws=Depends(ident)):
     require(ch in ['naver','kakao'],'채널 오류',422)
     with db() as c:
-        w=getw(c,ws);require(ch in entitlements(w));r=one(c,'SELECT * FROM channel_link WHERE ws=? AND channel=?',(ws,ch));jobs=rows(c,'SELECT id,status,error,created FROM channel_job WHERE ws=? AND channel=? ORDER BY rowid DESC LIMIT 30',(ws,ch))
-    return {'configured':enabled(),'saved':bool(r),'active':bool(r and r['active']),'partner':r['partner'] if r else '', 'webhook':APP_URL+'/hooks/'+ch+'/'+unlock(r['secret']) if r else '', 'jobs':jobs}
+        w=validate_scope(c,ws,agent);require(ch in entitlements(w));r=scoped_link(c,ws,ch,agent)
+        jobs=rows(c,"SELECT j.id,j.status,j.error,j.created FROM channel_job j LEFT JOIN channel_job_scope s ON s.ws=j.ws AND s.job=j.id WHERE j.ws=? AND j.channel=? AND COALESCE(s.agent,'')=? ORDER BY j.rowid DESC LIMIT 30",(ws,ch,agent))
+        live=permitted_link(c,w,r)
+    return {'configured':enabled(),'saved':bool(r),'active':bool(r and r['active'] and live and enabled()),'partner':r['partner'] if r else '', 'webhook':APP_URL+'/hooks/'+ch+'/'+unlock(r['secret']) if r else '', 'jobs':jobs,'agent':agent}
+
 @app.post('/api/integrations/channels/{ch}')
 def setup(ch:str,body:dict,ws=Depends(ident)):
-    require(ch in ['naver','kakao'],'채널 오류',422);require(os.getenv('INTEGRATION_ENCRYPTION_KEY'),'암호화 키를 먼저 설정하세요.',503);partner=bounded(body.get('partner',''),200);cred=bounded(body.get('credential',''),1000)
+    require(ch in ['naver','kakao'],'채널 오류',422);require(os.getenv('INTEGRATION_ENCRYPTION_KEY'),'암호화 키를 먼저 설정하세요.',503)
+    partner=bounded(body.get('partner',''),200);cred=bounded(body.get('credential',''),1000);agent=body.get('agent','')
     require(partner,'파트너 ID 또는 봇 ID 필요',422)
     if ch=='naver':require(cred,'보내기 API Authorization 필요',422)
     if ch=='kakao' and body.get('active'):require(bool(os.getenv('KAKAO_CALLBACK_HOSTS')),'공식 콜백 호스트 확인 후 등록 필요',503)
     with db(True) as c:
-        require(ch in entitlements(getw(c,ws)));require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'외부 메시지 처리 완료 후 연결을 변경하세요.',409);require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status IN ('queued','running')",(ws,ch)),'직접 답변 발송 완료 후 연결을 변경하세요.',409);old=one(c,'SELECT * FROM channel_link WHERE ws=? AND channel=?',(ws,ch));st=unlock(old['secret']) if old and old['partner']==partner else secrets.token_urlsafe(32)
+        w=validate_scope(c,ws,agent);require(ch in entitlements(w))
+        if agent:require(not one(c,'SELECT agent FROM archived_brand WHERE ws=? AND agent=?',(ws,agent)),'보관된 브랜드입니다.',409)
+        require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'외부 메시지 처리 완료 후 연결을 변경하세요.',409)
+        require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status IN ('queued','running')",(ws,ch)),'직접 답변 발송 완료 후 연결을 변경하세요.',409)
+        main=scoped_link(c,ws,ch)
+        require(not (agent and main and main['partner']==partner),'다른 브랜드에 연결된 채널입니다.',409)
+        require(not one(c,'SELECT agent FROM channel_brand_link WHERE ws=? AND channel=? AND partner=? AND agent<>?',(ws,ch,partner,agent)),'다른 브랜드에 연결된 채널입니다.',409)
+        old=scoped_link(c,ws,ch,agent);st=unlock(old['secret']) if old and old['partner']==partner else secrets.token_urlsafe(32)
         active=int(body.get('active') is True);require(not active or enabled(),'HTTPS 및 서버 연동 활성화 필요',503)
-        c.execute('INSERT INTO channel_link VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,channel) DO UPDATE SET secret_hash=excluded.secret_hash,secret=excluded.secret,credential=excluded.credential,partner=excluded.partner,active=excluded.active',(ws,ch,digest(st),lock_text(st),lock_text(cred),partner,active))
-    return {'webhook':APP_URL+'/hooks/'+ch+'/'+st,'active':bool(active)}
+        args=(digest(st),lock_text(st),lock_text(cred),partner,active)
+        if agent:c.execute('INSERT INTO channel_brand_link VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(ws,agent,channel) DO UPDATE SET secret_hash=excluded.secret_hash,secret=excluded.secret,credential=excluded.credential,partner=excluded.partner,active=excluded.active',(ws,agent,ch,*args))
+        else:c.execute('INSERT INTO channel_link VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,channel) DO UPDATE SET secret_hash=excluded.secret_hash,secret=excluded.secret,credential=excluded.credential,partner=excluded.partner,active=excluded.active',(ws,ch,*args))
+    return {'webhook':APP_URL+'/hooks/'+ch+'/'+st,'active':bool(active),'agent':agent}
+
 @app.post('/api/integrations/channels/{ch}/disconnect')
-def disconnect(ch:str,ws=Depends(ident)):
-    with db(True) as c:require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'외부 메시지 처리 완료 후 연결을 해제하세요.',409);require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'직접 답변 발송 완료 후 연결을 해제하세요.',409);c.execute("UPDATE channel_staff_outbox SET status='failed',error='연결 해제',body='',updated=? WHERE ws=? AND channel=? AND status='queued'",(now(),ws,ch));c.execute('DELETE FROM channel_link WHERE ws=? AND channel=?',(ws,ch));c.execute('DELETE FROM channel_destination WHERE ws=? AND channel=?',(ws,ch));c.execute("UPDATE channel_job SET status='cancelled',body='' WHERE ws=? AND channel=? AND status='queued'",(ws,ch))
+def disconnect(ch:str,agent:str='',ws=Depends(ident)):
+    require(ch in ['naver','kakao'],'채널 오류',422)
+    with db(True) as c:
+        validate_scope(c,ws,agent);old=scoped_link(c,ws,ch,agent)
+        if not old:return {'ok':True}
+        require(not one(c,"SELECT id FROM channel_job WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'외부 메시지 처리 완료 후 연결을 해제하세요.',409)
+        require(not one(c,"SELECT id FROM channel_staff_outbox WHERE ws=? AND channel=? AND status='running'",(ws,ch)),'직접 답변 발송 완료 후 연결을 해제하세요.',409)
+        key=old['secret_hash']
+        c.execute("UPDATE channel_staff_outbox SET status='failed',error='연결 해제',body='',updated=? WHERE ws=? AND channel=? AND link_hash=? AND status='queued'",(now(),ws,ch,key))
+        if agent:c.execute('DELETE FROM channel_brand_link WHERE ws=? AND agent=? AND channel=?',(ws,agent,ch))
+        else:c.execute('DELETE FROM channel_link WHERE ws=? AND channel=?',(ws,ch))
+        c.execute('DELETE FROM channel_destination WHERE ws=? AND channel=? AND link_hash=?',(ws,ch,key))
+        c.execute("UPDATE channel_job SET status='cancelled',body='',updated=? WHERE ws=? AND channel=? AND status='queued' AND COALESCE((SELECT s.agent FROM channel_job_scope s WHERE s.ws=channel_job.ws AND s.job=channel_job.id),'')=?",(now(),ws,ch,agent))
     return {'ok':True}
 @app.post('/hooks/{ch}/{secret}')
 def ingress(ch:str,secret:str,body:dict,req:Request):
     require(enabled() and ch in ['naver','kakao'],'연동 비활성화',404)
     with db(True) as c:
-        link=one(c,'SELECT * FROM channel_link WHERE channel=? AND secret_hash=? AND active=1',(ch,digest(secret)));require(link,'채널 인증 실패',404);ws=link['ws'];w=getw(c,ws);require(ch in entitlements(w) and w['enabled'],'상담 비활성화',403);limit('hook:'+ws+':'+ch,120)
+        link=link_by_hash(c,ch,digest(secret));require(link,'채널 인증 실패',404);ws=link['ws'];w=getw(c,ws);require(permitted_link(c,w,link),'상담 비활성화',403);limit('hook:'+ws+':'+ch,120)
         if ch=='naver':
             m=naver_in(body)
             if not m:return Response(status_code=200) # ignore echo and non-text events
@@ -196,9 +253,12 @@ def ingress(ch:str,secret:str,body:dict,req:Request):
         else:
             require(body.get('bot',{}).get('id')==link['partner'],'봇 ID 불일치',403);m=kakao_in(body);require(m,'텍스트 문의만 지원',422);target=body.get('userRequest',{}).get('callbackUrl','');require(isinstance(target,str) and checked_callback(target),'승인된 콜백 URL 필요',422)
         # Kakao callback is a one-use event ID. Naver has no reliable ID in the documented text event.
-        key=digest(target if target else dump(body)+':'+str(now()//10))
+        event=target if target else dump(body)+':'+str(now()//10)
+        key=digest(link['secret_hash']+':'+event if link['agent'] else event)
         if not one(c,'SELECT id FROM channel_job WHERE ws=? AND channel=? AND event_key=?',(ws,ch,key)):
-            c.execute('INSERT INTO channel_job VALUES(?,?,?,?,?,?,?,?,?)',(uid(),ws,ch,key,lock_text(dump({'user':m.user,'text':m.text,'target':target,'link_hash':link['secret_hash'],'partner':link['partner']})),'queued','',now(),now()))
+            job=uid()
+            c.execute('INSERT INTO channel_job VALUES(?,?,?,?,?,?,?,?,?)',(job,ws,ch,key,lock_text(dump({'user':m.user,'text':m.text,'target':target,'link_hash':link['secret_hash'],'partner':link['partner']})),'queued','',now(),now()))
+            c.execute('INSERT INTO channel_job_scope VALUES(?,?,?)',(ws,job,link['agent']))
     return {'version':'2.0','useCallback':True} if ch=='kakao' else Response(status_code=200)
 
 def process_one(ws=None):
@@ -210,25 +270,28 @@ def process_one(ws=None):
         if ws:sql+=' AND j.ws=?';args=(ws,)
         j=one(c,sql+' ORDER BY rowid LIMIT 1',args)
         if not j:return False
-        c.execute("UPDATE channel_job SET status='running',updated=? WHERE id=?",(now(),j['id']));link=one(c,'SELECT * FROM channel_link WHERE ws=? AND channel=? AND active=1',(j['ws'],j['channel']));w=getw(c,j['ws'])
+        c.execute("UPDATE channel_job SET status='running',updated=? WHERE id=?",(now(),j['id']))
     state='sent';error='';ch=j['channel'];ws=j['ws']
     try:
-        if not enabled() or not link or ch not in entitlements(w) or not w['enabled']:raise RuntimeError('연동 비활성화')
+        if not enabled():raise RuntimeError('연동 비활성화')
         if now()-j['created']>(55 if ch=='kakao' else 240):raise RuntimeError('메시지 처리 기한 초과')
-        body=loads(unlock(j['body']));external=digest(body['user'])
-        if body.get('link_hash')!=link['secret_hash'] or body.get('partner')!=link['partner']:raise RuntimeError('연결 변경 또는 이전 대기 메시지')
+        body=loads(unlock(j['body']))
         with db(True) as c:
+            import branding
+            link=link_by_hash(c,ch,body.get('link_hash',''),ws);w=getw(c,ws)
+            if not permitted_link(c,w,link) or body.get('partner')!=link['partner']:raise RuntimeError('연결 변경 또는 상담 비활성화')
+            agent=link['agent'];profile=branding.owned_agent(c,w,agent);settings=branding.brand_settings(w,profile);external=session_key(link,body['user'])
             ss=one(c,'SELECT token FROM channel_session WHERE ws=? AND channel=? AND external_user=?',(ws,ch,external));token=ss['token'] if ss else None
             t=one(c,'SELECT id FROM thread WHERE ws=? AND visitor=? AND kind=?',(ws,token,ch)) if token else None
             dest=one(c,'SELECT link_hash,partner FROM channel_destination WHERE ws=? AND thread=?',(ws,t['id'])) if t else None
-            if not token or not t or not dest or dest['link_hash']!=link['secret_hash'] or dest['partner']!=link['partner'] or not one(c,'SELECT token FROM visitor WHERE ws=? AND token=? AND expires>?',(ws,token,now())):
-                token=uid();tid=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(token,ws,now()+86400,'public'));c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(tid,ws,token,ch,now(),int(loads(w['settings']).get('consultation_mode')=='staff')));c.execute('INSERT INTO channel_session VALUES(?,?,?,?) ON CONFLICT(ws,channel,external_user) DO UPDATE SET token=excluded.token',(ws,ch,external,token))
+            if not token or not t or not dest or dest['link_hash']!=link['secret_hash'] or dest['partner']!=link['partner'] or not one(c,'SELECT token FROM visitor WHERE ws=? AND token=? AND agent=? AND expires>?',(ws,token,agent,now())):
+                token=uid();tid=uid();c.execute('INSERT INTO visitor(token,ws,expires,kind,agent) VALUES(?,?,?,?,?)',(token,ws,now()+86400,'public',agent));c.execute('INSERT INTO thread(id,ws,visitor,kind,created,manual) VALUES(?,?,?,?,?,?)',(tid,ws,token,ch,now(),int(settings.get('consultation_mode')=='staff')));c.execute('INSERT INTO channel_session VALUES(?,?,?,?) ON CONFLICT(ws,channel,external_user) DO UPDATE SET token=excluded.token',(ws,ch,external,token))
             else:tid=t['id']
             c.execute('INSERT INTO channel_customer_thread VALUES(?,?,?,?,?) ON CONFLICT(ws,thread) DO NOTHING',(ws,tid,ch,link['secret_hash'],external))
             c.execute('INSERT INTO channel_job_thread VALUES(?,?,?) ON CONFLICT(ws,job) DO NOTHING',(ws,j['id'],tid))
             c.execute('INSERT INTO channel_destination VALUES(?,?,?,?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET updated=excluded.updated',(ws,tid,ch,link['secret_hash'],link['partner'],lock_text(body['user']) if ch=='naver' else '',now()))
         r=chat({'token':token,'message':body['text'],'clientMessageId':j['id']});reply=r['reply']
-        if r.get('booking'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+w['slug']
+        if r.get('booking'):reply='예약 가능한 시간과 정보 확인은 다음 공식 상담 링크에서 진행해 주세요.\n'+APP_URL+'/c/'+(profile['slug'] if profile else w['slug'])
         if ch=='naver' and r.get('manual'):ok=True;state='held'
         elif ch=='naver':resp=httpx.post('https://gw.talk.naver.com/chatbot/v1/event',headers={'Authorization':unlock(link['credential'])},json=naver_out(body['user'],reply),timeout=10,follow_redirects=False);ok=naver_success(resp)
         else:
