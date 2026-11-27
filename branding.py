@@ -66,7 +66,7 @@ def appearance(w,s):
     a=entitlements(w);return {'logo':s.get('logo',''),'color':s.get('color','#3182F6') if 'design' in a else '#3182F6','unbrand':bool(s.get('unbrand') and 'unbrand' in a),'theme':s.get('theme','dark') if 'design' in a else 'dark','density':s.get('density','normal') if 'design' in a else 'normal','bubble_radius':s.get('bubble_radius','rounded') if 'design' in a else 'rounded'}
 def chat_profile(s):
     p=s.get('chat_profile') or {}
-    return {'show_at_start':p.get('show_at_start') is True,'title':p.get('title',''),'message':p.get('message',''),'photo':p.get('photo',''),'links':p.get('links',[])}
+    return {'show_at_start':p.get('show_at_start') is True,'title':p.get('title',''),'message':p.get('message',''),'photo':p.get('photo',''),'links':p.get('links',[]),'contacts':p.get('contacts',[]),'notice_mode':p.get('notice_mode','manual'),'manual_notice':s.get('notice','')}
 
 @app.get('/api/chat-profile')
 def get_chat_profile(agent:str='',ws=Depends(ident)):
@@ -100,6 +100,28 @@ def save_chat_profile(body:dict,ws=Depends(ident)):
                 require(valid,'HTTPS 주소만 등록할 수 있습니다.',422)
                 out.append({'name':name.strip(),'url':u})
             p['links']=out
+        if 'notice_mode' in body:
+            require(isinstance(body['notice_mode'],str) and body['notice_mode'] in ('manual','profile','both','off'),'공지 표시 방식 오류',422)
+            p['notice_mode']=body['notice_mode']
+        if 'manual_notice' in body:
+            value=body['manual_notice']
+            require(isinstance(value,str) and len(value)<=1500,'공지는 1,500자 이하로 입력하세요.',422)
+            s['notice']=value.strip();p['manual_notice']=s['notice']
+        if 'contacts' in body:
+            items=body['contacts'];require(isinstance(items,list) and len(items)<=10,'연락처는 최대 10개입니다.',422)
+            out=[]
+            for item in items:
+                require(isinstance(item,dict),'연락처 형식 오류',422)
+                kind=item.get('kind');name=item.get('name','');value=item.get('value','')
+                require(isinstance(kind,str) and kind in ('phone','email','other') and isinstance(name,str) and 0<len(name.strip())<=60 and isinstance(value,str) and 0<len(value.strip())<=200,'연락처 이름 또는 내용 오류',422)
+                value=value.strip()
+                require(not any(ord(ch)<32 or ord(ch)==127 for ch in value),'연락처 형식 오류',422)
+                if kind=='phone':
+                    require(bool(re.fullmatch(r'\+?[0-9 ()-]{3,40}',value)) and 3<=sum(ch.isdigit() for ch in value)<=20,'전화번호 형식 오류',422)
+                if kind=='email':
+                    require(len(value)<=200 and bool(re.fullmatch(r"[A-Za-z0-9._+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+",value)),'이메일 형식 오류',422)
+                out.append({'kind':kind,'name':name.strip(),'value':value})
+            p['contacts']=out
         if 'photo' in body:
             data=body['photo'];require(isinstance(data,str) and len(data)<=1400000,'이미지는 1MB 이하여야 합니다.',422)
             if data:
@@ -112,7 +134,7 @@ def save_chat_profile(body:dict,ws=Depends(ident)):
                         p['photo']='data:image/png;base64,'+base64.b64encode(o.getvalue()).decode()
                 except Exception:raise HTTPException(422,'1MB 이하 PNG·JPEG·WebP 이미지를 선택하세요.')
             else:p['photo']=''
-        s['chat_profile']=p
+        s['chat_profile']={k:v for k,v in p.items() if k!='manual_notice'}
         if a:c.execute('UPDATE agent_profile SET settings=? WHERE ws=? AND id=?',(dump(s),ws,a['id']))
         else:c.execute('UPDATE workspace SET settings=? WHERE id=?',(dump(s),ws))
     return p
