@@ -87,6 +87,8 @@ def session_response(owner,verified_email=None):
         if owner.startswith('google:') and verified_email:
             c.execute('UPDATE workspace SET owner_email=? WHERE id=?',(verified_email.lower(),w['id']))
         t=uid();c.execute('INSERT INTO session VALUES(?,?,?)',(t,w['id'],now()+86400*7))
+        if owner.startswith('google:') and verified_email:
+            c.execute('INSERT INTO session_verified_email VALUES(?,?)',(t,verified_email.lower()))
     r=RedirectResponse('/#education',303);r.set_cookie('csai_session',t,httponly=True,samesite='lax',secure=APP_URL.startswith('https://'),max_age=86400*7);return r
 def current_workspace(req):
     with db() as c:
@@ -984,6 +986,7 @@ import workflow_controls
 workflow_controls.register(app,ident)
 import brand_calendar
 brand_calendar.register(app,ident)
+import staff_access
 
 # Optional one-process worker for the development container. Disabled unless configured.
 _worker_stop=None
