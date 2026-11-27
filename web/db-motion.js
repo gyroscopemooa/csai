@@ -76,7 +76,7 @@ const DBMotion=(()=>{
   const wake=engine(root,dt=>{clock+=dt;step(H,dt);tr.step(dt);sr.step(dt);cr.step(dt);for(const o of live){step(o.X,dt);step(o.A,dt);}for(let i=live.length-1;i>=0;i--)if(live[i].leaving&&!moving(live[i].A)&&!moving(live[i].X)){live[i].el.remove();live.splice(i,1);}for(let i=bands.length-1;i>=0;i--)if(!bands[i].live&&!unfinished(bands[i].f))bands.splice(i,1);for(let i=dots.length-1;i>=0;i--)if(!dots[i].role&&!unfinished(dots[i].f))dots.splice(i,1);},paint,()=>moving(H)||tr.active()||sr.active()||cr.active()||unfinished(CHIP)||live.some(o=>moving(o.X)||moving(o.A))||bands.some(x=>unfinished(x.f))||dots.some(x=>unfinished(x.f)));
   function emit(){onChange({year:M.year,month:M.month,start:a===null?null:dateStr(a),end:b===null?null:dateStr(b),anchor,day:a===null?dateStr(M.first):dateStr(b??a)});}
   function update(notify=true){marks();text();paint();wake();if(notify)emit();}
-  function pick(d){if(!options.range){a=b=d;anchor=false;}else if(a===d){a=b=null;anchor=false;}else if(anchor){const lo=Math.min(a,d);b=Math.max(a,d);a=lo;anchor=false;}else{a=d;b=null;anchor=true;}hover=null;update();}
+  function pick(d){if(!options.range){a=b=d;anchor=false;}else if(a===d){if(options.directRange){a=b=d;anchor=false;}else{a=b=null;anchor=false;}}else if(anchor){const lo=Math.min(a,d);b=Math.max(a,d);a=lo;anchor=false;}else{a=d;b=null;anchor=true;}hover=null;update();}
   function preview(d){if(!options.range||!anchor||a===null||hover===d)return;hover=d;if(d===null||d===a){killBand();}else setBand(Math.min(a,d),Math.max(a,d),true);paint();wake();}
   function goMonth(y,m,{notify=true,keyboard=false}={}){
    const next=monthInfo(y,m),dir=next.first>M.first?1:-1;
