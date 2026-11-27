@@ -438,3 +438,11 @@
 .booking-block-row{display:grid;gap:12px;min-width:0;padding:14px;border:1px solid var(--border,#dce1e7);border-radius:12px}
 .booking-block-list:empty{display:none}
 @media(max-width:360px){.booking-settings-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Keep mobile navigation available while scrolling long management screens. */
+@media(max-width:700px){
+ body{overflow-x:clip}
+ .layout .app-sidebar{position:sticky;top:0;align-self:start;z-index:8;background:#fff;max-height:calc(100dvh - 12px);overflow:visible}
+ .layout .app-sidebar.open{overflow-y:auto;overscroll-behavior:contain}
+ .layout .app-sidebar .sidebar-brand{flex-shrink:0}
+}
