@@ -457,7 +457,7 @@ def chat(body:dict):
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()));c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'done',dump(r),p,'manual',now()));
             if staff:
                 c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
-                if v['kind']!='test' and route_mode!='staff':
+                if v['kind']!='test' and (t['manual'] or pause):
                     # A new customer message during ongoing human handling needs attention.
                     # Coalesce burst notifications for this thread.
                     if not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='manual_message' AND ref=? AND created>?",(ws,tid,now()-60)):
