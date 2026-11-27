@@ -175,7 +175,7 @@ def settings(body:dict,ws=Depends(ident)):
                 if k in s['modes'] and v in ['auto','manual','off']:s['modes'][k]=v
             if s['modes'].get('booking')=='auto':
                 require(policies.status(c,ws)['automation_accepted'],'예약 자동 확정 위험 안내를 먼저 확인하세요.',403)
-        if any(k in body for k in ['fields','open','close','duration','buffer','closed_days','payment_required','timezone','resources']):require('calendar' in entitlements(w))
+        if any(k in body for k in ['fields','open','close','duration','buffer','closed_days','blocked_times','payment_required','timezone','resources']):require('calendar' in entitlements(w))
         if 'resources' in body:
             rs=body['resources'];require(isinstance(rs,list) and 1<=len(rs)<=20,'담당자는 1~20명',422);out=[];seen=set()
             for r in rs:
@@ -196,6 +196,7 @@ def settings(body:dict,ws=Depends(ident)):
         for k in ['duration','buffer']:
             if k in body:require(type(body[k])==int and (5 if k=='duration' else 0)<=body[k]<=480,'시간 간격 오류',422);s[k]=body[k]
         if 'closed_days' in body:require(isinstance(body['closed_days'],list) and all(type(x)==int and 0<=x<=6 for x in body['closed_days']),'휴무 요일 오류',422);s['closed_days']=body['closed_days']
+        if 'blocked_times' in body:s['blocked_times']=validate_blocked_times(body['blocked_times'])
         if 'payment_required' in body:s['payment_required']=bool(body['payment_required'])
         if 'timezone' in body:
             try:ZoneInfo(body['timezone']);s['timezone']=body['timezone']
@@ -831,6 +832,47 @@ def qr(ws=Depends(ident)):
     with db() as c:w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요');url=APP_URL+'/c/'+w['slug']
     b=io.BytesIO();qrcode.make(url).save(b,format='PNG');return Response(b.getvalue(),media_type='image/png')
 
+def validate_blocked_times(items):
+    require(isinstance(items,list) and len(items)<=100,'예약 불가 일정은 최대 100개입니다.',422)
+    out=[]
+    for item in items:
+        require(isinstance(item,dict),'예약 불가 일정 형식 오류',422)
+        kind=item.get('kind');require(kind in ('date','weekly'),'예약 불가 일정 유형 오류',422)
+        name=bounded(item.get('name',''),100)
+        start=item.get('start','00:00');end=item.get('end','24:00')
+        require(isinstance(start,str) and isinstance(end,str) and re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start) and re.fullmatch(r'(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)',end) and start<end,'차단 시작·종료 시간을 확인하세요.',422)
+        rule={'kind':kind,'name':name,'start':start,'end':end}
+        if kind=='date':
+            try:
+                first=datetime.strptime(item.get('from',''),'%Y-%m-%d').date()
+                last=datetime.strptime(item.get('to',''),'%Y-%m-%d').date()
+                require(first<=last,'차단 시작일은 종료일보다 늦을 수 없습니다.',422)
+            except (ValueError,TypeError):fail(422,'차단 날짜 형식 오류')
+            rule.update({'from':first.isoformat(),'to':last.isoformat()})
+        else:
+            days=item.get('days',[])
+            require(isinstance(days,list) and days and all(type(x)==int and 0<=x<=6 for x in days),'반복 요일을 선택하세요.',422)
+            rule['days']=sorted(set(days))
+        out.append(rule)
+    return out
+
+def blocked_conflict(s,start,end,buffer=0):
+    zone=ZoneInfo(s['timezone'])
+    a=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).astimezone(zone)
+    b=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).astimezone(zone)
+    day=a.date()
+    while day<=b.date():
+        for rule in s.get('blocked_times',[]):
+            if rule['kind']=='date':
+                if not rule['from']<=day.isoformat()<=rule['to']:continue
+            elif day.weekday() not in rule['days']:continue
+            midnight=datetime.combine(day,datetime.min.time(),zone)
+            def at(t):
+                h,m=map(int,t.split(':'));return midnight+timedelta(hours=h,minutes=m)
+            if a<at(rule['end']) and b>at(rule['start']):return True
+        day+=timedelta(days=1)
+    return False
+
 def interval(s,start):
     try:
         d=datetime.fromisoformat(start);require(d.tzinfo is None,'업체 현지 시간을 입력하세요.',422);d=d.replace(tzinfo=ZoneInfo(s['timezone']));end=d+timedelta(minutes=s['duration']);endbuf=end+timedelta(minutes=s['buffer'])
@@ -841,6 +883,7 @@ def interval(s,start):
 def resource_id(s,body):
     k=body.get('resource','default');require(k in [r['id'] for r in s.get('resources',[{'id':'default','name':'기본 담당자'}])],'담당자 선택 오류',422);return k
 def available(c,ws,start,end,exclude='',buffer=0,resource='default'):
+    if blocked_conflict(loads(getw(c,ws)['settings']),start,end,buffer):return False
     t0=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).isoformat();t1=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).isoformat()
     return not one(c,"SELECT b.id FROM booking b WHERE b.ws=? AND b.resource=? AND b.status='confirmed' AND b.start<? AND b.end>? AND b.id<>? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id)",(ws,resource,t1,t0,exclude)) and not google_calendar.busy_conflict(c,ws,t0,t1)
 def validate_fields(s,data):
