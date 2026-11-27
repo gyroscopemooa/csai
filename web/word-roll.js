@@ -71,6 +71,22 @@
     }
     requestAnimationFrame(frame);
   }
-  new MutationObserver(mount).observe(document.getElementById('app'), { childList: true });
-  mount();
+  const headingObserver = new IntersectionObserver(entries => {
+    for (const {target, isIntersecting} of entries) {
+      if (!isIntersecting) continue;
+      if (!reduced.matches) target.classList.add('benefit-roll-enter');
+      headingObserver.unobserve(target);
+    }
+  }, {threshold: .25});
+  let heading = null;
+  function mountLandingMotion() {
+    mount();
+    const next = document.getElementById('landing-benefit-title');
+    if (next === heading) return;
+    if (heading) headingObserver.unobserve(heading);
+    heading = next;
+    if (heading) headingObserver.observe(heading);
+  }
+  new MutationObserver(mountLandingMotion).observe(document.getElementById('app'), { childList: true });
+  mountLandingMotion();
 })();

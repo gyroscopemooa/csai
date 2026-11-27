@@ -115,3 +115,14 @@
 .unify-step:focus-visible{outline:3px solid #89baff;outline-offset:5px;border-radius:10px}
 @media(max-width:700px){.unify-stepper{padding:22px 10px 12px}.unify-source-list{gap:4px}.unify-source-list span{padding:7px 5px;font-size:10px}.unify-step-track{margin:18px 5px 0}.unify-step-name{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.unify-step-dot{transform:none!important}}
+/* Word Roll entrance adapted from DesignBookmark. */
+.benefit-roll-line { display:block; }
+.benefit-roll-word { display:inline-block; overflow:hidden; vertical-align:bottom; }
+.benefit-roll-letter { display:inline-block; }
+@media (prefers-reduced-motion:no-preference) {
+ .benefit-roll-enter .benefit-roll-letter {
+  animation:benefit-word-roll 480ms cubic-bezier(.2,.8,.25,1) var(--letter-delay) both;
+ }
+@keyframes benefit-word-roll {
+ from { transform:translateY(105%); opacity:0; }
+ to { transform:translateY(0); opacity:1; }
