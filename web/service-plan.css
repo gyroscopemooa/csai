@@ -39,3 +39,25 @@
  .sp-definitions dd{font-size:10.5pt}.sp-sheet .sp-lead{font-size:11pt}
  .sp-page-footer{break-inside:avoid}
 }
+
+.sp-doc-tabs{display:flex;gap:6px;margin:0 0 22px;flex-wrap:wrap}
+.sp-doc-tabs button{flex:1 1 145px;padding:12px 14px;border:1px solid #cbd5e1;border-radius:8px;background:transparent;color:inherit;font-weight:600;font-size:14px;cursor:pointer}
+.sp-doc-tabs button[aria-pressed="true"]{background:#e6effb;color:#214b80;border-color:#6c95c7}
+.sp-figure,.sp-illustration{margin:0 0 16px;min-width:0}
+.sp-figure svg,.sp-illustration svg{display:block;width:100%;height:auto}
+.sp-figure figcaption,.sp-illustration figcaption{font-size:11px;color:#58718c;line-height:1.5;margin-top:4px;overflow-wrap:anywhere}
+.sp-illustration{max-width:100%}
+.sp-cover-main{padding-top:25px}
+@media(max-width:600px){.sp-doc-tabs{gap:4px}.sp-doc-tabs button{flex:1 1 100px;font-size:12px;padding:10px 4px}.sp-figure figcaption,.sp-illustration figcaption{font-size:10px}}
+@media print{
+ .sp-doc-tabs{display:none!important}
+ .sp-sheet .sp-figure,.sp-sheet .sp-illustration{break-inside:avoid;page-break-inside:avoid;margin-bottom:7mm}
+ .sp-sheet .sp-figure svg{max-height:37mm}
+ .sp-sheet .sp-illustration svg{max-height:48mm}
+ .sp-cover-main{padding:8mm 0 5mm}
+ .sp-sheet .sp-lead{margin-bottom:4mm}
+ .sp-sheet .sp-definitions>div{padding:5px 0}
+ .sp-sheet .sp-definitions dt{font-size:11pt;margin:0 0 2px}
+ .sp-sheet .sp-definitions dd{font-size:10pt;line-height:1.45}
+ .sp-page-footer{margin-top:5mm;padding-top:3mm}
+}
