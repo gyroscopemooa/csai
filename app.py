@@ -515,7 +515,61 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
             sql+=" AND EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=? AND lower(m.body) LIKE ? ESCAPE '\\')"
             args.extend((cutoff,pattern))
         scopes=workflow_controls.pause_scopes(c,ws)
-        return [r|{'paused_by':workflow_controls.paused_by(scopes,r['agent'],r['kind'])} for r in rows(c,sql+' ORDER BY created DESC',tuple(args))]
+        items=rows(c,sql,tuple(args))
+        # Cursor is tied to the last visible customer message, not wall-clock seconds.
+        for r in items:
+            m=one(c,"SELECT COUNT(*) AS n,COALESCE(MAX(m.rowid),0) AS last_customer FROM message m WHERE m.ws=? AND m.thread=? AND m.role='user' AND m.created>=? AND m.rowid>COALESCE((SELECT seen FROM inbox_read WHERE ws=? AND thread=?),0)",(ws,r['id'],cutoff,ws,r['id']))
+            last=one(c,'SELECT created AS activity,rowid AS seq FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid DESC LIMIT 1',(ws,r['id'],cutoff))
+            r.update(unread=0 if r['sample'] or r['kind']=='test' else m['n'],activity=last['activity'] if last else r['created'],activity_seq=last['seq'] if last else 0,paused_by=workflow_controls.paused_by(scopes,r['agent'],r['kind']))
+        return sorted(items,key=lambda r:(r['activity'],r['activity_seq'],r['id']),reverse=True)
+@app.post('/api/inbox/{i}/read')
+def inbox_mark_read(i:str,body:dict,ws=Depends(ident)):
+    with db(True) as c:
+        w=getw(c,ws);t=one(c,'SELECT id,kind FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음',404)
+        require(t['kind']!='test' and not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플·테스트 제외',409)
+        m=one(c,"SELECT rowid AS seq FROM message WHERE ws=? AND thread=? AND id=? AND role='user' AND created>=?",(ws,i,body.get('message'),history_cutoff(w)))
+        require(m,'확인한 고객 메시지가 필요합니다.',422)
+        c.execute('INSERT INTO inbox_read VALUES(?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET seen=excluded.seen WHERE inbox_read.seen<excluded.seen',(ws,i,m['seq']))
+    return {'ok':True}
+
+@app.get('/api/inbox/{i}/annotation')
+def inbox_annotation(i:str,ws=Depends(ident)):
+    with db() as c:
+        require(thread_accessible(c,getw(c,ws),i),'상담 없음',404)
+        r=one(c,'SELECT note,tags FROM inbox_annotation WHERE ws=? AND thread=?',(ws,i))
+    return {'note':r['note'],'tags':loads(r['tags'])} if r else {'note':'','tags':[]}
+
+@app.post('/api/inbox/{i}/annotation')
+def inbox_annotation_save(i:str,body:dict,ws=Depends(ident)):
+    note=body.get('note','');tags=body.get('tags',[])
+    require(isinstance(note,str) and len(note)<=3000 and isinstance(tags,list) and len(tags)<=10 and all(isinstance(t,str) and 0<len(t.strip())<=30 for t in tags),'메모 3000자, 태그 10개 이내',422)
+    tags=list(dict.fromkeys(t.strip() for t in tags))
+    with db(True) as c:
+        t=one(c,'SELECT kind FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음',404)
+        require(t['kind']!='test' and not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'실제 상담만 저장 가능',409)
+        c.execute('INSERT INTO inbox_annotation VALUES(?,?,?,?) ON CONFLICT(ws,thread) DO UPDATE SET note=excluded.note,tags=excluded.tags',(ws,i,note.strip(),dump(tags)))
+    return {'ok':True}
+
+@app.get('/api/inbox-snippets')
+def inbox_snippets(ws=Depends(ident)):
+    with db() as c:return rows(c,'SELECT id,title,body FROM inbox_snippet WHERE ws=? ORDER BY created DESC,id',(ws,))
+
+@app.post('/api/inbox-snippets')
+def inbox_snippet_add(body:dict,ws=Depends(ident)):
+    title=body.get('title');value=body.get('body')
+    require(isinstance(title,str) and 0<len(title.strip())<=80 and isinstance(value,str) and 0<len(value.strip())<=1000,'제목 80자, 답변 1000자 이내',422)
+    with db(True) as c:
+        require(one(c,'SELECT COUNT(*) AS n FROM inbox_snippet WHERE ws=?',(ws,))['n']<100,'저장 답변은 최대 100개입니다.',409)
+        i=uid();c.execute('INSERT INTO inbox_snippet VALUES(?,?,?,?,?)',(i,ws,title.strip(),value.strip(),now()))
+    return {'id':i}
+
+@app.delete('/api/inbox-snippets/{i}')
+def inbox_snippet_delete(i:str,ws=Depends(ident)):
+    with db(True) as c:
+        require(one(c,'SELECT id FROM inbox_snippet WHERE ws=? AND id=?',(ws,i)),'저장 답변 없음',404)
+        c.execute('DELETE FROM inbox_snippet WHERE ws=? AND id=?',(ws,i))
+    return {'ok':True}
+
 @app.get('/api/history-policy')
 def history_policy(ws=Depends(ident)):
     with db() as c:
