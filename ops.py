@@ -127,7 +127,7 @@ def decide(i:str,body:dict,ws=Depends(ident)):
 def convert_work(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
         w=getw(c,ws);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w));t=one(c,'SELECT id FROM thread WHERE ws=? AND id=?',(ws,i));require(t,'상담 없음',404)
-        agent=thread_brand(c,w,i,True);require(not agent or k!='quote','추가 브랜드 견적 상품 분리 준비 중',409)
+        agent=thread_brand(c,w,i,True)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 업무로 등록할 수 없습니다.',409)
         existing=one(c,'SELECT work FROM work_link WHERE ws=? AND thread=? AND kind=?',(ws,i,k))
         if existing:
@@ -166,6 +166,7 @@ def simulate_channel(body:dict,ws=Depends(ident)):
 
 def public_work_scope(c,w,v):
     import branding
+    require(public_access(w),'공개 상담 권한 필요',403)
     agent=work_scope(c,w,v.get('agent',''),True)
     if agent:
         a=branding.owned_agent(c,w,agent);require(a['enabled'],'브랜드 상담 비활성화',403)
@@ -175,12 +176,12 @@ def public_work_scope(c,w,v):
 @app.get('/api/customer/requests/{token}')
 def request_options(token:str):
     with db() as c:
-        v=visitor(c,token,kind='public');w=getw(c,v['ws']);agent=public_work_scope(c,w,v);return [k for k in ['quote','complaints','tasks'] if k in entitlements(w) and (not agent or k!='quote')]
+        v=visitor(c,token,kind='public');w=getw(c,v['ws']);agent=public_work_scope(c,w,v);return [k for k in ['quote','complaints','tasks'] if k in entitlements(w)]
 
 @app.post('/api/customer/requests')
 def customer_request(body:dict):
     with db(True) as c:
-        v=visitor(c,body.get('token',''),kind='public');ws=v['ws'];w=getw(c,ws);agent=public_work_scope(c,w,v);k=body.get('kind');require(k in ['quote','complaints','tasks'] and k in entitlements(w) and (not agent or k!='quote'));require(body.get('confirmed') is True,'고객 확인 필요',422)
+        v=visitor(c,body.get('token',''),kind='public');ws=v['ws'];w=getw(c,ws);agent=public_work_scope(c,w,v);k=body.get('kind');require(k in ['quote','complaints','tasks'] and k in entitlements(w));require(body.get('confirmed') is True,'고객 확인 필요',422)
         title=bounded(body.get('title',''),200);details=bounded(body.get('details',''),2000);require(title and details,'제목과 내용 필요',422)
         t=one(c,"SELECT id FROM thread WHERE ws=? AND visitor=? AND kind='public'",(ws,v['token']));require(t and thread_brand(c,w,t['id'],True)==agent,'상담 없음',404);existing=one(c,'SELECT work FROM work_link WHERE ws=? AND thread=? AND kind=?',(ws,t['id'],k))
         if existing:

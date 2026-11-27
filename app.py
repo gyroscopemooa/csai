@@ -358,7 +358,7 @@ def visitor(c,token,ws=None,kind=None):
 @app.get('/api/public/{slug}')
 def public_info(slug:str):
     with db() as c:
-        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if not agent and k in entitlements(w)],'demo':DEMO}
+        w,agent=branding.resolve(c,slug);require(public_access(w) and (agent or w['enabled']),'상담이 비활성화되었습니다.',404);s=branding.brand_settings(w,agent);return {k:s[k] for k in ['brand','notice','links','welcome']}|branding.appearance(w,s)|{'chat_profile':branding.chat_profile(s),'calendar':bool(brand_calendar.public_config(c,w,agent)) if agent else 'calendar' in entitlements(w),'requests':[k for k in ['quote','complaints','tasks'] if k in entitlements(w)],'demo':DEMO}
 @app.post('/api/session')
 def create_session(body:dict,req:Request):
     kind='test' if body.get('test') else 'public';agent=None
@@ -467,12 +467,12 @@ def chat(body:dict):
             return r
         try:kind=charge_chat(c,w,p)
         except ValueError as e:fail(402,str(e))
-        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking','quote'} if agent else set())
+        c.execute('INSERT INTO request VALUES(?,?,?,?,?,?,?,?)',(*key,'running',None,p,kind,now()));history=list(reversed(rows(c,'SELECT role,body FROM message WHERE ws=? AND thread=? ORDER BY rowid DESC LIMIT 8',(ws,tid))));faq=loads(agent['faq']) if agent else rows(c,'SELECT q,a FROM faq WHERE ws=?',(ws,));published=loads(agent['published'] if agent else w['published']);adds=entitlements(w) - ({'calendar','auto_booking','change_booking'} if agent else set())
         if agent:
             calendar_config=brand_calendar.public_config(c,w,agent)
             if calendar_config:
                 adds.add('calendar');s={**s,**{k:calendar_config[k] for k in ('timezone','open','close','duration','buffer','closed_days','fields','resources','payment_required')},'modes':dict(s['modes'],booking=calendar_config['booking_mode'])}
-        quote_catalog=rows(c,'SELECT id,name,price FROM quote_item WHERE ws=? AND active=1 ORDER BY name LIMIT 100',(ws,)) if 'quote' in adds else []
+        quote_catalog=customer_ops.quote_catalog(c,ws,v.get('agent','')) if 'quote' in adds else []
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
         replay=abort_chat_request(key,p,kind)
@@ -907,7 +907,7 @@ def work_list(agent:str='',ws=Depends(ident)):
 @app.post('/api/work')
 def work_add(body:dict,ws=Depends(ident)):
     with db(True) as c:
-        w=getw(c,ws);agent=ops.work_scope(c,w,body.get('agent',''),True);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w) and (not agent or k!='quote'));i=uid();title=bounded(body.get('title',''),200);require(title,'제목 필요',422);c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,k,title,bounded(body.get('details',''),2000),'open',now()));ops.bind_work(c,ws,i,agent)
+        w=getw(c,ws);agent=ops.work_scope(c,w,body.get('agent',''),True);k=body.get('kind');require(k in ['crm','quote','tasks','leads','complaints'] and k in entitlements(w) );i=uid();title=bounded(body.get('title',''),200);require(title,'제목 필요',422);c.execute('INSERT INTO work VALUES(?,?,?,?,?,?,?)',(i,ws,k,title,bounded(body.get('details',''),2000),'open',now()));ops.bind_work(c,ws,i,agent)
     return {'ok':True}
 @app.post('/api/work/{i}')
 def work_done(i:str,agent:str='',ws=Depends(ident)):

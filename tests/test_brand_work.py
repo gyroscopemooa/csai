@@ -16,7 +16,7 @@ def test_brand_work_and_leads_are_scoped():
     assert c.patch('/api/work/'+w['id']+pa,json={'status':'resolved'}).status_code==200
     assert owner().get('/api/work'+pa).status_code in (403,404)
     u=TestClient(app);token=post(u,'/api/session',{'slug':a['slug']})['token']
-    assert 'quote' not in u.get('/api/customer/requests/'+token).json()
+    assert 'quote' in u.get('/api/customer/requests/'+token).json()
     r=post(u,'/api/customer/requests',{'token':token,'kind':'complaints','title':'문의','details':'확인 요청','confirmed':True})
     assert r['id'] in [x['id'] for x in c.get('/api/work'+pa).json()]
     assert c.get('/api/work'+pb).json()==[]
