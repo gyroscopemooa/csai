@@ -111,6 +111,19 @@ def checked_callback(url):
     u=urlsplit(url);hosts={h.strip().lower() for h in os.getenv('KAKAO_CALLBACK_HOSTS','').split(',') if h.strip()}
     return u.scheme=='https' and u.hostname in hosts and u.port in (None,443) and not u.username and not u.password and not u.fragment
 
+@app.get('/api/channel-delivery-issues')
+def delivery_issues(ws=Depends(ident)):
+    with db() as c:
+        w=getw(c,ws);cutoff=history_cutoff(w)
+        incoming=rows(c,"SELECT j.id,j.channel,j.status,j.error,j.created,j.updated,COALESCE(jt.thread,'') AS thread FROM channel_job j LEFT JOIN channel_job_thread jt ON jt.ws=j.ws AND jt.job=j.id WHERE j.ws=? AND j.created>=? AND j.status IN ('failed','running','queued','cancelled') ORDER BY j.updated DESC LIMIT 100",(ws,cutoff))
+        outgoing=rows(c,"SELECT id,channel,status,error,created,updated,thread FROM channel_staff_outbox WHERE ws=? AND created>=? AND status IN ('failed','unknown','running','queued') ORDER BY updated DESC LIMIT 100",(ws,cutoff))
+        result=[]
+        for origin,items in [('auto',incoming),('staff',outgoing)]:
+            for item in items:
+                if item['thread'] and not thread_accessible(c,w,item['thread']):continue
+                result.append(item|{'origin':origin})
+        return sorted(result,key=lambda x:(x['updated'],x['id']),reverse=True)[:100]
+
 @app.get('/api/integrations/channels/{ch}')
 def status(ch:str,ws=Depends(ident)):
     require(ch in ['naver','kakao'],'채널 오류',422)

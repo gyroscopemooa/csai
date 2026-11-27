@@ -23,3 +23,12 @@ def test_inbox_read_annotations_snippets():
     assert not any(x['id']==i for x in other.get('/api/inbox-snippets').json())
     assert other.delete('/api/inbox-snippets/'+i).status_code==404
     assert c.delete('/api/inbox-snippets/'+i).status_code==200
+
+def test_delivery_issue_scope():
+    c=owner();other=owner()
+    slug=c.get('/api/me').json()['slug']
+    with db(True) as conn:
+        ws=one(conn,'SELECT id FROM workspace WHERE slug=?',(slug,))['id']
+        i=uid();conn.execute('INSERT INTO channel_job VALUES(?,?,?,?,?,?,?,?,?)',(i,ws,'naver',uid(),'','failed','provider failure',now(),now()))
+    assert any(x['id']==i for x in c.get('/api/channel-delivery-issues').json())
+    assert not any(x['id']==i for x in other.get('/api/channel-delivery-issues').json())
