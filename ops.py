@@ -56,7 +56,11 @@ def read_events(ws=Depends(ident)):
 @app.get('/api/customer/bookings/{token}')
 def own_bookings(token:str):
     with db() as c:
-        v=visitor(c,token,kind='public');require(not v.get('agent'),'브랜드별 업무 분리 준비 중',409);w=getw(c,v['ws']);require('calendar' in entitlements(w));a=entitlements(w);s=loads(w['settings']);bs=rows(c,"SELECT * FROM booking WHERE ws=? AND visitor=? AND status NOT IN ('draft','superseded') ORDER BY start",(v['ws'],token));return {'bookings':[booking_view(b) for b in bs],'canChange':'change_booking' in a and s['modes'].get('change')!='off','requests':rows(c,'SELECT id,booking,action,start,state FROM booking_change WHERE ws=? AND visitor=? ORDER BY created DESC',(v['ws'],token))}
+        v=visitor(c,token,kind='public')
+        if v.get('agent'):
+            import brand_calendar
+            return brand_calendar.customer_list(c,v)
+        w=getw(c,v['ws']);require('calendar' in entitlements(w));a=entitlements(w);s=loads(w['settings']);bs=rows(c,"SELECT * FROM booking WHERE ws=? AND visitor=? AND status NOT IN ('draft','superseded') ORDER BY start",(v['ws'],token));return {'bookings':[booking_view(b) for b in bs],'canChange':'change_booking' in a and s['modes'].get('change')!='off','requests':rows(c,'SELECT id,booking,action,start,state FROM booking_change WHERE ws=? AND visitor=? ORDER BY created DESC',(v['ws'],token))}
 
 def apply_change(c,b,r,s):
     require(b['status']=='confirmed' and b['start']==r['original_start'],'예약 상태가 변경되었습니다. 다시 요청하세요.',409)
