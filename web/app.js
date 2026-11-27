@@ -255,7 +255,7 @@ function sidebarGroups(){
   ['사업 현황',[['dashboard','오늘의 사업 현황','list']]],
   ['상담 관리',[['inbox','통합 상담함','messages-square'],['preview','채팅창 미리보기','message-circle'],['setup','시작 및 교육 개선','list'],['reply-assistant','답장 비서','message-circle'],['education','AI 교육시키기','graduation-cap'],['agents','AI 상담원 관리','bot']]],
   ['업무 관리',[['calendar','일정표 보기','calendar-days'],['customers','고객·업무 관리','users-round'],['commerce','온라인 판매 관리','receipt'],['team','직원 관리','users-round'],['staff-desk','직원 상담함','messages-square']]],
-  ['서비스 관리',[['channels','외부 채널 연동','plug'],['developer','개발자 센터','external-link'],['alerts','알림','bell'],['settings','설정','settings'],['pricing','요금제 및 결제','wallet'],['features','전체 기능','list'],['service-plan','서비스 소개서','list'],['credits','교육 크레딧','coins'],['addons','추가 기능','puzzle'],['orders','주문·구독 내역','receipt'],['allinone','올인원 패키지','puzzle']]]
+  ['서비스 관리',[['channels','외부 채널 연동','plug'],['developer','개발자 센터','external-link'],['alerts','알림','bell'],['settings','설정','settings'],['pricing','요금제 및 결제','wallet'],['features','전체 기능','list'],['service-plan','서비스 자료실','list'],['credits','교육 크레딧','coins'],['addons','추가 기능','puzzle'],['orders','주문·구독 내역','receipt'],['allinone','올인원 패키지','puzzle']]]
  ];
  if(me.operator)groups.push(['운영자 전용',[['invites','초청 및 체험 관리','ticket'],['costs','AI 사용량 및 원가','chart-no-axes-combined']]]);
  return groups;
