@@ -73,3 +73,37 @@ def test_public_brand_booking_manual_and_isolation():
     assert c.post('/api/booking/draft',json=data|{'token':test_token}).status_code==409
     post(c,pa+'/settings',{'booking_mode':'off'})
     assert u.post('/api/booking/draft',json=data).status_code==409
+
+
+def test_brand_customer_change_requires_approval_and_ownership():
+    from fastapi.testclient import TestClient
+    from app import app
+    c=owner()
+    post(c,'/api/demo/billing',{'plan':'lite','addons':['extra_agent','calendar','change_booking'],'brand_quantity':2})
+    a=post(c,'/api/agents',{'create':True,'brand':'A','welcome':'안녕하세요','enabled':True})
+    b=post(c,'/api/agents',{'create':True,'brand':'B','welcome':'안녕하세요','enabled':True})
+    pa='/api/brand-calendar/'+a['id'];pb='/api/brand-calendar/'+b['id']
+    for path in (pa,pb):post(c,path+'/settings',{'booking_mode':'manual','allow_customer_change':True})
+    u=TestClient(app);v=TestClient(app)
+    token=post(u,'/api/session',{'slug':a['slug']})['token']
+    other=post(v,'/api/session',{'slug':b['slug']})['token']
+    day=(datetime.now()+timedelta(days=3)).strftime('%Y-%m-%d')
+    form=u.get('/api/booking/form/'+token).json()
+    d=post(u,'/api/booking/draft',{'token':token,'start':day+'T13:00','version':form['template_version'],'payload':{'title':'예약'}})
+    post(u,'/api/booking/'+d['id']+'/confirm',{'token':token,'confirmation':d['token']})
+    post(c,pa+'/bookings/'+d['id'],{'action':'approve'})
+    path='/api/customer/bookings/'+d['id']+'/change'
+    req={'token':token,'action':'change','start':day+'T15:00','confirmed':True}
+    assert v.post(path,json=req|{'token':other}).status_code==404
+    change=post(u,path,req)
+    assert change['state']=='pending'
+    assert u.post(path,json=req).status_code==409
+    assert c.get(pb+'/changes').json()==[]
+    assert c.post(pb+'/changes/'+change['id'],json={'action':'approve'}).status_code==404
+    assert post(c,pa+'/changes/'+change['id'],{'action':'approve'})['ok']
+    mine=u.get('/api/customer/bookings/'+token).json()
+    assert mine['canChange'] and mine['requests'][0]['state']=='approved'
+    assert mine['bookings'][0]['start']!=d['start']
+    cancel=post(u,path,{'token':token,'action':'cancel','confirmed':True})
+    assert post(c,pa+'/changes/'+cancel['id'],{'action':'approve'})['ok']
+    assert u.get('/api/customer/bookings/'+token).json()['bookings'][0]['status']=='cancelled'
