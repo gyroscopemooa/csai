@@ -389,3 +389,14 @@
  .layout main .dashboard-setup-strip .dashboard-setup-price { font-size:11px; }
  .layout main .dashboard-setup-strip .dashboard-setup-action { padding:6px 9px; font-size:12px; }
 }
+
+/* Setup consultation comparison: compact responsive detail inside the modal. */
+.setup-consultation-options { display:grid; gap:10px; margin:0; padding:0; min-width:0; border:0; }
+.setup-consultation-options legend { font-size:14px; font-weight:700; margin-bottom:8px; }
+.setup-consultation-option { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:start; gap:10px; padding:12px; border:1px solid #e5e8eb; border-radius:12px; cursor:pointer; }
+.setup-consultation-option:has(input:checked) { border-color:#3182f6; background:#f1f7ff; }
+.setup-consultation-option input[type=radio] { width:18px; height:18px; min-height:0; margin:3px 0 0; padding:0; accent-color:#3182f6; }
+.setup-consultation-option strong { display:block; font-size:14px; line-height:1.5; word-break:keep-all; }
+.setup-consultation-option small { display:block; font-size:12px; line-height:1.65; color:#4e5968; margin-top:4px; word-break:keep-all; }
+.setup-consultation-option ul { margin:8px 0 0; padding-left:17px; color:#4e5968; font-size:12px; line-height:1.65; }
+.setup-consultation-option li { margin:2px 0; }
