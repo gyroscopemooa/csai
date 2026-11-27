@@ -400,3 +400,27 @@
 .setup-consultation-option small { display:block; font-size:12px; line-height:1.65; color:#4e5968; margin-top:4px; word-break:keep-all; }
 .setup-consultation-option ul { margin:8px 0 0; padding-left:17px; color:#4e5968; font-size:12px; line-height:1.65; }
 .setup-consultation-option li { margin:2px 0; }
+
+/* Unsubscribed previews and service notices: no changes to existing screen components. */
+.layout main .card.paid-preview-notice { display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; padding:12px 16px; border-radius:14px; }
+.layout main .paid-preview-notice strong { font-size:14px; }
+.layout main .paid-preview-notice p { font-size:12px; color:#6b7684; margin:3px 0 0; line-height:1.5; }
+.layout main .paid-preview-notice .ui-actions { margin:0; }
+.app-sidebar .service-notice-strip { display:flex; align-items:center; gap:8px; width:100%; min-height:38px; min-width:0; padding:8px 10px; margin:0 0 8px; border:0; border-radius:8px; background:#f5f7fa; color:#4e5968; text-align:left; font-size:12px; }
+.service-notice-strip .service-notice-kind { font-weight:750; color:#236fde; flex:none; }
+.service-notice-strip[data-kind="urgent"] .service-notice-kind { color:#b42318; }
+.service-notice-strip .service-notice-title { min-width:0; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.service-notice-strip .ui-icon { flex:none; width:13px; height:13px; }
+.service-notice-item summary { display:flex; gap:10px; align-items:center; cursor:pointer; list-style:none; padding:13px 0; }
+.service-notice-item summary::-webkit-details-marker { display:none; }
+.service-notice-item summary strong { flex:1; min-width:0; font-size:14px; word-break:keep-all; }
+.service-notice-item summary time { flex:none; font-size:12px; color:#6b7684; }
+.service-notice-item p { line-height:1.7; color:#4e5968; margin:0 0 12px; word-break:keep-all; }
+.service-notice-kind-label { flex:none; font-size:11px; font-weight:700; color:#236fde; }
+.service-notice-list .service-notice-item + .service-notice-item { border-top:1px solid #e5e8eb; }
+@media(max-width:700px){
+ .app-sidebar .service-notice-strip { margin:4px 0 0; padding:8px 6px; background:transparent; border-radius:0; min-height:32px; }
+ .layout main .card.paid-preview-notice { padding:10px 12px; }
+ .layout main .paid-preview-notice .ui-actions { gap:6px; }
+ .service-notice-item summary { flex-wrap:wrap; gap:6px; }
+}
