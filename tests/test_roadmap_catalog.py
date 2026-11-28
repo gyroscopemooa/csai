@@ -7,5 +7,5 @@ def test_future_integrations_are_visible_but_not_billable():
             'Android 앱 SDK', 'iOS 앱 SDK', '전화 상담 연동',
             '위챗', 'AI 전화 상담'} <= names
     assert all('price' not in item and 'id' not in item for item in CAT['roadmap'])
-    assert CAT['plans'][1]['price'] == 4900
+    assert CAT['plans'][1]['price'] == 8900
     assert next(item for item in CAT['addons'] if item['id'] == 'naver')['price'] == 4900

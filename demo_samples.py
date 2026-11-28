@@ -217,6 +217,7 @@ def seed_related(c, ws):
 
 def seed_samples(c, ws):
     local_demo(c, ws)
+    previous_total = one(c, 'SELECT COUNT(*) n FROM demo_sample WHERE ws=?', (ws,))['n']
     existing = one(c, "SELECT COUNT(*) n FROM demo_sample WHERE ws=? AND thread NOT LIKE 'sample-recent-%' AND thread NOT LIKE 'sample-admin-%'", (ws,))['n']
     base = now() - 8 * 86400 - 3600
     for index, (kind, status, manual, messages) in enumerate(SAMPLES):
@@ -243,7 +244,7 @@ def seed_samples(c, ws):
     if is_operator(w) or w['owner'].endswith(':developer'):
         seed_admin_cases(c, ws)
     total = one(c,'SELECT COUNT(*) n FROM demo_sample WHERE ws=?',(ws,))['n']
-    return {'count': total, 'created': total > existing}
+    return {'count': total, 'created': total > previous_total}
 
 @app.post('/api/demo/samples')
 def add_samples(ws=Depends(ident)):

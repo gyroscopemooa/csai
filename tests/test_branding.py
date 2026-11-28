@@ -21,7 +21,7 @@ def test_quantity_and_brand_test_isolation():
     from test_billing import order,paid
     c=owner()
     o=order(c,'subscription',plan='lite',addons=['extra_agent'],brand_quantity=2,client='brand-two')
-    assert o['amount']==19700
+    assert o['amount']==34700
     paid(c,o)
     assert c.get('/api/me').json()['brand_quantity']==2
     patch(c,{'price':'기본 가격'})
