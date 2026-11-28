@@ -2282,25 +2282,21 @@ let paidPreviewHeaderObserver=null;
 function prioritizePaidPreviews(){
  paidPreviewHeaderObserver?.disconnect();paidPreviewHeaderObserver=null;
  const main=$('.layout main');if(!main)return;
- const setup=main.querySelector(':scope > .dashboard-setup-strip');
  const header=$('.layout .app-sidebar');
- if(setup){
-  const notice=main.querySelector(':scope > .mobile-service-notice');if(notice)notice.after(setup);else main.prepend(setup);
-  Object.assign(setup.style,{position:'sticky',top:'12px',zIndex:'7',background:'var(--ds-surface,#fff)'});
-  const updateSetup=()=>{if(!matchMedia('(max-width:700px)').matches){setup.style.top='12px';return;}if(header&&!header.classList.contains('open'))setup.style.top=Math.ceil(header.getBoundingClientRect().height)+'px';};
-  updateSetup();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(updateSetup);paidPreviewHeaderObserver.observe(header);}
+ const setup=main.querySelector(':scope > .dashboard-setup-strip');
+ const notices=[...main.querySelectorAll('.paid-preview-notice')];
+ if(!setup&&!notices.length)return;
+ const top=document.createElement('div');top.className='purchase-sticky-stack';
+ const first=main.querySelector(':scope > .mobile-service-notice');if(first)first.after(top);else main.prepend(top);
+ if(setup)top.append(setup);
+ if(notices.length){
+  const group=document.createElement('section');group.className='card app-card paid-preview-top paid-preview-always';group.setAttribute('aria-label','구독 및 결제 안내');
+  const heading=document.createElement('div');heading.className='paid-preview-heading';
+  const label=document.createElement('strong');label.textContent='구독 기능 '+notices.length+'개';
+  const hint=document.createElement('small');hint.textContent='샘플 체험 가능 · 실제 활성화는 구독 후';heading.append(label,hint);
+  const body=document.createElement('div');body.className='paid-preview-list';notices.forEach(n=>body.append(n));group.append(heading,body);top.append(group);
  }
- const notices=[...main.querySelectorAll('.paid-preview-notice')];if(!notices.length)return;
- const group=document.createElement('details');group.className='card app-card paid-preview-top paid-preview-sticky';
- const names=notices.map(n=>n.querySelector('strong')?.textContent||'추가 기능');
- const summary=document.createElement('summary');summary.className='paid-preview-summary';
- const label=document.createElement('span');label.className='paid-preview-summary-label';label.textContent='구독 기능 '+notices.length+'개';
- const subtitle=document.createElement('span');subtitle.className='paid-preview-summary-names';subtitle.textContent=names.join(' · ');
- const arrow=document.createElement('span');arrow.className='paid-preview-summary-arrow';arrow.textContent='›';arrow.setAttribute('aria-hidden','true');
- summary.append(label,subtitle,arrow);group.append(summary);
- const body=document.createElement('div');body.className='paid-preview-list';const hint=document.createElement('p');hint.className='paid-preview-hint';hint.textContent='샘플 체험 가능 · 실제 활성화는 구독 후';body.append(hint);notices.forEach(n=>body.append(n));group.append(body);
- const first=main.querySelector(':scope > .mobile-service-notice');if(first)first.after(group);else main.prepend(group);
- const update=()=>{if(header&&!header.classList.contains('open'))group.style.setProperty('--paid-sticky-offset',Math.ceil(header.getBoundingClientRect().height)+'px')};
+ const update=()=>{if(!matchMedia('(max-width:700px)').matches){top.style.removeProperty('--paid-sticky-offset');return;}if(header&&!header.classList.contains('open'))top.style.setProperty('--paid-sticky-offset',Math.ceil(header.getBoundingClientRect().height)+'px');};
  update();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(update);paidPreviewHeaderObserver.observe(header);}
 }
 
