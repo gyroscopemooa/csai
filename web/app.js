@@ -624,7 +624,7 @@ function chooseMention(index){
 }
 function quickChat(text){let field=$('#msg');if(!field||sending)return;field.value=text;field.focus();sendChat()}
 function bubble(role,body,allowCopy=false){let text=String(body??'');let parts=text.split(/(https:\/\/[^\s<>"']+)/g);const content=parts.map((x,i)=>{if(i%2===0)return e(x);try{let u=new URL(x);if(u.protocol==='https:')return `<a href="${e(u.href)}" rel="noopener noreferrer" target="_blank">${e(x)}</a>`}catch{}return e(x)}).join('');
- return `<div class="bubble ${role==='user'?'user':''}"><span data-chat-copy-text>${content}</span>${allowCopy&&text.trim()?copyButton('복사','','tertiary ui-copy-message'):''}</div>`;
+ return `<div class="bubble ${role==='user'?'user':''}"><span data-chat-copy-text>${content}</span></div>`;
 }
 let previewAgent='',brandEditor='',inboxAgent='all',selectedBrandCount=1;
 async function getChatSession(){if(chatSession)return chatSession;let saved=publicMode?sessionStorage.getItem('csai-session-'+slug):null;if(saved){try{chatMessages=await api('/api/session/'+enc(saved)+'/messages');chatSession=saved;return saved}catch{sessionStorage.removeItem('csai-session-'+slug)}}let s=await api('/api/session',publicMode?{slug,source:location.pathname.startsWith('/widget/')?'widget':'link'}:{test:true,agent:previewAgent});chatSession=s.token;if(publicMode)sessionStorage.setItem('csai-session-'+slug,chatSession);return chatSession}
