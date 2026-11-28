@@ -48,25 +48,25 @@
       "id": "pro_max",
       "name": "PRO MAX",
       "quantity": 5000,
-      "price": 300000
+      "price": 499000
     },
     {
       "id": "business",
       "name": "BUSINESS",
       "quantity": 10000,
-      "price": 500000
+      "price": 899000
     },
     {
       "id": "business_plus",
       "name": "BUSINESS PLUS",
       "quantity": 30000,
-      "price": 1000000
+      "price": 2090000
     },
     {
       "id": "enterprise",
       "name": "ENTERPRISE",
       "quantity": 100000,
-      "price": 5000000
+      "price": 8990000
     }
   ],
   "education": [
