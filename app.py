@@ -987,14 +987,36 @@ def index(slug:str=''):return FileResponse(ROOT/'web/index.html')
 # Operational endpoints are registered after the original routes.
 import ops
 
-@app.get('/api/special/preview')
-def special_preview(req:Request,ws=Depends(ident)):
+def require_special_preview(req,ws):
     require(DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and req.url.hostname in ('localhost','127.0.0.1'),'로컬 개발 환경에서만 확인할 수 있습니다.',403)
     with db() as c:
         w=getw(c,ws)
         require(w and re.fullmatch(r'demo:[A-Za-z0-9_-]+:developer',w['owner']),'개발 검수 계정만 확인할 수 있습니다.',403)
+
+def special_fixture_store():
+    from store import DATA
+    from special_evaluation_store import EvaluationStore
+    return EvaluationStore(str(DATA/'special-fixture-preview.sqlite3'))
+
+@app.get('/api/special/preview')
+def special_preview(req:Request,ws=Depends(ident)):
+    require_special_preview(req,ws)
     from special_entitlements import PRICES, quote
-    return {'packages':dict(PRICES),'individual_total':quote(['special_intelligence','special_learning','special_automation'])['monthly_krw'],'available_for_purchase':False,'report':{'status':'not_connected','latest':None,'trend':[]}}
+    from special_local_fixture import preview_dashboard
+    report=preview_dashboard(special_fixture_store(),ws,now())
+    return {'packages':dict(PRICES),'individual_total':quote(['special_intelligence','special_learning','special_automation'])['monthly_krw'],'available_for_purchase':False,'report':report,'report_kind':'synthetic_retrieval_checks'}
+
+@app.post('/api/special/preview/evaluate')
+def special_preview_evaluate(req:Request,ws=Depends(ident)):
+    require_special_preview(req,ws)
+    from special_local_fixture import execute_fixture
+    report=execute_fixture(ws)
+    require(report and report['complete'],'검수 실행 실패',503)
+    # One fixed fixture run per workspace per UTC day; repeated clicks are free no-ops.
+    stamp=now()
+    day=stamp//86400
+    special_fixture_store().save(ws,'fixture-v1-'+str(day),report,day*86400)
+    return {'ok':True}
 
 import billing
 import polar_sandbox

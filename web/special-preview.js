@@ -11,6 +11,18 @@ async function specialPreviewPage(){
     '<div class="sp-preview">'+
     '<section class="sp-section"><div class="sp-heading"><div><small>Special All-in-One</small><h2>스페셜 올인원 패키지</h2></div><strong>'+e(money(x.packages.special_all))+'<small> / 월 추가</small></strong></div><p>지능, 기억, 정밀 교육, 업무 수행 능력을 통합 확장하는 패키지.</p><ul>'+packages.flatMap(p=>p[4]).map(f=>'<li>'+e(f)+'</li>').join('')+'<li>종합 성장 대시보드 및 통합 보고서</li><li>특화 신규 기술 (미공개)</li></ul><div class="sp-note">개별 합계 '+e(money(x.individual_total))+' · 월 '+e(money(x.individual_total-x.packages.special_all))+' 절약 · 구매 비활성화</div></section>'+
     '<div class="sp-grid">'+packages.map(p=>'<section class="sp-section"><small>'+e(p[2])+'</small><h3>'+e(p[1])+'</h3><strong>'+e(money(x.packages[p[0]]))+'<small> / 월 추가</small></strong><p>'+e(p[3])+'</p><ul>'+p[4].map(f=>'<li>'+e(f)+'</li>').join('')+'</ul></section>').join('')+'</div>'+
-    '<section class="sp-section"><h2>교육 성과 및 성장 이력</h2><div class="sp-table-wrap"><table><thead><tr><th>평가 항목</th><th>측정 결과</th></tr></thead><tbody>'+['평가 사례 수','검증 통과율','교육 전후 개선 사례','성장 추이'].map(t=>'<tr><td>'+e(t)+'</td><td>미측정</td></tr>').join('')+'</tbody></table></div><p class="sp-note">현재 결과 저장소와 화면은 연결되지 않았습니다. 실제 측정값이 생성되기 전에는 점수 또는 그래프를 표시하지 않습니다.</p></section>'+
+    specialFixtureReport(x.report)+
     '<p class="sp-note">기존 요금제 및 기능은 유지됩니다. 신규 기능은 개발 중이며 현재 구매하거나 실행할 수 없습니다.</p></div>';
+}
+
+function specialFixtureReport(r){
+  const latest=r?.latest, comparison=r?.comparison;
+  const rows=[['평가 사례 수',latest?latest.evaluated_cases:'미측정'],['검증 통과율',latest?(latest.check_pass_rate*100).toFixed(1)+'%':'미측정'],['교육 전후 개선 사례',comparison?comparison.improved_cases:'비교 자료 없음']];
+  const trend=(r?.trend||[]).filter(p=>Number.isInteger(p.total)&&p.total>0&&Number.isInteger(p.passed)&&p.passed>=0&&p.passed<=p.total);
+  return '<section class="sp-section"><h2>검색 검수 결과 및 이력</h2><p class="sp-note">고정된 가상 FAQ를 이용한 실제 검색 검사 결과입니다. 고객 상담 품질 또는 실제 AI 성장 점수가 아닙니다.</p><button type="button" class="primary" onclick="runSpecialFixture(this)">무료 검색 검수 실행</button><div class="sp-table-wrap"><table><thead><tr><th>평가 항목</th><th>측정 결과</th></tr></thead><tbody>'+rows.map(([k,v])=>'<tr><td>'+e(k)+'</td><td>'+e(String(v))+'</td></tr>').join('')+'</tbody></table></div>'+ (trend.length?'<div class="sp-trend">'+trend.map(p=>'<div><span>'+e(new Date(p.finished_at*1000).toISOString().slice(0,10))+'</span><progress max="'+p.total+'" value="'+p.passed+'"></progress><span>'+p.passed+'/'+p.total+'</span></div>').join('')+'</div>':'<p>아직 측정된 결과가 없습니다.</p>')+'<p class="sp-note">하루 1회 기록 · 별도 로컬 저장소 · API 사용 및 결제 없음</p></section>';
+}
+async function runSpecialFixture(button){
+  button.disabled=true;
+  try{await api('/api/special/preview/evaluate',{});await render();}
+  catch(err){button.disabled=false;const p=document.createElement('p');p.setAttribute('role','alert');p.textContent=err.message;button.after(p);}
 }
