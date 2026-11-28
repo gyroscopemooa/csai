@@ -9,6 +9,7 @@ class OrchestrationTests(unittest.TestCase):
         self.grants = [Grant('w', 'special_learning', 10, 30, 'paid', 'payment')]
         self.ledger = Mock()
         self.ledger.reserve.return_value = True
+        self.ledger.settle.return_value = True
         self.adapter = Mock(return_value=JobResult(True, 2, 30))
         self.args = dict(ledger=self.ledger, grants=self.grants, workspace='w', period='p',
                          job_id='j', kind='learning_simulation', now=20, credit_limit=3,
@@ -28,6 +29,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(run_job(**self.args), {'status': 'completed', 'charged_credits': 2})
         self.ledger.reserve.assert_called_once_with('w', 'p', 'j', 3, 50)
         self.ledger.settle.assert_called_once_with('w', 'p', 'j', 2, 30)
+        self.adapter.assert_called_once_with(workspace='w', job_id='j', credit_limit=3, cost_limit=50)
 
     def test_duplicate(self):
         self.ledger.reserve.return_value = False
@@ -58,3 +60,11 @@ class OrchestrationTests(unittest.TestCase):
         self.assertIsNone(learning_report(report, **(args | {'revision': 'new'})))
         self.assertIsNone(learning_report(report | {'passed': 2}, **args))
         self.assertIsNone(learning_report(report | {'complete': False}, **args))
+
+    def test_unconfirmed_settlement(self):
+        self.ledger.settle.return_value = False
+        self.assertEqual(run_job(**self.args)['status'], 'reconciliation_required')
+
+    def test_invalid_kind(self):
+        self.assertEqual(run_job(**(self.args | {'kind': []}))['status'], 'forbidden')
+        self.ledger.reserve.assert_not_called()

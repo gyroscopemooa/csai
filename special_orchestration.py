@@ -23,12 +23,13 @@ def run_job(*, ledger, grants, workspace, period, job_id, kind, now,
             credit_limit, cost_limit, adapters, enabled=False):
     """Server-only pilot. Adapters must be read-only and pre-authorized.
 
+    Adapters receive reserved credit and cost ceilings and must enforce them.
     A reservation is retained on uncertain execution or settlement failure.
     Reconciliation must use provider evidence, not a client-supplied result.
     """
     if enabled is not True:
         return {'status': 'disabled'}
-    feature = JOB_FEATURES.get(kind)
+    feature = JOB_FEATURES.get(kind) if isinstance(kind, str) else None
     if feature is None or feature not in entitled_features(grants, workspace=workspace, now=now, enabled=True):
         return {'status': 'forbidden'}
     adapter = adapters.get(kind)
@@ -40,7 +41,8 @@ def run_job(*, ledger, grants, workspace, period, job_id, kind, now,
     if not ledger.reserve(workspace, period, job_id, credit_limit, cost_limit):
         return {'status': 'already_reserved'}
     try:
-        result = adapter(workspace=workspace, job_id=job_id)
+        result = adapter(workspace=workspace, job_id=job_id,
+                         credit_limit=credit_limit, cost_limit=cost_limit)
         if not isinstance(result, JobResult) or type(result.completed) is not bool:
             raise ValueError('invalid adapter result')
         if type(result.charged_credits) is not int or not 0 <= result.charged_credits <= credit_limit:
@@ -49,7 +51,8 @@ def run_job(*, ledger, grants, workspace, period, job_id, kind, now,
             raise ValueError('invalid actual cost')
         if not result.completed and result.charged_credits:
             raise ValueError('failed job cannot charge customer credits')
-        ledger.settle(workspace, period, job_id, result.charged_credits, result.actual_cost)
+        if ledger.settle(workspace, period, job_id, result.charged_credits, result.actual_cost) is not True:
+            return {'status': 'reconciliation_required'}
     except Exception:
         return {'status': 'reconciliation_required'}
     return {'status': 'completed' if result.completed else 'failed',
