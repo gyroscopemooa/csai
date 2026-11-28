@@ -1482,7 +1482,7 @@ function localDate(iso){let d=new Date(iso),z=(route==='calendar'?calendarProfil
 function localTime(iso){return new Intl.DateTimeFormat('ko-KR',{timeZone:(route==='calendar'?calendarProfile?.timezone:null)||me?.settings.timezone||'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso))}
 function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
 let calendarAgent='',calendarProfile=null;
-let calFilter='confirmed',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='',calendarMotion=null,calendarRecords=[];
+let calFilter='all',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='',calendarMotion=null,calendarRecords=[];
 function calendarRangeContains(date){return !!calendarRange&&date>=calendarRange.start&&date<=calendarRange.end}
 const calendarFilters=[['all','전체'],['confirmed','확정'],['pending','승인·결제 대기']];
 const calendarPending=b=>b.status==='pending'||b.status==='pending_payment';
@@ -1497,7 +1497,7 @@ function calendarStatusFilters(){
  return `<div class="ui-tabs calendar-status-filters" role="group" aria-label="일정 상태">${calendarFilters.map(([key,text])=>
   `<button type="button" data-calendar-filter="${key}" aria-pressed="${calFilter===key}" onclick="setCalendarFilter('${key}')">${text}</button>`).join('')}</div>`;
 }
-function calendarDay(){return selectedDate||dateKey(calendarMonth.getFullYear(),calendarMonth.getMonth(),1);}
+function calendarDay(){if(selectedDate)return selectedDate;const today=localDate(new Date());const month=dateKey(calendarMonth.getFullYear(),calendarMonth.getMonth(),1);return today.slice(0,7)===month.slice(0,7)?today:month;}
 function calendarList(bs){
  const day=calendarDay(),range=calendarRangeMode&&calendarRange;
  const dayLabel=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',timeZone:'UTC'}).format(new Date(day+'T00:00:00Z'));
@@ -1584,7 +1584,18 @@ const previewStateByAccount=new Map();
 function previewData(){
  const key=me?.slug||'guest';if(previewStateByAccount.has(key))return previewStateByAccount.get(key);
  const stamp=Math.floor(Date.now()/1000),date=new Date();
- const bookings=[['가족 촬영','confirmed',0,14],['프로필 촬영','pending',0,16],['상품 촬영','pending_payment',1,10],['행사 촬영','completed',-1,11],['예약 변경 문의','cancelled',2,15]].map(([name,status,offset,h],i)=>{const d=new Date(date);d.setDate(d.getDate()+offset);const day=dateKey(d.getFullYear(),d.getMonth(),d.getDate());return {id:'preview-booking-'+i,sample:true,preview:true,status,start:day+'T'+String(h).padStart(2,'0')+':00:00+09:00',end:day+'T'+String(h+1).padStart(2,'0')+':00:00+09:00',resource:'default',fields:[{key:'name',label:'예약명'},{key:'note',label:'메모'}],payload:{name:'샘플 · '+name,note:'고객 상담을 통한 접수 예시'},paid:status==='confirmed'||status==='completed'};});
+ const bookingExamples=[
+  ['지난 촬영 상담','completed',-14,10,1],['기업 프로필 촬영','confirmed',-10,14,2],
+  ['제품 촬영','completed',-7,13,2],['예약 취소','cancelled',-5,15,1],
+  ['행사 촬영','completed',-2,11,2],['개인 프로필','confirmed',-1,16,1],
+  ['가족 촬영','confirmed',0,10,1],['프로필 촬영','pending',0,14,1],['상품 촬영','pending_payment',0,16,2],
+  ['출장 촬영','confirmed',1,10,3],['예약 변경 문의','cancelled',2,15,1],
+  ['단체 촬영','confirmed',3,11,2],['기업 행사 촬영','pending',4,14,3],
+  ['여행 스냅','confirmed',5,10,2],['스튜디오 촬영','confirmed',7,13,2],
+  ['웨딩 상담','pending_payment',10,15,1],['상품 사진 촬영','confirmed',14,11,2],
+  ['연말 행사 상담','pending',21,16,1]
+ ];
+ const bookings=bookingExamples.map(([name,status,offset,h,duration],i)=>{const d=new Date(date);d.setDate(d.getDate()+offset);const day=dateKey(d.getFullYear(),d.getMonth(),d.getDate());const time=n=>day+'T'+String(n).padStart(2,'0')+':00:00+09:00';return {id:'preview-booking-'+i,sample:true,preview:true,status,start:time(h),end:time(h+duration),resource:'default',fields:[{key:'name',label:'예약명'},{key:'note',label:'메모'}],payload:{name:'샘플 · '+name,note:'고객 상담을 통한 접수 예시'},paid:status==='confirmed'||status==='completed'};});
  const questions=[{id:'preview-question-1',sample:true,preview:true,status:'open',q:'샘플 · 주말 방문 시 주차가 가능한가요?'},{id:'preview-question-2',sample:true,preview:true,status:'open',q:'샘플 · 예약 날짜 변경은 언제까지 가능한가요?'}];
  const events=[['new','새로운 고객 상담 접수'],['handoff_urgent','긴급 담당자 확인 요청'],['booking','예약 확정 안내'],['unknown','미학습 질문 접수']].map(([kind,title],i)=>({id:'preview-event-'+i,sample:true,preview:true,kind,title:'샘플 · '+title,created:stamp-i*180,seen:false}));
  const work=[['tasks','예약 일정 확인','pending'],['complaints','배송 지연 문의','open'],['quote','행사 촬영 견적 요청','pending'],['leads','가족 촬영 구매 문의','resolved'],['crm','고객 연락 요청','open']].map(([kind,title,status],i)=>({id:'preview-work-'+i,sample:true,preview:true,kind,title:'샘플 · '+title,status,details:'담당자 검토 및 처리 흐름 체험'}));
@@ -1624,6 +1635,7 @@ async function calendar(){
  calendarRecords=bookings;
  calendarProfile=scope?data.settings:null;
  const queue=calendarQueue(bookings);
+ const hasPreviewBookings=bookings.some(b=>b.preview);
  const tools=actionGroup(
   btn('맞춤 일정 양식',scope?"brandCalendarFields()":"go('fields')"),
   btn('직접 일정 등록','manualBooking()','primary'),
@@ -1646,7 +1658,7 @@ async function calendar(){
    <h2 id="calendar-lookup-heading">일정 조회</h2>
    ${calendarStatusFilters()}
    <div class="calendar-lookup-grid">
-    ${calendarGrid('db-calendar',helperText('날짜를 누르면 조회됩니다. 기간은 두 날짜를 선택하거나 드래그하세요.'))}
+    ${calendarGrid('db-calendar',helperText('날짜를 누르면 조회됩니다. 기간은 두 날짜를 선택하거나 드래그하세요.')+(hasPreviewBookings?actionGroup(btn('샘플 7일 일정 조회','showPreviewCalendarWeek()')):''))}
     <section id="calendar-results" class="calendar-grid-panel calendar-results" aria-labelledby="calendar-results-heading">${calendarList(bookings)}</section>
    </div>
   </section>
@@ -1659,6 +1671,7 @@ async function calendar(){
   </section>
  </div>${sampleCard}`;
 }
+async function showPreviewCalendarWeek(){const today=localDate(new Date()),end=new Date(today+'T00:00:00Z');end.setUTCDate(end.getUTCDate()+6);calendarMonth=new Date(Number(today.slice(0,4)),Number(today.slice(5,7))-1,1);selectedDate=today;calendarRange={start:today,end:end.toISOString().slice(0,10)};calendarRangeMode=true;calendarRangeAnchor='';calFilter='all';await render();$('#calendar-results')?.scrollIntoView({block:'nearest'});}
 async function jumpSampleBooking(start){calendarRange=null;calendarRangeMode=false;calendarRangeAnchor='';calendarMonth=new Date(start);selectedDate=localDate(start);calFilter='confirmed';await render();$('#calendar-results')?.scrollIntoView({block:'nearest'});}
 function openSampleThread(id){threadId=id;inboxKind='customer';inboxQuery='';go('inbox')}
 function openBookingConversation(id){if(!id)return;threadId=id;inboxAgent='all';inboxUnread=false;inboxSource='all';go('consultation-center');}
