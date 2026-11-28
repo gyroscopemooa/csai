@@ -47,13 +47,17 @@ def entitled_features(grants, *, workspace, now, enabled=False):
     """Only consume server-verified grants. No client grants or checkout integration."""
     if enabled is not True or not isinstance(workspace, str) or not workspace.strip() or type(now) is not int:
         return frozenset()
-    if len(grants) > 100:
+    if not isinstance(grants, (list, tuple)) or len(grants) > 100:
         return frozenset()
+    scoped = [g for g in grants if isinstance(g, Grant) and g.workspace == workspace
+              and isinstance(g.package, str) and g.package in PRICES
+              and isinstance(g.payment_ref, str) and g.payment_ref.strip()]
+    # A stale paid row must not override an explicit revocation for the same order.
+    revoked = {(g.payment_ref, g.package) for g in scoped
+               if g.status in ('refunded', 'revoked', 'chargeback')}
     features = set()
-    for grant in grants:
-        if not isinstance(grant, Grant) or grant.workspace != workspace or grant.status != 'paid':
-            continue
-        if not isinstance(grant.payment_ref, str) or not grant.payment_ref.strip():
+    for grant in scoped:
+        if grant.status != 'paid' or (grant.payment_ref, grant.package) in revoked:
             continue
         if type(grant.starts_at) is not int or type(grant.ends_at) is not int or not grant.starts_at <= now < grant.ends_at:
             continue

@@ -41,3 +41,19 @@ class SpecialTests(unittest.TestCase):
     def test_invalid_cost(self):
         with self.assertRaises(ValueError):
             remaining_cost_budget(net_revenue_krw=100, committed_cost_krw=-1, reserved_cost_krw=0)
+
+    def test_revocation_overrides_stale_paid(self):
+        for status in ('refunded', 'revoked', 'chargeback'):
+            revoked = replace(self.grant, status=status)
+            self.assertFalse(entitled_features([self.grant, revoked], **self.args))
+            self.assertFalse(entitled_features([revoked, self.grant], **self.args))
+
+    def test_unrelated_order_remains_active(self):
+        revoked = replace(self.grant, status='refunded')
+        renewed = replace(self.grant, payment_ref='new-order')
+        self.assertIn('advanced_retrieval', entitled_features([self.grant, revoked, renewed], **self.args))
+        self.assertIn('advanced_retrieval', entitled_features([self.grant, replace(revoked, workspace='other')], **self.args))
+
+    def test_malformed_grants_fail_closed(self):
+        self.assertFalse(entitled_features(None, **self.args))
+        self.assertFalse(entitled_features([replace(self.grant, package=[])], **self.args))
