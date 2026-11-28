@@ -1009,6 +1009,17 @@ def special_preview(req:Request,ws=Depends(ident)):
     diagnostics=approved_diagnostics(published)
     return {'packages':dict(PRICES),'individual_total':quote(['special_intelligence','special_learning','special_automation'])['monthly_krw'],'available_for_purchase':False,'report':report,'report_kind':'synthetic_retrieval_checks','diagnostics':diagnostics}
 
+@app.post('/api/special/preview/lookup')
+def special_preview_lookup(req:Request,body:dict,ws=Depends(ident)):
+    require_special_preview(req,ws)
+    limit('special-lookup:'+ws,30,60)
+    from special_lookup_preview import compare_lookup
+    query=bounded(body.get('query'),200)
+    require(query,'검색 질문을 입력하세요.',422)
+    with db() as c:
+        published=loads(getw(c,ws)['published'])
+    return compare_lookup(published,query)
+
 @app.post('/api/special/preview/evaluate')
 def special_preview_evaluate(req:Request,ws=Depends(ident)):
     require_special_preview(req,ws)

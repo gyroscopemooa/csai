@@ -8,7 +8,7 @@ sys.path.insert(0, str(ROOT))
 NAMES = ('knowledge_retrieval', 'hybrid_retrieval', 'knowledge_indexing', 'retrieval_cache',
          'contextual_knowledge', 'graph_memory', 'learning_evaluation', 'learning_simulation',
          'workflow_pilot', 'special_entitlements', 'special_usage', 'special_orchestration',
-         'special_dashboard', 'special_evaluation_store', 'special_local_fixture', 'retrieval_pipeline')
+         'special_dashboard', 'special_evaluation_store', 'special_local_fixture', 'retrieval_pipeline', 'special_lookup_preview')
 
 if __name__ == '__main__':
     suite = unittest.TestSuite()
