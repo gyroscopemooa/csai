@@ -2943,10 +2943,22 @@ alerts=async function(){
   `<label><input class="check" type="checkbox" id="report-enabled" ${r.settings.enabled?'checked':''}> 자동 생성</label>`);
  const actions=stack(helperText(`${r.worker_enabled?'자동 워커 설정됨':'자동 워커 환경 설정 필요'} · 지난 완료 기간 기준 집계`)+
   actionGroup({keepSize:true},btn('설정 저장','saveReportSettings()','primary'),btn('리포트 생성','generateReport()')),{gap:'compact'});
- const reports=r.reports.map(x=>`<div class="line"><b>${e(x.period)}</b><p>고객 상담 ${x.summary.threads}건 · 완료 ${x.summary.resolved}건 · 미학습 ${x.summary.unknown}건 · 메시지 ${x.summary.messages}개</p></div>`).join('');
- return html+(readOnly?previewNotice('report','상담 리포트 설정 체험'):'')+card('일간·주간 상담 리포트',helperText('지난 기간의 상담 건수, 완료 건수, 미학습 질문과 메시지 수를 자동 집계합니다.')+stack(`<div class="alert-fields">${settings}</div>`+actions+
-  (reports?divider()+section('report-history','생성 내역',reports):'')));
+ const reports=r.reports.map(x=>reportSummaryCard(x)).join('');
+ return html+(readOnly?previewNotice('report','상담 리포트 설정 체험'):'')+card('일간·주간 상담 리포트',helperText('기간별 상담 현황과 완료율, 미학습 질문을 확인하고 엑셀에서 열 수 있는 CSV로 저장하세요.')+stack(`<div class="alert-fields">${settings}</div>`+actions+
+  (reports?divider()+section('report-history','생성 내역',actionGroup(btn('CSV 다운로드','downloadReportCsv()'))+reports):'')));
 }
+function reportSummaryCard(x){
+ const v=x.summary||{},n=k=>Math.max(0,Number(v[k])||0),total=n('threads'),done=n('resolved'),unknown=n('unknown'),rate=total?Math.round(done/total*100):0,max=Math.max(1,total,done,unknown);
+ const bars=[['전체 상담',total],['완료',done],['미학습',unknown]].map(([name,value])=>`<div class="report-bar-row"><span>${name}</span><div class="report-bar-track"><span style="width:${value/max*100}%"></span></div><b>${value}건</b></div>`).join('');
+ return `<div class="line report-summary-card"><b>${e(x.period)}</b><div class="report-metric-pair"><div><small>상담 완료율</small><strong>${total?rate+'%':'집계 없음'}</strong></div><div><small>메시지</small><strong>${n('messages')}개</strong></div></div><div class="report-bars">${bars}</div><p class="muted">${unknown?'미학습 질문을 검토하고 반복 문의를 교육에 반영하세요.':total?'이번 기간 미학습 질문이 없습니다.':'집계된 상담이 없습니다.'}</p></div>`;
+}
+async function downloadReportCsv(){await act(async()=>{
+ const sample=!has('report');if(sample&&!freeFeaturePreview())return;
+ const r=sample?previewData().report:await api('/api/reports');
+ const cell=v=>{let t=String(v??'');if(/^[=+@-]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};
+ const rows=[['기간','상담 건수','완료 건수','완료율(%)','미학습 건수','메시지 수'],...r.reports.map(x=>{const v=x.summary||{};return [x.period,v.threads,v.resolved,v.threads?Math.round(v.resolved/v.threads*100):'',v.unknown,v.messages]})];
+ const blob=new Blob(['\uFEFF'+rows.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(sample?'csai-sample-report':'csai-report')+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+})}
 async function saveReportSettings(){if(!has('report')&&freeFeaturePreview()){previewData().report.settings={frequency:val('report-frequency'),enabled:checked('report-enabled')};toast('샘플 리포트 설정 저장');render();return;}if(!requirePreviewAccess('report'))return;await act(async()=>{await api('/api/reports/settings',{frequency:val('report-frequency'),enabled:checked('report-enabled')});toast('설정 저장 완료');render()})}
 async function generateReport(){if(!has('report')&&freeFeaturePreview()){previewData().report.reports.unshift({period:'샘플 · '+(previewData().report.settings.frequency==='weekly'?'주간':'일간')+' 리포트',summary:{threads:18,resolved:14,unknown:3,messages:82}});toast('샘플 리포트 생성 완료');render();return;}if(!requirePreviewAccess('report'))return;await act(async()=>{await api('/api/reports/generate',{});toast('리포트 생성 완료');render()})}
 
@@ -2959,7 +2971,7 @@ alerts=async function(){
  const settings=stack(
   helperText(status+' · 구매한 알림 종류만 발송 · HTTPS 필요. iPhone은 홈 화면에 추가 후 실행하세요.')+
   helperText('화면이 닫혀 있을 때는 기기의 기본 알림음·진동 설정을 따릅니다. 무음 및 방해금지 설정을 강제로 해제하지 않습니다.')+
-  actionGroup({keepSize:true},btn('이 기기 알림 등록',readOnly?"previewPushAction('register')":'registerPush()','primary'),btn('이 기기 알림 해제',readOnly?"previewPushAction('remove')":'unregisterPush()'),btn('기기 알림 테스트',readOnly?"previewPushAction('test')":'testPushOnDevice()')),
+  actionGroup({keepSize:true},btn('알림 등록',readOnly?"previewPushAction('register')":'registerPush()','primary'),btn('알림 해제',readOnly?"previewPushAction('remove')":'unregisterPush()'),btn('알림 테스트',readOnly?"previewPushAction('test')":'testPushOnDevice()')).replace('ui-actions-keep-size','ui-actions-keep-size push-device-actions'),
   {gap:'compact'});
  const devices=r.devices.map(d=>`<div class="line">
   <b>${d.id===current?'현재 기기':'등록 기기'}</b><p>${e(new Date(d.created*1000).toLocaleString())}</p>
@@ -2971,7 +2983,7 @@ alerts=async function(){
  </div>`).join('');
  const sound=section('foreground-sound','화면이 열려 있을 때 추가 효과음',stack(
   helperText('이 브라우저에서 직접 켜면 화면이 열린 동안만 효과음을 재생합니다. 백그라운드 커스텀 사운드는 지원하지 않습니다.')+
-  actionGroup({keepSize:true},btn('효과음 켜기·미리 듣기','enableForegroundSound()'),btn('효과음 끄기','disableForegroundSound()')),
+  actionGroup({keepSize:true},btn('켜기·미리 듣기','enableForegroundSound()'),btn('끄기','disableForegroundSound()')).replace('ui-actions-keep-size','ui-actions-keep-size push-sound-actions'),
   {gap:'compact'}));
  const deliveries=r.deliveries.map(d=>helperText(new Date(d.created*1000).toLocaleString()+' · '+d.status)).join('');
  return html+(readOnly?previewNotice('push','기기 알림 설정 체험'):'')+card('모바일·PC 웹 푸시 알림',helperText('등록한 브라우저나 홈 화면 앱에서 업무 알림을 받습니다. 지원 환경과 기기 권한이 필요합니다.')+stack(settings+
@@ -3009,7 +3021,8 @@ alerts=async function(){
   helperText(`${s.verified?'번호 확인 완료':'번호 확인 대기'} · ${r.live[s.kind||'SMS']?'실제 발송 활성화':cfg.demo?'모의 발송':'실제 발송 미설정'}`)+
   actionGroup({keepSize:true},btn('저장','saveMessageNotify()','primary'),btn('알림 해제','disableMessageNotify()'),btn('메시지 충전',"go('orders')")),
   {gap:'compact'});
- return stack(html+card('알림톡·SMS 업무 알림',stack(
+ const rechargeNotice=`<section class="card app-card paid-preview-notice" aria-label="메시지 충전"><div class="paid-preview-copy"><strong>알림톡·SMS</strong><span class="paid-preview-price">건별 충전</span></div>${actionGroup({keepSize:true},btn('충전하기',"go('orders')",'primary'))}</section>`;
+ return stack(html+rechargeNotice+card('알림톡·SMS 업무 알림',stack(
   stack(helperText('등록한 본인 휴대전화로 구매한 업무 알림을 받습니다. 1건당 충전 잔액 1건을 차감하며, 실제 발송에는 번호 소유권 확인이 필요합니다.')+
    `<p>SMS ${r.balance.SMS}건 · 알림톡 ${r.balance['알림톡']}건</p>`,{gap:'compact'})+
   `<div class="alert-fields">${settings}</div>`+actions+
