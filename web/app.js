@@ -383,7 +383,17 @@ function quickNavSelection(){
 function mobileQuickNav(){
  const options=new Map(quickNavOptions().map(item=>[item[0],item]));
  const items=quickNavSelection().map(id=>options.get(id)).filter(Boolean);
- return `<nav class="mobile-quick-nav" aria-label="빠른 메뉴" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${items.map(([id,name,icon])=>`<button type="button" class="${route===id?'active':''}" ${route===id?'aria-current="page"':''} onclick="go('${id}')">${uiIcon(icon)}<span>${e(name)}</span></button>`).join('')}</nav>`;
+ return `<nav class="mobile-quick-nav" aria-label="빠른 메뉴" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${items.map(([id,name,icon])=>`<button type="button" class="${route===id?'active':''}" ${route===id?'aria-current="page"':''} onclick="quickNavigate('${id}')">${uiIcon(icon)}<span>${e(name)}</span></button>`).join('')}</nav>`;
+}
+async function quickNavigate(id){
+ if(!quickNavOptions().some(item=>item[0]===id))return;
+ if(id===route)return;
+ if(['inbox','consultation-center'].includes(route)&&threadId){
+  if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 이동할까요?'))return;
+  await leaveTemporary();threadId=null;
+ }
+ if(inboxDesk()&&id!=='consultation-center'){location.href='/#'+id;return;}
+ go(id);
 }
 function editQuickNav(){
  let ids=quickNavSelection();
@@ -1328,7 +1338,7 @@ window.addEventListener('beforeinstallprompt',ev=>{if(!publicMode){ev.preventDef
 async function installInboxDesk(){if('serviceWorker'in navigator){try{await navigator.serviceWorker.register('/push-sw.js')}catch{}}if(deskInstallPrompt){await deskInstallPrompt.prompt();deskInstallPrompt=null;return;}modal('상담센터 바로가기 설치','<p>Chrome 또는 Edge 메뉴에서 앱 설치 또는 홈 화면에 추가를 선택하세요. iPhone은 Safari 공유 메뉴의 홈 화면에 추가를 이용하세요.</p><p>설치가 지원되지 않으면 상담센터 URL을 즐겨찾기 하세요.</p>')}
 function openInboxWindow(event,link){if(matchMedia('(max-width:700px)').matches)return;const win=window.open('about:blank','_blank','popup,width=1100,height=760');if(win){event.preventDefault();win.opener=null;win.location.replace(link.href)}}
 function deskLinks(){return '<div class="inbox-desk-links"><a class="ui-button primary" href="/#consultation-center">상담센터 바로 열기</a><a class="ui-button secondary" href="/?desk=1#consultation-center" target="_blank" rel="noopener" onclick="openInboxWindow(event,this)">독립 창으로 열기</a>'+btn('바로가기 설치','installInboxDesk()')+'</div>'}
-function inboxDeskShell(body){return `<div class="inbox-desk-shell" data-route="consultation-center"><header class="inbox-desk-header"><strong>CS AI 상담센터</strong><span>${e(me.settings.brand)}</span><a href="/#dashboard">관리자 대시보드</a>${btn('알림 설정',"location.href='/#alerts'")}${btn('로그아웃','logout()')}</header><main>${body}</main></div>`}
+function inboxDeskShell(body){return `<div class="inbox-desk-shell" data-route="consultation-center"><header class="inbox-desk-header"><strong>CS AI 상담센터</strong><span>${e(me.settings.brand)}</span><a href="/#dashboard">관리자 대시보드</a>${btn('알림 설정',"location.href='/#alerts'")}${btn('로그아웃','logout()')}</header><main>${body}</main>${mobileQuickNav()}</div>`}
 
 function sampleInboxReply(detail){if(!inboxCanReply(detail))return externalReplyControls(detail);return inboxDirect(detail)?inboxComposer(detail)+actionGroup({keepSize:true},inboxSnippets.length?btn('저장 답변 불러오기','chooseInboxSnippet()'):''):'';}
 let sampleInboxSending=false;
@@ -3081,9 +3091,9 @@ alerts=async function(){
    <label><input class="check" type="checkbox" id="sms-consent"> 본인 번호이며 업무 알림 수신 및 연락처 처리에 동의합니다.</label>`);
  const actions=stack(
   helperText(`${s.verified?'번호 확인 완료':'번호 확인 대기'} · ${r.live[s.kind||'SMS']?'실제 발송 활성화':cfg.demo?'모의 발송':'실제 발송 미설정'}`)+
-  actionGroup({keepSize:true},btn('저장','saveMessageNotify()','primary'),btn('알림 해제','disableMessageNotify()'),btn('메시지 충전',"go('orders')")),
+  actionGroup({keepSize:true},btn('저장','saveMessageNotify()','primary'),btn('알림 해제','disableMessageNotify()'),btn('메시지 충전','openMessageRecharge()')),
   {gap:'compact'});
- const rechargeNotice=`<section class="card app-card paid-preview-notice" aria-label="메시지 충전"><div class="paid-preview-copy"><strong>알림톡·SMS</strong><span class="paid-preview-price">건별 충전</span></div>${actionGroup({keepSize:true},btn('충전하기',"go('orders')",'primary'))}</section>`;
+ const rechargeNotice=`<section class="card app-card paid-preview-notice" aria-label="메시지 충전"><div class="paid-preview-copy"><strong>알림톡·SMS</strong><span class="paid-preview-price">건별 충전</span></div>${actionGroup({keepSize:true},btn('충전하기','openMessageRecharge()','primary'))}</section>`;
  return stack(html+rechargeNotice+card('알림톡·SMS 업무 알림',stack(
   stack(helperText('등록한 본인 휴대전화로 구매한 업무 알림을 받습니다. 1건당 충전 잔액 1건을 차감하며, 실제 발송에는 번호 소유권 확인이 필요합니다.')+
    `<p>SMS ${r.balance.SMS}건 · 알림톡 ${r.balance['알림톡']}건</p>`,{gap:'compact'})+
@@ -3091,6 +3101,15 @@ alerts=async function(){
   table(['유형','발송 상태','일시'],r.deliveries.map(x=>[x.kind,x.status,new Date(x.created*1000).toLocaleString()]))
  )),{gap:'sections'});
 };
+function openMessageRecharge(){
+ const packages=cfg.catalog.messages||[];
+ const choices=packages.map((m,i)=>`<div class="row between line"><span>${e(m.name)} ${m.quantity}건 · ${money(m.price)}</span>${me.sandbox_allowed?btn('테스트 충전',`selectMessageRecharge(${i})`,'secondary'):'<span class="muted">실결제 준비 중</span>'}</div>`).join('');
+ modal('알림톡·SMS 충전',helperText(me.sandbox_allowed?'테스트 충전입니다. 실제 청구되지 않습니다.':'실제 결제 연결 전입니다. 충전 요금을 확인할 수 있습니다.')+choices+actionGroup(btn('충전 내역 보기',"$('.modal')?.remove();go('orders')")));
+}
+async function selectMessageRecharge(i){
+ const item=cfg.catalog.messages[i];if(!me.sandbox_allowed||!item)return;
+ await act(async()=>{$('.modal')?.remove();await openCheckout({kind:'message',name:item.name,quantity:item.quantity});});
+}
 async function saveMessageNotify(){await act(async()=>{await api('/api/message-notifications',{phone:val('sms-phone'),kind:val('sms-kind'),enabled:checked('sms-enabled'),consent:checked('sms-consent')});toast('설정 저장 완료');render()})}
 async function disableMessageNotify(){await act(async()=>{await api('/api/message-notifications',undefined,'DELETE');render()})}
 const messageInvites=invites;
