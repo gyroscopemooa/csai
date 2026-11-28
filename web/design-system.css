@@ -1868,3 +1868,18 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .layout main .paid-preview-always .paid-preview-list>.paid-preview-notice{padding:7px 0}
 @media(max-width:700px){.layout main > .purchase-sticky-stack{top:var(--paid-sticky-offset,60px)}.layout main .paid-preview-always{padding:8px 10px}.paid-preview-always .paid-preview-copy{min-width:90px}.paid-preview-always .paid-preview-notice .ui-actions{margin-left:auto}}
 .layout main .paid-preview-always .paid-preview-list>.paid-preview-notice:first-child{border-top:0}
+
+/* Compact alert actions and report visual summaries. */
+.ui-actions.push-device-actions,.ui-actions.push-sound-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;width:100%;align-items:stretch}
+.ui-actions.push-sound-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+.ui-actions.push-device-actions>.ui-button,.ui-actions.push-sound-actions>.ui-button{width:100%;min-width:0;min-height:44px;height:100%;margin:0;padding:6px 4px;font-size:12px;white-space:normal;word-break:keep-all;text-align:center}
+.report-summary-card{display:grid;gap:12px;padding:12px 0}
+.report-metric-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.report-metric-pair>div{display:grid;gap:4px;padding:10px;background:#f3f5f8;border-radius:8px}
+.report-metric-pair small{color:#64748b;font-size:12px}
+.report-metric-pair strong{font-size:20px}
+.report-bars{display:grid;gap:9px}
+.report-bar-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12px}
+.report-bar-track{height:8px;border-radius:4px;background:#e8edf3;overflow:hidden}
+.report-bar-track>span{display:block;height:100%;background:#3182f6;border-radius:4px}
+.report-summary-card .muted{margin:0;font-size:12px}
