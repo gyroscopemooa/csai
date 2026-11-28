@@ -11,7 +11,8 @@ def test_chat_profile_default_off_and_no_usage():
     buf=io.BytesIO();Image.new('RGB',(600,400),'blue').save(buf,format='PNG')
     p=post(c,'/api/chat-profile',{'show_at_start':True,'title':'스튜디오','message':'촬영 안내','photo':base64.b64encode(buf.getvalue()).decode(),'links':[{'name':'홈페이지','url':'https://example.com/'},{'name':'예약','url':'https://example.com/reserve'}]})
     with Image.open(io.BytesIO(base64.b64decode(p['photo'].split(',')[1]))) as im:
-        assert max(im.size)<=320 and im.format=='PNG'
+        assert im.size==(600,400) and im.format=='WEBP'
+    assert p['photo'].startswith('data:image/webp;base64,')
     after=c.get('/api/me').json()
     assert after['remaining']==before['remaining'] and after['credits']==before['credits']
     assert c.post('/api/chat-profile',json={'links':[{'name':'잘못된 링크','url':'javascript:alert(1)'}]}).status_code==422
@@ -66,3 +67,14 @@ def test_profile_contacts_and_notice_modes_are_independent():
     for mode in ('manual','both','off'):
         q=post(c,'/api/chat-profile',{'notice_mode':mode})
         assert q['notice_mode']==mode and q['contacts']==data['contacts'] and not q['show_at_start']
+
+
+def test_profile_cover_optimized_without_stretching():
+    c=owner()
+    buf=io.BytesIO();Image.new('RGB',(2400,1800),'green').save(buf,format='JPEG')
+    p=post(c,'/api/chat-profile',{'photo':base64.b64encode(buf.getvalue()).decode()})
+    raw=base64.b64decode(p['photo'].split(',')[1])
+    assert len(raw)<=400000
+    with Image.open(io.BytesIO(raw)) as im:
+        assert im.size==(1200,900) and im.format=='WEBP'
+    assert c.get('/api/chat-profile').json()==p
