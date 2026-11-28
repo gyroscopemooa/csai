@@ -1883,3 +1883,11 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .report-bar-track{height:8px;border-radius:4px;background:#e8edf3;overflow:hidden}
 .report-bar-track>span{display:block;height:100%;background:#3182f6;border-radius:4px}
 .report-summary-card .muted{margin:0;font-size:12px}
+
+/* Outline the operator chat surface and align brand toggles. */
+.inbox-detail-card .inbox-conversation{border:1px solid #dce3eb;box-sizing:border-box}
+.center-chat-pane.inbox-detail-card .center-messages{margin:8px 10px;border:1px solid #dce3eb;border-radius:12px;min-width:0}
+.agent-toggle-row{display:flex;align-items:center;justify-content:flex-start;gap:8px 16px;flex-wrap:wrap;margin:12px 0}
+.agent-toggle-row>label{display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;font-size:13px}
+.agent-toggle-row>label>input{flex:none;margin:0}
+@media(max-width:700px){.agent-toggle-row{gap:8px}.agent-toggle-row>label{font-size:12px;gap:5px}}
