@@ -165,6 +165,7 @@ def staff_update(mid:str,tid:str,body:dict,ws=Depends(ident)):
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(target,tid)),'AI 응답 완료 후 처리하세요.',409)
         if action=='reply':
             message=bounded(body.get('reply',''),2000);require(message,'답변을 입력하세요.',422)
+            clear_temporary_takeover(c,target,tid)
             c.execute("UPDATE thread SET manual=1,status='open' WHERE ws=? AND id=?",(target,tid))
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),target,tid,'staff',message,now()))
         else:c.execute("UPDATE thread SET status='resolved' WHERE ws=? AND id=?",(target,tid))
