@@ -1944,3 +1944,28 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
  .center-workspace .center-chat-head .center-back:active{background:#e7edf5}
  .center-workspace .center-chat-head .center-back:focus-visible{outline:2px solid #236fde;outline-offset:2px}
 }
+
+
+/* Profile settings: independently scrolling fields and persistent compact actions. */
+.ui-modal.profile-editor-modal>.ui-modal-panel{display:flex;flex-direction:column;overflow:hidden;padding:0;max-height:calc(100dvh - 32px);min-width:0}
+.profile-editor-modal .ui-modal-panel>h2{flex:none;margin:0;padding:16px 20px;border-bottom:1px solid var(--ds-border,#e5e8eb)}
+.profile-editor-modal .profile-editor-body{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;padding:16px 20px;min-width:0}
+.profile-editor-modal .ui-modal-footer{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0;padding:12px 20px;background:var(--ds-surface,#fff);border-top:1px solid var(--ds-border,#e5e8eb)}
+.profile-editor-modal .ui-modal-footer>button{width:100%;min-width:0;min-height:44px;margin:0;white-space:nowrap}
+.profile-editor-modal #profile-save-error{grid-column:1/-1;margin:0;color:var(--ds-danger,#b42318);font-size:13px;overflow-wrap:anywhere}
+.profile-editor-modal #profile-save-error[hidden]{display:none}
+.profile-edit-photo{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:8px 12px;align-items:start;margin:16px 0}
+.profile-edit-photo #profile-current-photo{grid-row:1;min-width:0}
+.profile-edit-photo #profile-current-photo .chat-profile-photo{width:64px;height:64px;object-fit:cover;border-radius:8px;display:block}
+.profile-edit-photo #profile-current-photo p{font-size:11px;line-height:1.4;margin:0;overflow-wrap:anywhere}
+.profile-edit-photo>.ui-file-upload{min-width:0}
+.profile-edit-photo .ui-file-details{min-width:0}
+.profile-edit-photo .ui-file-details :is(.ui-helper,.ui-file-status){font-size:12px;overflow-wrap:anywhere;margin:4px 0 0}
+.profile-edit-photo>.ui-button,.profile-edit-photo .ui-file-details>.ui-button{width:auto;min-width:0;min-height:36px;padding:6px 9px;margin:0;white-space:nowrap;font-size:12px}
+@media(max-width:600px){
+ .ui-modal.profile-editor-modal>.ui-modal-panel{max-height:calc(100dvh - 24px)}
+ .profile-editor-modal .ui-modal-panel>h2,.profile-editor-modal .profile-editor-body,.profile-editor-modal .ui-modal-footer{padding-inline:14px}
+ .profile-edit-photo{grid-template-columns:52px minmax(0,1fr) auto;gap:8px}
+ .profile-edit-photo #profile-current-photo .chat-profile-photo{width:52px;height:52px}
+ .profile-edit-photo .ui-file-details>.ui-button,.profile-edit-photo>.ui-button{padding-inline:6px}
+}
