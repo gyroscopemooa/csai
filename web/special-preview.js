@@ -11,7 +11,7 @@ async function specialPreviewPage(){
     '<div class="sp-preview">'+
     '<section class="sp-section"><div class="sp-heading"><div><small>Special All-in-One</small><h2>스페셜 올인원 패키지</h2></div><strong>'+e(money(x.packages.special_all))+'<small> / 월 추가</small></strong></div><p>지능, 기억, 정밀 교육, 업무 수행 능력을 통합 확장하는 패키지.</p><ul>'+packages.flatMap(p=>p[4]).map(f=>'<li>'+e(f)+'</li>').join('')+'<li>종합 성장 대시보드 및 통합 보고서</li><li>특화 신규 기술 (미공개)</li></ul><div class="sp-note">개별 합계 '+e(money(x.individual_total))+' · 월 '+e(money(x.individual_total-x.packages.special_all))+' 절약 · 구매 비활성화</div></section>'+
     '<div class="sp-grid">'+packages.map(p=>'<section class="sp-section"><small>'+e(p[2])+'</small><h3>'+e(p[1])+'</h3><strong>'+e(money(x.packages[p[0]]))+'<small> / 월 추가</small></strong><p>'+e(p[3])+'</p><ul>'+p[4].map(f=>'<li>'+e(f)+'</li>').join('')+'</ul></section>').join('')+'</div>'+
-    specialFixtureReport(x.report)+
+    specialFixtureReport(x.report)+specialApprovedDiagnostics(x.diagnostics)+
     '<p class="sp-note">기존 요금제 및 기능은 유지됩니다. 신규 기능은 개발 중이며 현재 구매하거나 실행할 수 없습니다.</p></div>';
 }
 
@@ -25,4 +25,10 @@ async function runSpecialFixture(button){
   button.disabled=true;
   try{await api('/api/special/preview/evaluate',{});await render();}
   catch(err){button.disabled=false;const p=document.createElement('p');p.setAttribute('role','alert');p.textContent=err.message;button.after(p);}
+}
+
+function specialApprovedDiagnostics(d){
+  const items=[['승인된 FAQ 항목','total'],['서로 다른 질문','distinct_questions'],['중복 항목','duplicate_count'],['확인 필요 답변 그룹','review_group_count'],['잘못된 형식','invalid_count']];
+  const measured=d?.status==='measured'&&items.every(([,k])=>Number.isSafeInteger(d[k])&&d[k]>=0);
+  return '<section class="sp-section"><h2>승인된 교육자료 진단</h2><p>현재 업체의 공개 승인된 FAQ만 읽어 중복과 검토가 필요한 답변을 확인합니다.</p><div class="sp-table-wrap"><table><thead><tr><th>진단 항목</th><th>결과</th></tr></thead><tbody>'+items.map(([label,key])=>'<tr><td>'+e(label)+'</td><td>'+e(measured?String(d[key]):'미측정')+'</td></tr>').join('')+'</tbody></table></div><p class="sp-note">동일하게 정규화된 질문에 다른 답변이 있는 경우 검토 대상으로 집계합니다. 실제 오류를 확정하거나 교육자료를 자동 변경하지 않습니다.</p></section>';
 }

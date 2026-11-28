@@ -1002,9 +1002,12 @@ def special_fixture_store():
 def special_preview(req:Request,ws=Depends(ident)):
     require_special_preview(req,ws)
     from special_entitlements import PRICES, quote
-    from special_local_fixture import preview_dashboard
+    from special_local_fixture import preview_dashboard, approved_diagnostics
     report=preview_dashboard(special_fixture_store(),ws,now())
-    return {'packages':dict(PRICES),'individual_total':quote(['special_intelligence','special_learning','special_automation'])['monthly_krw'],'available_for_purchase':False,'report':report,'report_kind':'synthetic_retrieval_checks'}
+    with db() as c:
+        published=loads(getw(c,ws)['published'])
+    diagnostics=approved_diagnostics(published)
+    return {'packages':dict(PRICES),'individual_total':quote(['special_intelligence','special_learning','special_automation'])['monthly_krw'],'available_for_purchase':False,'report':report,'report_kind':'synthetic_retrieval_checks','diagnostics':diagnostics}
 
 @app.post('/api/special/preview/evaluate')
 def special_preview_evaluate(req:Request,ws=Depends(ident)):

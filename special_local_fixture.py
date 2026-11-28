@@ -35,3 +35,19 @@ def preview_dashboard(store, workspace, now):
     # Synthetic, request-local permission only. Never persists a paid grant.
     grants = [Grant(workspace, 'special_learning', 0, now + 1, 'paid', 'local-fixture-only')]
     return store.read_dashboard(workspace=workspace, grants=grants, now=now, enabled=True)
+
+
+def approved_diagnostics(published):
+    """Read only the published FAQ snapshot; return counts, not raw education data."""
+    from contextual_knowledge import knowledge_diagnostics
+    if not isinstance(published, dict):
+        return {'status': 'unavailable'}
+    rows = published.get('faq', [])
+    if not isinstance(rows, list) or len(rows) > 500:
+        return {'status': 'unavailable'}
+    result = knowledge_diagnostics(rows)
+    return {'status': 'measured', 'total': result['total'],
+            'distinct_questions': result['distinct_questions'],
+            'duplicate_count': result['duplicate_count'],
+            'invalid_count': len(result['invalid_indices']),
+            'review_group_count': len(result['review_groups'])}
