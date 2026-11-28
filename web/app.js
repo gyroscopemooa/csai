@@ -369,9 +369,50 @@ function serviceNoticePage(){
  const items=visibleServiceNotices().filter(n=>serviceNoticeFilter==='all'||n.kind===serviceNoticeFilter).sort((a,b)=>(b.kind==='urgent')-(a.kind==='urgent')||b.date.localeCompare(a.date));
  return pageTop('공지사항 및 업데이트','서비스 안내와 변경 사항을 확인하세요.')+card('서비스 소식',`<div class="ui-tabs calendar-status-filters" role="group" aria-label="소식 유형">${[['all','전체'],['notice','공지사항'],['update','업데이트'],['urgent','긴급사항']].map(([key,label])=>`<button type="button" aria-pressed="${serviceNoticeFilter===key}" onclick="filterServiceNotices('${key}')">${label}</button>`).join('')}</div><div class="service-notice-list">${items.map(n=>`<details class="service-notice-item" ${serviceNoticeOpen===n.id?'open':''}><summary><span class="service-notice-kind-label">${e(serviceNoticeLabels[n.kind])}</span><strong>${e(n.title)}</strong><time datetime="${e(n.date)}">${e(n.date)}</time></summary><p>${e(n.body)}</p></details>`).join('')||emptyState(serviceNoticeFilter==='urgent'?'등록된 긴급사항이 없습니다.':'등록된 소식이 없습니다.')}</div>`);
 }
+function quickNavOptions(){
+ const short={dashboard:'홈',inbox:'상담함','consultation-center':'상담',preview:'미리보기',setup:'시작 설정','reply-assistant':'답장 비서',education:'AI 교육',agents:'상담원',calendar:'일정',customers:'고객 관리',commerce:'판매 관리',team:'직원 관리','staff-desk':'직원 상담',channels:'채널 연동',developer:'개발자',alerts:'알림',settings:'설정',pricing:'요금제',features:'전체 기능','service-plan':'자료실',credits:'크레딧',addons:'추가 기능',orders:'주문 내역',allinone:'올인원',invites:'초청 관리',costs:'원가 통계'};
+ return sidebarGroups().flatMap(([,items])=>items).map(([id,name,icon])=>[id,short[id]||name,icon]);
+}
+function quickNavKey(){return 'csai-mobile-quick-nav:'+me.slug;}
+function quickNavDefaults(){return ['dashboard','consultation-center','education','calendar','alerts'];}
+function quickNavSelection(){
+ const valid=new Set(quickNavOptions().map(([id])=>id));
+ try{const saved=JSON.parse(localStorage.getItem(quickNavKey()));if(Array.isArray(saved)){const ids=[...new Set(saved.filter(id=>valid.has(id)))].slice(0,5);if(ids.length>=3)return ids;}}catch{}
+ return quickNavDefaults();
+}
 function mobileQuickNav(){
- const items=[['dashboard','홈','list'],['consultation-center','상담','message-circle'],['education','AI 교육','graduation-cap'],['calendar','일정','calendar-days'],['alerts','알림','bell']];
- return `<nav class="mobile-quick-nav" aria-label="빠른 메뉴">${items.map(([id,name,icon])=>`<button type="button" class="${route===id?'active':''}" ${route===id?'aria-current="page"':''} onclick="go('${id}')">${uiIcon(icon)}<span>${e(name)}</span></button>`).join('')}</nav>`;
+ const options=new Map(quickNavOptions().map(item=>[item[0],item]));
+ const items=quickNavSelection().map(id=>options.get(id)).filter(Boolean);
+ return `<nav class="mobile-quick-nav" aria-label="빠른 메뉴" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${items.map(([id,name,icon])=>`<button type="button" class="${route===id?'active':''}" ${route===id?'aria-current="page"':''} onclick="go('${id}')">${uiIcon(icon)}<span>${e(name)}</span></button>`).join('')}</nav>`;
+}
+function editQuickNav(){
+ let ids=quickNavSelection();
+ const options=quickNavOptions(),byId=new Map(options.map(item=>[item[0],item]));
+ const dialog=document.createElement('dialog'),opener=document.activeElement;
+ dialog.className='menu-order-dialog';
+ dialog.setAttribute('aria-labelledby','quick-nav-title');
+ dialog.innerHTML=`<header class="menu-order-header"><h2 id="quick-nav-title">퀵바 메뉴 변경</h2><p>모바일 하단 메뉴 3~5개를 선택하고 순서를 변경하세요.</p></header><div class="menu-order-body"><ul class="menu-order-list"></ul><label>메뉴 추가<select data-quick-add aria-label="추가할 메뉴"></select></label><button type="button" data-quick-action="add">추가</button></div><footer class="menu-order-footer"><button type="button" data-quick-action="reset">기본 메뉴로 복원</button><span role="status"></span><button type="button" data-quick-action="save" class="primary">저장</button><button type="button" data-quick-action="cancel">취소</button></footer>`;
+ const list=dialog.querySelector('.menu-order-list'), selectEl=dialog.querySelector('[data-quick-add]'),status=dialog.querySelector('[role="status"]');
+ function repaint(){
+  list.innerHTML=ids.map((id,i)=>{const [,name,icon]=byId.get(id);return `<li class="menu-order-row"><span class="menu-order-item">${uiIcon(icon)}<span>${e(name)}</span></span><div class="menu-order-moves"><button type="button" data-quick-action="up" data-index="${i}" aria-label="${e(name)} 위로" ${i===0?'disabled':''}>↑</button><button type="button" data-quick-action="down" data-index="${i}" aria-label="${e(name)} 아래로" ${i===ids.length-1?'disabled':''}>↓</button><button type="button" data-quick-action="remove" data-index="${i}" aria-label="${e(name)} 제거" ${ids.length<=3?'disabled':''}>−</button></div></li>`;}).join('');
+  selectEl.innerHTML='<option value="">메뉴 선택</option>'+options.filter(([id])=>!ids.includes(id)).map(([id,name])=>`<option value="${e(id)}">${e(name)}</option>`).join('');
+  selectEl.disabled=ids.length>=5;dialog.querySelector('[data-quick-action="add"]').disabled=ids.length>=5;status.textContent=`${ids.length}/5개 · 이 브라우저에 저장`;
+ }
+ dialog.addEventListener('close',()=>{dialog.remove();opener?.focus();},{once:true});
+ dialog.addEventListener('click',ev=>{
+  if(ev.target===dialog){dialog.close();return;}
+  const button=ev.target.closest('[data-quick-action]');if(!button||button.disabled)return;
+  const action=button.dataset.quickAction,i=Number(button.dataset.index);
+  if(action==='cancel'){dialog.close();return;}
+  if(action==='save'){try{localStorage.setItem(quickNavKey(),JSON.stringify(ids));}catch{status.textContent='저장할 수 없습니다';return;}const nav=document.querySelector('.mobile-quick-nav');if(nav)nav.outerHTML=mobileQuickNav();dialog.close();return;}
+  if(action==='reset')ids=quickNavDefaults();
+  if(action==='add'&&ids.length<5&&byId.has(selectEl.value)&&!ids.includes(selectEl.value))ids.push(selectEl.value);
+  if(action==='remove'&&ids.length>3&&i>=0&&i<ids.length)ids.splice(i,1);
+  if(action==='up'&&i>0&&i<ids.length)[ids[i],ids[i-1]]=[ids[i-1],ids[i]];
+  if(action==='down'&&i>=0&&i<ids.length-1)[ids[i],ids[i+1]]=[ids[i+1],ids[i]];
+  repaint();
+ });
+ repaint();document.body.append(dialog);dialog.showModal();
 }
 function shell(body){
  const wordmark=`<span class="sidebar-wordmark">
@@ -385,7 +426,7 @@ function shell(body){
  const quota=cfg.catalog.plans.find(x=>x.id===me.plan)?.quantity||1;
  const progress=me.trial||me.operator?'':`<div class="usage-track" role="progressbar" aria-label="이번 달 상담 사용량" aria-valuenow="${Math.max(0,quota-me.remaining)}" aria-valuemax="${quota}"><span style="width:${Math.max(0,Math.min(100,(quota-me.remaining)/quota*100))}%"></span></div>`;
  const demoSelector=me.demo_view?`<div class="demo-view-select"><label for="demo-view">로컬 화면 비교</label><select id="demo-view" onchange="switchDemoView(this.value)">${me.demo_view==='legacy'?'<option value="legacy" selected>기존 로컬 계정</option>':''}<option value="free" ${me.demo_view==='free'?'selected':''}>일반 무료 가입</option><option value="subscriber" ${me.demo_view==='subscriber'?'selected':''}>LITE 유료 구독 예시</option><option value="subscriber_agent" ${me.demo_view==='subscriber_agent'?'selected':''}>LITE + 추가 브랜드 상담원 예시</option><option value="developer" ${me.demo_view==='developer'?'selected':''}>개발 검수 · 기능 미리보기</option></select><small>각 계정 화면을 비교합니다 · 실제 결제 없음</small></div>`:'';
- return `<div class="layout" data-route="${e(route)}"><aside class="app-sidebar"><div class="brand sidebar-brand">${wordmark}<button type="button" class="mobile-toggle" onclick="this.closest('aside').classList.toggle('open')" aria-label="메뉴 열기">${uiIcon('menu')}</button></div>${serviceNoticeStrip()}<div class="sidebar-tenant"><strong>${e(me.settings.brand)}</strong><small>${me.demo_view==='developer'?'개발 검수 · 판매 요금제 아님':me.demo_view==='subscriber_agent'?'LITE · 추가 브랜드 상담원 이용 중':me.operator?'운영자 계정':me.trial?'초청 체험':e(me.plan.toUpperCase()+' 요금제')}</small></div>${demoSelector}<nav aria-label="관리 메뉴"><button type="button" class="menu-order-button" onclick="editMenuOrder()">${uiIcon('list')}<span>메뉴 순서 변경</span></button><div class="sidebar-nav-items">${sidebarNavItems()}</div></nav><div class="sidebar-bottom"><div class="usage-label"><span>남은 상담</span><b>${me.remaining.toLocaleString()}회</b></div>${progress}<div class="usage-label"><span>교육 크레딧</span><b>${me.credits.toLocaleString()} C</b></div>${me.trial?`<p class="sidebar-trial">예약 체험 ${me.trial.bookings_remaining}건 남음</p>`:''}<button type="button" class="usage-link" onclick="go('pricing')">${uiIcon('wallet')} 이용량 및 요금제</button><button type="button" class="sidebar-logout ui-button tertiary" onclick="logout()">${uiIcon('log-out')} 로그아웃</button></div></aside><main><div class="mobile-service-notice">${serviceNoticeStrip()}</div>${cfg.demo?'<div class="demo-note">개발 환경 · 실제 결제 없음 · '+(cfg.ai_connected?'실제 AI API 연결됨':'AI 응답은 로컬 규칙 기반 데모')+'</div>':''}${body}</main>${mobileQuickNav()}</div>`
+ return `<div class="layout" data-route="${e(route)}"><aside class="app-sidebar"><div class="brand sidebar-brand">${wordmark}<button type="button" class="mobile-toggle" onclick="this.closest('aside').classList.toggle('open')" aria-label="메뉴 열기">${uiIcon('menu')}</button></div>${serviceNoticeStrip()}<div class="sidebar-tenant"><strong>${e(me.settings.brand)}</strong><small>${me.demo_view==='developer'?'개발 검수 · 판매 요금제 아님':me.demo_view==='subscriber_agent'?'LITE · 추가 브랜드 상담원 이용 중':me.operator?'운영자 계정':me.trial?'초청 체험':e(me.plan.toUpperCase()+' 요금제')}</small></div>${demoSelector}<nav aria-label="관리 메뉴"><button type="button" class="menu-order-button" onclick="editMenuOrder()">${uiIcon('list')}<span>메뉴 순서 변경</span></button><button type="button" class="menu-order-button" onclick="editQuickNav()">${uiIcon('settings')}<span>퀵바 메뉴 변경</span></button><div class="sidebar-nav-items">${sidebarNavItems()}</div></nav><div class="sidebar-bottom"><div class="usage-label"><span>남은 상담</span><b>${me.remaining.toLocaleString()}회</b></div>${progress}<div class="usage-label"><span>교육 크레딧</span><b>${me.credits.toLocaleString()} C</b></div>${me.trial?`<p class="sidebar-trial">예약 체험 ${me.trial.bookings_remaining}건 남음</p>`:''}<button type="button" class="usage-link" onclick="go('pricing')">${uiIcon('wallet')} 이용량 및 요금제</button><button type="button" class="sidebar-logout ui-button tertiary" onclick="logout()">${uiIcon('log-out')} 로그아웃</button></div></aside><main><div class="mobile-service-notice">${serviceNoticeStrip()}</div>${cfg.demo?'<div class="demo-note">개발 환경 · 실제 결제 없음 · '+(cfg.ai_connected?'실제 AI API 연결됨':'AI 응답은 로컬 규칙 기반 데모')+'</div>':''}${body}</main>${mobileQuickNav()}</div>`
 }
 function home(){return `<div class="hero"><div class="hero-inner"><div class="brand"><b>CS</b> AI <span class="brand-subtitle" aria-label="나의 클론 상담사"><span class="brand-typed" aria-hidden="true">나의 클론 상담사</span></span></div><span class="tag">AI 고객 상담 매니저</span><h1>나처럼 상담하는 AI</h1><p class="muted" style="font-size:15px;line-height:1.8;margin:0 0 30px">직접 교육하고, 링크 하나로 시작하세요.<br>당신의 고객 상담을 대신합니다.</p><div class="stack"><button class="google auth-button" onclick="google()"><img src="/assets/google-g.svg" alt=""><span>Google로 시작하기</span></button>${inboxDesk()?'':'<a class="ui-button secondary" href="/?desk=1#consultation-center">기존 회원 · 상담센터 바로 열기</a>'}<button class="naver auth-button" onclick="modal('준비 중','<p>네이버 로그인은 준비 중입니다.</p>')"><img src="/assets/naver-n.svg" alt=""><span>네이버로 시작하기</span></button><button class="kakao auth-button" onclick="modal('준비 중','<p>카카오 로그인은 준비 중입니다.</p>')"><img src="/assets/kakao-talk.svg" alt=""><span>카카오로 시작하기</span></button></div><p class="muted" style="margin-top:24px">개발 환경 · 운영 약관 및 개인정보처리방침은 출시 전 확정</p></div></div>${landingAudience()}${landingBenefits()}${landingUnification()}${landingOwnerLetter()}`}
 
