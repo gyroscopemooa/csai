@@ -933,7 +933,10 @@ def unknown(ws=Depends(ident)):
     with db() as c:return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown' AND id=?",(ws,r['id'])))} for r in rows(c,'SELECT id,thread,q,status,created FROM unknown WHERE ws=? ORDER BY created DESC',(ws,))]
 @app.get('/api/qr')
 def qr(ws=Depends(ident)):
-    with db() as c:w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요');url=APP_URL+'/c/'+w['slug']
+    with db() as c:
+        w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요')
+        alias=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,)) if 'custom_url' in entitlements(w) else None
+        url=APP_URL+'/c/'+(alias['alias'] if alias else w['slug'])
     b=io.BytesIO();qrcode.make(url).save(b,format='PNG');return Response(b.getvalue(),media_type='image/png')
 
 def validate_blocked_times(items):
