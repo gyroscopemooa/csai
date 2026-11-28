@@ -1808,3 +1808,12 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .layout[data-route="alerts"] .focus-count{font-size:11px;white-space:nowrap;padding:2px 6px}
 .layout[data-route="alerts"] .focus-toggle:focus-visible{outline:2px solid #3182f6;outline-offset:3px}
 @media(max-width:700px){.paid-preview-top{gap:6px;margin-bottom:12px}}
+
+/* Temporary takeover: compact status, actions and return timing. */
+.takeover-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;min-width:0}
+.takeover-status{display:flex;align-items:center;gap:5px;flex:1;min-width:0;font-size:12px;color:#526579}
+.takeover-dot{width:7px;height:7px;border-radius:50%;background:#28a46c;flex:none}.takeover-dot.is-manual{background:#d29a32}
+.takeover-clock{font-size:11px;font-variant-numeric:tabular-nums;color:#93601e;white-space:nowrap}
+.takeover-actions{display:flex;flex-wrap:wrap;align-items:center;gap:5px}.takeover-actions .ui-button{font-size:12px;min-height:32px;padding:5px 9px;margin:0}
+.takeover-settings{display:flex;align-items:center;gap:6px;color:#526579;font-size:11px;flex-basis:100%;justify-content:flex-end}
+.takeover-settings select{width:auto!important;min-height:28px;height:28px;padding:3px 8px;font-size:12px;border-radius:6px}.takeover-note{flex-basis:100%;font-size:11px;color:#93601e}
