@@ -1869,11 +1869,14 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 @media(max-width:700px){.layout main > .purchase-sticky-stack{top:var(--paid-sticky-offset,60px)}.layout main .paid-preview-always{padding:8px 10px}.paid-preview-always .paid-preview-copy{min-width:90px}.paid-preview-always .paid-preview-notice .ui-actions{margin-left:auto}}
 .layout main .paid-preview-always .paid-preview-list>.paid-preview-notice:first-child{border-top:0}
 .paid-preview-always .paid-preview-list[hidden]{display:none!important}
-.layout main .paid-preview-always .paid-preview-toggle{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin:0;padding:4px 0;border:0;border-radius:0;background:transparent;color:var(--ds-muted,#64748b);cursor:pointer;box-shadow:none}
-.paid-preview-always .paid-preview-toggle[aria-expanded="true"]{border-top:1px solid #e8edf3!important}
-.paid-preview-toggle svg{width:18px;height:18px;flex:none}.paid-preview-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
-.paid-preview-toggle:focus-visible{outline:2px solid #236fde;outline-offset:2px;border-radius:6px!important}
-.layout main .paid-preview-always:has(.paid-preview-toggle[aria-expanded="false"]){padding-block:0}
+/* Small standalone disclosure tab; no full-width divider or toggle row. */
+.layout main .paid-preview-always{position:relative;overflow:visible}
+.layout main > .purchase-sticky-stack:has(.paid-preview-toggle[aria-expanded="true"]){padding-bottom:13px}
+.layout main .paid-preview-always .paid-preview-toggle{position:absolute;z-index:1;left:50%;bottom:-13px;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;width:44px;min-width:44px;height:24px;min-height:24px;margin:0;padding:0;border:1px solid var(--ds-border,#e0e5eb);border-top:0;border-radius:0 0 15px 15px;background:#fff;color:var(--ds-muted,#64748b);cursor:pointer;box-shadow:none}
+.paid-preview-toggle svg{width:16px;height:16px;flex:none}.paid-preview-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.paid-preview-toggle:focus-visible{outline:2px solid #236fde;outline-offset:2px}
+.layout main .paid-preview-always:has(.paid-preview-toggle[aria-expanded="false"]){padding:0;border:0;background:transparent;box-shadow:none;min-height:0}
+.layout main .paid-preview-always .paid-preview-toggle[aria-expanded="false"]{position:relative;left:auto;bottom:auto;transform:none;margin:0 auto;border-top:1px solid var(--ds-border,#e0e5eb);border-radius:6px 6px 15px 15px}
 
 /* Compact alert actions and report visual summaries. */
 .ui-actions.ui-actions-keep-size.push-device-actions,.ui-actions.ui-actions-keep-size.push-sound-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;align-items:stretch}
