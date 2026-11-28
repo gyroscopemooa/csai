@@ -26,6 +26,11 @@ class RetrievalTests(unittest.TestCase):
         old = [faq('123 상품 배송')]
         self.assertEqual(select_faq('123 상품 언제 와요?', [faq('456 상품 배송 기간')], old), old)
 
+    def test_generic_query_does_not_add_numeric_candidate(self):
+        specific = faq('상품 456 배송 기간')
+        generic = faq('배송 기간')
+        self.assertEqual(select_faq('물건 언제 와요?', [specific, generic], []), [generic])
+
     def test_unknown_question_keeps_legacy(self):
         old = [faq('이용 안내')]
         self.assertEqual(select_faq('외계 행성은?', [faq('배송 기간')], old), old)

@@ -64,6 +64,9 @@ def select_faq(query, candidates, legacy, limit=5):
             continue
         if not row['q'].strip() or not row['a'].strip():
             continue
+        # Generic questions must not introduce a product/order-specific FAQ.
+        if re.search(r'\d', normalize(row['q'])):
+            continue
         key = identity(row)
         if key in seen:
             continue
