@@ -2361,9 +2361,10 @@ function ensurePagePaidNotices(main){
  const missing=(pagePaidFeatures[route]||[]).filter(key=>catalog.has(key)&&!has(key)&&!existing.has(key));
  if(missing.length)main.insertAdjacentHTML('beforeend',missing.map(key=>previewNotice(key,'',{detailsOnly:true})).join(''));
 }
-let paidPreviewHeaderObserver=null;
+let paidPreviewHeaderObserver=null,paidPreviewRoute='',paidPreviewExpanded=true;
 function prioritizePaidPreviews(){
  paidPreviewHeaderObserver?.disconnect();paidPreviewHeaderObserver=null;
+ if(paidPreviewRoute!==route){paidPreviewRoute=route;paidPreviewExpanded=true;}
  const main=$('.layout main');if(!main)return;
  const header=$('.layout .app-sidebar');
  const setup=main.querySelector(':scope > .dashboard-setup-strip');
@@ -2377,7 +2378,10 @@ function prioritizePaidPreviews(){
  if(setup)top.append(setup);
  if(notices.length){
   const group=document.createElement('section');group.className='card app-card paid-preview-top paid-preview-always';group.setAttribute('aria-label','구독 및 결제 안내');
-  const body=document.createElement('div');body.className='paid-preview-list';notices.forEach(n=>body.append(n));group.append(body);top.append(group);
+  const body=document.createElement('div');body.className='paid-preview-list';body.id='page-paid-preview-list';notices.forEach(n=>body.append(n));
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='paid-preview-toggle';toggle.setAttribute('aria-controls',body.id);toggle.innerHTML=uiIcon('chevron-down');
+  const sync=()=>{body.hidden=!paidPreviewExpanded;toggle.setAttribute('aria-expanded',String(paidPreviewExpanded));toggle.setAttribute('aria-label',paidPreviewExpanded?'구독 기능 가격표 접기':'구독 기능 가격표 펼치기');toggle.title=toggle.getAttribute('aria-label');};
+  toggle.addEventListener('click',()=>{paidPreviewExpanded=!paidPreviewExpanded;sync();});sync();group.append(body,toggle);top.append(group);
  }
  const update=()=>{if(!matchMedia('(max-width:700px)').matches){top.style.removeProperty('--paid-sticky-offset');return;}if(header&&!header.classList.contains('open'))top.style.setProperty('--paid-sticky-offset',Math.ceil(header.getBoundingClientRect().height)+'px');};
  update();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(update);paidPreviewHeaderObserver.observe(header);}

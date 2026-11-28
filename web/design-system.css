@@ -1857,7 +1857,7 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .quality-handoff-actions > .ui-button { width:100%; min-width:0; min-height:48px; height:100%; margin:0; padding:8px 6px; text-align:center; white-space:normal; word-break:keep-all; line-height:1.35; }
 @media(max-width:700px){.quality-handoff-actions > .ui-button{font-size:12px;}}
 
-/* Shared purchase position below updates, with no disclosure interaction. */
+/* Shared purchase position below updates, expanded by default with a centered disclosure control. */
 .layout main > .purchase-sticky-stack{position:sticky;top:12px;z-index:7;display:grid;gap:6px;min-width:0;margin:0 0 12px;background:var(--ds-bg,#f5f7fa)}
 .layout main .purchase-sticky-stack > .app-card{margin:0!important}
 .layout main .paid-preview-always{display:block;padding:10px 12px;background:#fff}
@@ -1868,6 +1868,12 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .layout main .paid-preview-always .paid-preview-list>.paid-preview-notice{padding:7px 0}
 @media(max-width:700px){.layout main > .purchase-sticky-stack{top:var(--paid-sticky-offset,60px)}.layout main .paid-preview-always{padding:8px 10px}.paid-preview-always .paid-preview-copy{min-width:90px}.paid-preview-always .paid-preview-notice .ui-actions{margin-left:auto}}
 .layout main .paid-preview-always .paid-preview-list>.paid-preview-notice:first-child{border-top:0}
+.paid-preview-always .paid-preview-list[hidden]{display:none!important}
+.layout main .paid-preview-always .paid-preview-toggle{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin:0;padding:4px 0;border:0;border-radius:0;background:transparent;color:var(--ds-muted,#64748b);cursor:pointer;box-shadow:none}
+.paid-preview-always .paid-preview-toggle[aria-expanded="true"]{border-top:1px solid #e8edf3!important}
+.paid-preview-toggle svg{width:18px;height:18px;flex:none}.paid-preview-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.paid-preview-toggle:focus-visible{outline:2px solid #236fde;outline-offset:2px;border-radius:6px!important}
+.layout main .paid-preview-always:has(.paid-preview-toggle[aria-expanded="false"]){padding-block:0}
 
 /* Compact alert actions and report visual summaries. */
 .ui-actions.ui-actions-keep-size.push-device-actions,.ui-actions.ui-actions-keep-size.push-sound-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%;align-items:stretch}
