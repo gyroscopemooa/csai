@@ -484,7 +484,8 @@ input.ui-switch[type="checkbox"] { width: 36px; height: 20px; border: 0; }
 .ui-modal-footer { display: flex; justify-content: flex-end; gap: var(--ds-2); border-top: 1px solid var(--ds-border); margin-top: var(--ds-4); padding-top: var(--ds-4); }
 .chat-profile-details { min-width: 0; color: var(--ds-ink); background: var(--ds-surface); overflow-wrap: anywhere; }
 .chat-profile-hero { display: grid; justify-items: center; gap: var(--ds-2); padding-block: var(--ds-5); text-align: center; }
-.chat-profile-hero .chat-profile-photo { width: 88px; height: 88px; margin-block-end: var(--ds-2); border-radius: var(--ds-radius-lg); }
+.chat-profile-hero:has(> .chat-profile-photo) { padding-top: var(--ds-3); }
+.chat-profile-hero > .chat-profile-photo { display:block; width:100%; height:auto; max-height:360px; aspect-ratio:4/3; object-fit:contain; object-position:center; background:var(--ds-canvas,#f5f7fa); margin:0 0 var(--ds-3); border:0; border-radius:var(--ds-radius-lg); box-sizing:border-box; }
 .chat-profile-hero h3 { margin: 0; font-size: 21px; line-height: 1.35; }
 .chat-profile-details :is(p,dl,dd) { margin: 0; }
 .chat-profile-intro-title { font-weight: var(--ds-medium); }
@@ -508,7 +509,8 @@ input.ui-switch[type="checkbox"] { width: 36px; height: 20px; border: 0; }
   align-self: flex-start; flex: none; width: 100%; border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius-lg); padding-inline: var(--ds-4);
 }
-.chat-profile-inline .chat-profile-hero .chat-profile-photo { width: 64px; height: 64px; }
+.chat-profile-inline .chat-profile-hero > .chat-profile-photo { width:100%; height:auto; max-height:320px; }
+.chat-profile-hero > :is(h3,.chat-profile-intro-title,.chat-profile-copy) { max-width:100%; }
 .chat-profile-inline .chat-profile-hero h3 { font-size: var(--ds-text-lg); }
 .chat-notice-content { display: grid; gap: var(--ds-3); padding-block: var(--ds-2) var(--ds-3); max-height: min(260px, 36dvh); overflow: auto; overscroll-behavior: contain; }
 .ui-modal.chat-profile-modal > .ui-modal-panel {
