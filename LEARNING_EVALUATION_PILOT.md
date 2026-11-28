@@ -1,0 +1,2 @@
+# Offline learning evaluation
+Curated case expectations and observed unknown/evidence checks produce pass rates, missing cases, and candidate topic gaps. These are not semantic accuracy scores or proven knowledge gaps. Compare complete runs on identical case metadata only; a future runner must also version actual prompts, trusted case IDs, model configuration and workspace, and verify evidence IDs server-side. No auto-learning, model calls, billing, storage or live integration. Test: python -m unittest discover -s tests -p test_learning_evaluation.py.
