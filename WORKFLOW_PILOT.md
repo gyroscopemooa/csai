@@ -1,0 +1,2 @@
+# Workflow pilot
+Offline bounded workflow planning, role/tool allowlist, dependency validation, write-action review preview and read-only execution with injected trusted verification. No real MCP connection, agent model calls, write execution, approval persistence, billing, production integration or automatic retry. Actual adapters require server-side authentication, workspace isolation, trusted policy, budget reservation and execution audit. Test: python -m unittest discover -s tests -p test_workflow_pilot.py.
