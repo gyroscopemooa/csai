@@ -12,37 +12,37 @@
       "id": "mini",
       "name": "MINI",
       "quantity": 100,
-      "price": 4900
+      "price": 8900
     },
     {
       "id": "lite",
       "name": "LITE",
       "quantity": 300,
-      "price": 9900
+      "price": 24900
     },
     {
       "id": "basic",
       "name": "BASIC",
       "quantity": 500,
-      "price": 14900
+      "price": 41900
     },
     {
       "id": "standard",
       "name": "STANDARD",
       "quantity": 1000,
-      "price": 19900
+      "price": 82900
     },
     {
       "id": "plus",
       "name": "PLUS",
       "quantity": 2000,
-      "price": 29900
+      "price": 165000
     },
     {
       "id": "pro",
       "name": "PRO",
       "quantity": 3000,
-      "price": 39900
+      "price": 249000
     },
     {
       "id": "pro_max",
@@ -60,7 +60,7 @@
       "id": "business_plus",
       "name": "BUSINESS PLUS",
       "quantity": 30000,
-      "price": 2090000
+      "price": 2490000
     },
     {
       "id": "enterprise",
