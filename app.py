@@ -1027,10 +1027,10 @@ def special_preview_evaluate(req:Request,ws=Depends(ident)):
     from special_local_fixture import execute_fixture
     report=execute_fixture(ws)
     require(report and report['complete'],'검수 실행 실패',503)
-    # One fixed fixture run per workspace per UTC day; repeated clicks are free no-ops.
-    stamp=now()
-    day=stamp//86400
-    special_fixture_store().save(ws,'fixture-v1-'+str(day),report,day*86400)
+    # Separate evaluation versions on the same day; repeat identical runs idempotently.
+    from special_fixture_identity import fixture_identity
+    run_id, stamp=fixture_identity(report,now())
+    special_fixture_store().save(ws,run_id,report,stamp)
     return {'ok':True}
 
 import billing
