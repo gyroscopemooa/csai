@@ -1657,7 +1657,7 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .center-filters .inbox-filter-selects{display:grid;grid-template-columns:minmax(0,1fr)}
 .center-filters .inbox-filter-search{display:flex;gap:6px}
 .center-filters .inbox-filter-search input{flex:1;min-width:0}
-.center-list{flex:1;min-height:0;max-height:none!important;overflow:auto;overscroll-behavior:contain;padding:4px 0;display:block}
+.center-list{flex:1;min-height:0;max-height:none!important;overflow:auto;overscroll-behavior:contain;padding:4px 0;display:block;margin:8px 12px 12px;border:1px solid #cbd5e1;border-radius:12px;background:var(--ds-surface,#fff);box-sizing:border-box}
 .center-workspace .center-entry{position:relative;display:flex;align-items:flex-start;gap:10px;text-align:left;width:100%;min-width:0;border:0;border-bottom:1px solid #edf0f3;border-radius:0;background:#fff;padding:12px;color:#172333;margin:0}
 .center-workspace .center-entry:is(:hover,.selected){background:#edf4ff}
 .center-workspace .center-entry.selected{box-shadow:inset 3px 0 #3182f6}
