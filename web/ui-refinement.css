@@ -365,3 +365,84 @@
   .menu-order-footer { padding-inline: 16px; }
   .menu-order-moves button { width: 44px; min-height: 44px; }
 }
+
+/* Dashboard setup consultation: compact, isolated banner. */
+.layout main .card.dashboard-setup-strip {
+ display:grid; grid-template-columns:minmax(0,1fr) auto;
+ align-items:center; gap:6px 12px; padding:12px 16px; border-radius:14px;
+}
+.layout main .dashboard-setup-strip .dashboard-setup-copy { min-width:0; }
+.layout main .dashboard-setup-strip .dashboard-setup-title {
+ display:block; font-size:15px; font-weight:700; line-height:1.35; margin:0 0 4px;
+}
+.layout main .dashboard-setup-strip .dashboard-setup-price {
+ display:block; font-size:12px; line-height:1.5; color:#6b7684; margin:0; word-break:keep-all;
+}
+.layout main .dashboard-setup-strip .dashboard-setup-price span { display:inline-block; }
+.layout main .dashboard-setup-strip .dashboard-setup-action {
+ width:auto; min-width:0; min-height:44px; margin:0; padding:8px 11px;
+ font-size:13px; font-weight:650; white-space:nowrap; align-self:center;
+}
+@media(max-width:640px) {
+ .layout main .card.dashboard-setup-strip { padding:10px 12px; gap:6px 8px; }
+ .layout main .dashboard-setup-strip .dashboard-setup-title { font-size:14px; margin-bottom:2px; }
+ .layout main .dashboard-setup-strip .dashboard-setup-price { font-size:11px; }
+ .layout main .dashboard-setup-strip .dashboard-setup-action { padding:6px 9px; font-size:12px; }
+}
+
+/* Setup consultation comparison: compact responsive detail inside the modal. */
+.setup-consultation-options { display:grid; gap:10px; margin:0; padding:0; min-width:0; border:0; }
+.setup-consultation-options legend { font-size:14px; font-weight:700; margin-bottom:8px; }
+.setup-consultation-option { display:grid; grid-template-columns:20px minmax(0,1fr); align-items:start; gap:10px; padding:12px; border:1px solid #e5e8eb; border-radius:12px; cursor:pointer; }
+.setup-consultation-option:has(input:checked) { border-color:#3182f6; background:#f1f7ff; }
+.setup-consultation-option input[type=radio] { width:18px; height:18px; min-height:0; margin:3px 0 0; padding:0; accent-color:#3182f6; }
+.setup-consultation-option strong { display:block; font-size:14px; line-height:1.5; word-break:keep-all; }
+.setup-consultation-option small { display:block; font-size:12px; line-height:1.65; color:#4e5968; margin-top:4px; word-break:keep-all; }
+.setup-consultation-option ul { margin:8px 0 0; padding-left:17px; color:#4e5968; font-size:12px; line-height:1.65; }
+.setup-consultation-option li { margin:2px 0; }
+
+/* Unsubscribed previews and service notices: no changes to existing screen components. */
+.layout main .card.paid-preview-notice { display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; padding:12px 16px; border-radius:14px; }
+.layout main .paid-preview-notice strong { font-size:14px; }
+.layout main .paid-preview-notice p { font-size:12px; color:#6b7684; margin:3px 0 0; line-height:1.5; }
+.layout main .paid-preview-notice .ui-actions { margin:0; }
+.app-sidebar .service-notice-strip { display:flex; align-items:center; gap:8px; width:100%; min-height:38px; min-width:0; padding:8px 10px; margin:0 0 8px; border:0; border-radius:8px; background:#f5f7fa; color:#4e5968; text-align:left; font-size:12px; }
+.service-notice-strip .service-notice-kind { font-weight:750; color:#236fde; flex:none; }
+.service-notice-strip[data-kind="urgent"] .service-notice-kind { color:#b42318; }
+.service-notice-strip .service-notice-title { min-width:0; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.service-notice-strip .ui-icon { flex:none; width:13px; height:13px; }
+.service-notice-item summary { display:flex; gap:10px; align-items:center; cursor:pointer; list-style:none; padding:13px 0; }
+.service-notice-item summary::-webkit-details-marker { display:none; }
+.service-notice-item summary strong { flex:1; min-width:0; font-size:14px; word-break:keep-all; }
+.service-notice-item summary time { flex:none; font-size:12px; color:#6b7684; }
+.service-notice-item p { line-height:1.7; color:#4e5968; margin:0 0 12px; word-break:keep-all; }
+.service-notice-kind-label { flex:none; font-size:11px; font-weight:700; color:#236fde; }
+.service-notice-list .service-notice-item + .service-notice-item { border-top:1px solid #e5e8eb; }
+@media(max-width:700px){
+ .app-sidebar .service-notice-strip { margin:4px 0 0; padding:8px 6px; background:transparent; border-radius:0; min-height:32px; }
+ .layout main .card.paid-preview-notice { padding:10px 12px; }
+ .layout main .paid-preview-notice .ui-actions { gap:6px; }
+ .service-notice-item summary { flex-wrap:wrap; gap:6px; }
+}
+
+/* Booking settings: equal-width responsive controls, independent blackout rows. */
+.booking-settings-form,.booking-block-list{display:grid;gap:14px;min-width:0}
+.booking-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-width:0}
+.booking-settings-form .ui-field,.booking-block-row .ui-field{min-width:0;margin:0}
+.booking-settings-form .ui-field>input,.booking-settings-form .ui-field>select,.booking-block-row .ui-field>input,.booking-block-row .ui-field>select{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.booking-settings-grid[hidden],.booking-block-row [hidden]{display:none!important}
+.booking-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.booking-weekdays label{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px 2px;border:1px solid var(--border,#dce1e7);border-radius:8px;min-width:0;cursor:pointer}
+.booking-weekdays label:has(input:checked){border-color:#3182f6;color:#2468bd}
+.booking-weekdays input{width:16px;height:16px;min-width:0;margin:0;accent-color:#3182f6}
+.booking-block-row{display:grid;gap:12px;min-width:0;padding:14px;border:1px solid var(--border,#dce1e7);border-radius:12px}
+.booking-block-list:empty{display:none}
+@media(max-width:360px){.booking-settings-grid{grid-template-columns:minmax(0,1fr)}}
+
+/* Keep mobile navigation available while scrolling long management screens. */
+@media(max-width:700px){
+ body{overflow-x:clip}
+ .layout .app-sidebar{position:sticky;top:0;align-self:start;z-index:8;background:#fff;max-height:calc(100dvh - 12px);overflow:visible}
+ .layout .app-sidebar.open{overflow-y:auto;overscroll-behavior:contain}
+ .layout .app-sidebar .sidebar-brand{flex-shrink:0}
+}

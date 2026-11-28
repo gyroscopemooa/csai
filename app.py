@@ -175,7 +175,7 @@ def settings(body:dict,ws=Depends(ident)):
                 if k in s['modes'] and v in ['auto','manual','off']:s['modes'][k]=v
             if s['modes'].get('booking')=='auto':
                 require(policies.status(c,ws)['automation_accepted'],'예약 자동 확정 위험 안내를 먼저 확인하세요.',403)
-        if any(k in body for k in ['fields','open','close','duration','buffer','closed_days','payment_required','timezone','resources']):require('calendar' in entitlements(w))
+        if any(k in body for k in ['fields','open','close','duration','buffer','closed_days','blocked_times','payment_required','timezone','resources']):require('calendar' in entitlements(w))
         if 'resources' in body:
             rs=body['resources'];require(isinstance(rs,list) and 1<=len(rs)<=20,'담당자는 1~20명',422);out=[];seen=set()
             for r in rs:
@@ -196,6 +196,7 @@ def settings(body:dict,ws=Depends(ident)):
         for k in ['duration','buffer']:
             if k in body:require(type(body[k])==int and (5 if k=='duration' else 0)<=body[k]<=480,'시간 간격 오류',422);s[k]=body[k]
         if 'closed_days' in body:require(isinstance(body['closed_days'],list) and all(type(x)==int and 0<=x<=6 for x in body['closed_days']),'휴무 요일 오류',422);s['closed_days']=body['closed_days']
+        if 'blocked_times' in body:s['blocked_times']=validate_blocked_times(body['blocked_times'])
         if 'payment_required' in body:s['payment_required']=bool(body['payment_required'])
         if 'timezone' in body:
             try:ZoneInfo(body['timezone']);s['timezone']=body['timezone']
@@ -425,6 +426,7 @@ def customer_handoff(body:dict):
         t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(w['id'],token))
         require(t,'상담 없음',404)
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(w['id'],t['id'])),'응답 완료 후 다시 요청하세요.',409)
+        clear_temporary_takeover(c,w['id'],t['id'])
         c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(w['id'],t['id']))
         if not t['manual'] or not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='handoff' AND ref=?",(w['id'],t['id'])):
             ops.event(c,w['id'],'handoff','고객의 담당자 연결 요청',t['id'])
@@ -434,6 +436,17 @@ def customer_handoff(body:dict):
 def messages(token:str):
     with db() as c:
         v=visitor(c,token);t=one(c,'SELECT * FROM thread WHERE visitor=? AND ws=?',(token,v['ws']));return chat_attachments.messages(c,v['ws'],t['id'],include_id=False)
+def live_chat_message_id(key):
+    return hashlib.sha256(('live-chat:'+dump(list(key))).encode()).hexdigest()
+
+def cancel_live_chat(c,ws,tid):
+    # Only the transaction owning a running request may restore its reservation.
+    for r in rows(c,"SELECT client,period,charge FROM request WHERE ws=? AND thread=? AND state='running'",(ws,tid)):
+        w=getw(c,ws)
+        refund_chat(c,w,r['period'],r['charge'])
+        result={'reply':'담당자가 확인 중입니다.','manual':True,'remaining':remaining(c,getw(c,ws))}
+        c.execute("UPDATE request SET state='done',result=? WHERE ws=? AND thread=? AND client=? AND state='running'",(dump(result),ws,tid,r['client']))
+
 def abort_chat_request(key,period,kind):
     """Recover once; a successful but ambiguous commit is replayed, never refunded."""
     ws,tid,client=key
@@ -442,6 +455,7 @@ def abort_chat_request(key,period,kind):
         if prior and prior['state']=='done':return loads(prior['result'])
         if prior and prior['state']=='running':
             refund_chat(c,getw(c,ws),period,kind)
+            c.execute('DELETE FROM message WHERE ws=? AND thread=? AND id=?',(ws,tid,live_chat_message_id(key)))
             c.execute("UPDATE request SET state='failed' WHERE ws=? AND thread=? AND client=?",key)
     return None
 
@@ -449,7 +463,7 @@ def abort_chat_request(key,period,kind):
 def chat(body:dict):
     token=bounded(body.get('token',''),100);client=bounded(body.get('clientMessageId',''),100);msg=bounded(body.get('message',''),2000);require(msg and client,'메시지 필요',422)
     with db(True) as c:
-        v=visitor(c,token);ws=v['ws'];w=getw(c,ws);t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(ws,token));tid=t['id'];s,agent=branding.merged(c,w,v);p=usage_period(w);key=(ws,tid,client)
+        v=visitor(c,token);ws=v['ws'];w=getw(c,ws);t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(ws,token));tid=t['id'];expire_temporary_takeovers(c,ws,tid);t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,tid));s,agent=branding.merged(c,w,v);p=usage_period(w);key=(ws,tid,client)
         prior=one(c,'SELECT * FROM request WHERE ws=? AND thread=? AND client=?',key)
         if prior:
             if prior['state']=='done':return loads(prior['result'])
@@ -489,6 +503,10 @@ def chat(body:dict):
         quote_catalog=customer_ops.quote_catalog(c,ws,v.get('agent','')) if 'quote' in adds else []
         response_style=workflow_controls.response_style(c,ws,v.get('agent',''))
         s={**s,'_response_style':response_style,'_commerce_products':commerce.chat_products(c,w,agent,msg)}
+        # Publish the inbound message before waiting for the model.
+        c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(live_chat_message_id(key),ws,tid,'user',msg,now()))
+        if v['kind']!='test' and not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='new' AND ref=?",(ws,tid)):
+            ops.event(c,ws,'new','신규 고객 상담',tid)
     try:r=ai.answer(msg,history,s,faq,published,adds,loads(t.get('booking_context','{}')),quote_catalog)
     except Exception as e:
         replay=abort_chat_request(key,p,kind)
@@ -513,14 +531,25 @@ def chat(body:dict):
         r.pop('workDraft',None)
     try:
         with db(True) as c:
-            c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,tid,'user',msg,now()))
+            prior=one(c,'SELECT state,result FROM request WHERE ws=? AND thread=? AND client=?',key)
+            if prior and prior['state']=='done':
+                # The owner already took over; account for provider cost, never send the stale answer.
+                record_usage(c,ws,'chat',ai.CHAT,r,v.get('agent',''))
+                return loads(prior['result'])
+            require(prior and prior['state']=='running','상담 처리 상태가 변경되었습니다.',409)
+            current=one(c,'SELECT manual,kind FROM thread WHERE ws=? AND id=?',(ws,tid))
+            pause=workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),v.get('agent',''),current['kind'])
+            if current['manual'] or pause:
+                cancel_live_chat(c,ws,tid)
+                c.execute("UPDATE thread SET status='pending' WHERE ws=? AND id=?",(ws,tid))
+                record_usage(c,ws,'chat',ai.CHAT,r,v.get('agent',''))
+                return loads(one(c,'SELECT result FROM request WHERE ws=? AND thread=? AND client=?',key)['result'])
             if handoff:
                 c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
                 if v['kind']!='test':
                     ops.event(c,ws,'handoff','사장님 확인 요청',tid)
             answer_id=uid();c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(answer_id,ws,tid,'assistant',r['reply'],now()))
             if context:c.execute('INSERT INTO answer_context VALUES(?,?,?,?)',(ws,answer_id,v.get('agent',''),dump(context)))
-            if v['kind']!='test' and not history:ops.event(c,ws,'new','신규 고객 상담',tid)
             if v['kind']!='test':customer_ops.capture_lead(c,ws,tid,msg,r)
             if v['kind']=='public' and 'quote' in adds:customer_ops.capture_quote_suggestion(c,ws,tid,msg,r)
             if r.get('unknown'):
@@ -536,11 +565,52 @@ def chat(body:dict):
         if replay is not None:return replay
         fail(502,'상담 저장 실패. 사용량은 복구되었습니다.')
     return r
+def consultation_profile(c,w,tid,agent='',include_details=False):
+    ws=w['id'];cutoff=history_cutoff(w)
+    messages=rows(c,"SELECT body,rowid AS seq FROM message WHERE ws=? AND thread=? AND role='user' AND created>=? ORDER BY rowid DESC LIMIT 6",(ws,tid,cutoff))
+    recent=[m['body'] for m in messages]
+    latest=recent[0] if recent else ''
+    text=' '.join(recent)
+    rules=[('예약 변경·취소',r'예약.{0,12}(변경|취소)|(변경|취소).{0,12}예약'),('상품 교환',r'교환|사이즈 변경'),('환불 문의',r'환불|반품'),('배송 문의',r'배송|택배|운송장'),('예약 문의',r'예약|일정|촬영.{0,12}가능'),('가격 문의',r'가격|금액|얼마|비용|견적'),('결제 문의',r'결제|입금|카드'),('영업·위치 문의',r'영업시간|위치|주소|주차'),('불편·문의',r'불만|민원|오류|고장')]
+    category=next((name for name,pattern in rules if re.search(pattern,latest)),None) or next((name for name,pattern in rules if re.search(pattern,text)),'일반 상담')
+    profile={'title':category,'summary':ai.clean(' '.join(latest.split()))[:80],'source':'rule'}
+    # Use only a model briefing for the current customer turn, not a stale earlier answer.
+    context=one(c,"SELECT a.context FROM answer_context a JOIN message m ON m.ws=a.ws AND m.id=a.message WHERE m.ws=? AND m.thread=? AND m.created>=? AND m.rowid>? ORDER BY m.rowid DESC LIMIT 1",(ws,tid,cutoff,messages[0]['seq'])) if messages else None
+    if context:
+        try:meta=loads(context['context']).get('consultation',{})
+        except (ValueError,TypeError,AttributeError):meta={}
+        if isinstance(meta,dict) and meta.get('title'):
+            profile.update(title=ai.clean(str(meta['title']))[:24],summary=ai.clean(str(meta.get('summary') or profile['summary']))[:80],source='ai')
+    if 'calendar' not in entitlements(w):return profile
+    t=one(c,'SELECT visitor,booking_context FROM thread WHERE ws=? AND id=?',(ws,tid))
+    if not t:return profile
+    if agent:
+        b=one(c,"SELECT b.id,b.start,b.status,b.payload,b.fields FROM brand_booking b JOIN brand_booking_customer x ON x.ws=b.ws AND x.agent=b.agent AND x.booking=b.id WHERE b.ws=? AND b.agent=? AND x.visitor=? AND b.customer_ok=1 ORDER BY b.created DESC LIMIT 1",(ws,agent,t['visitor']))
+    else:
+        b=one(c,"SELECT id,start,status,payload,fields FROM booking WHERE ws=? AND visitor=? AND customer_ok=1 ORDER BY created DESC LIMIT 1",(ws,t['visitor']))
+    if b:
+        data=loads(b['payload']);fields=loads(b['fields'])
+        profile['booking']={k:b[k] for k in ('id','start','status')}
+        profile['booking']['agent']=agent
+        name=next((data.get(f['key']) for f in fields if f['key']=='name' or f['label'] in ('고객명','예약자명','예약자 이름','이름') and f['type']=='text'),None)
+        if name:profile['customer_name']=str(name)[:80]
+        if include_details:profile['booking']['fields']=[{'label':f['label'],'value':data[f['key']]} for f in fields if data.get(f['key'])]
+    elif include_details:
+        draft=loads(t['booking_context'] or '{}')
+        if isinstance(draft,dict) and draft.get('payload'):
+            profile['draft_fields']=[{'label':k,'value':str(v)[:500]} for k,v in draft['payload'].items() if v]
+    return profile
+
+def booking_consultation_thread(c,w,visitor):
+    t=one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(w['id'],visitor))
+    return t['id'] if t and thread_accessible(c,w,t['id']) else None
+
 @app.get('/api/inbox')
 def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
     require(kind in ('','public','test','naver','kakao','telegram','line','instagram'),'채널 필터 오류',422)
     q=bounded(q,100).lower()
-    with db() as c:
+    with db(True) as c:
+        expire_temporary_takeovers(c,ws)
         w=getw(c,ws);cutoff=history_cutoff(w)
         sql="SELECT COALESCE((SELECT v.agent FROM visitor v WHERE v.token=thread_outer.visitor AND v.ws=thread_outer.ws),'') AS agent,id,kind,status,manual,created,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread_outer.ws AND cs.thread=thread_outer.id),'') AS source,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))"
         args=[cutoff,ws,cutoff,cutoff]
@@ -558,6 +628,8 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
         for r in items:
             m=one(c,"SELECT COUNT(*) AS n,COALESCE(MAX(m.rowid),0) AS last_customer FROM message m WHERE m.ws=? AND m.thread=? AND m.role='user' AND m.created>=? AND m.rowid>COALESCE((SELECT seen FROM inbox_read WHERE ws=? AND thread=?),0)",(ws,r['id'],cutoff,ws,r['id']))
             last=one(c,'SELECT created AS activity,rowid AS seq FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid DESC LIMIT 1',(ws,r['id'],cutoff))
+            if not r['sample'] and r['kind']!='test':r['consultation']=consultation_profile(c,w,r['id'],r['agent'])
+            r['temporary']=temporary_takeover(c,ws,r['id']) if r['manual'] else None
             r['assignment']=one(c,'SELECT assignee,priority,due_date FROM inbox_assignment WHERE ws=? AND thread=?',(ws,r['id'])) or {'assignee':'','priority':'normal','due_date':''}
             r.update(unread=0 if r['sample'] or r['kind']=='test' else m['n'],activity=last['activity'] if last else r['created'],activity_seq=last['seq'] if last else 0,paused_by=workflow_controls.paused_by(scopes,r['agent'],r['kind']))
         return sorted(items,key=lambda r:(r['activity'],r['activity_seq'],r['id']),reverse=True)
@@ -729,7 +801,7 @@ def inbox_brief(i:str,ws=Depends(ident)):
                 recent.append({'role':m['role'],'body':m['body'][:500],'created':m['created'],'truncated':len(m['body'])>500})
         recent.reverse()
         pending=bool(messages and messages[0]['role']=='user')
-        return {'thread':i,'kind':t['kind'],'status':t['status'],'manual':bool(t['manual']),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'latest_is_customer':pending,'recent':recent,'note':note['note'] if note else '','tags':loads(note['tags']) if note else [],'mode':'extractive','limit':30}
+        return {'thread':i,'kind':t['kind'],'status':t['status'],'manual':bool(t['manual']),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'latest_is_customer':pending,'recent':recent,'note':note['note'] if note else '','tags':loads(note['tags']) if note else [],'mode':'extractive','limit':30,'consultation':consultation_profile(c,w,i,t['agent'],True)}
 
 @app.get('/api/history-policy')
 def history_policy(ws=Depends(ident)):
@@ -739,8 +811,9 @@ def history_policy(ws=Depends(ident)):
         return {'base_days':BASE_HISTORY_DAYS,'extended_days':EXTENDED_HISTORY_DAYS,'accessible_days':history_days(w),'older_threads':hidden,'deletion_enabled':False,'policy':'provisional_access_window'}
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
-    with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'files':chat_attachments.files_enabled(c,ws,t['agent']),'web_calls':web_calls.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w))}
+    with db(True) as c:
+        expire_temporary_takeovers(c,ws,i)
+        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'temporary':temporary_takeover(c,ws,i) if t['manual'] else None,'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'files':chat_attachments.files_enabled(c,ws,t['agent']),'web_calls':web_calls.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w)),'consultation':consultation_profile(c,w,i,t['agent']) if t['kind']!='test' and not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)) else {}}
 @app.get('/api/inbox/{i}/related')
 def related_threads(i:str,ws=Depends(ident)):
     with db() as c:
@@ -804,32 +877,108 @@ def delete_test_thread(i:str,ws=Depends(ident)):
 @app.post('/api/inbox/{i}')
 def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
+        expire_temporary_takeovers(c,ws,i)
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 읽기 전용입니다.',409)
+        temporary=temporary_takeover(c,ws,i)
+        if 'release_temporary' in body or 'renew_temporary' in body:
+            require(len(body)==1,'일시 개입 요청 형식 오류',422)
+            release='release_temporary' in body
+            lease=body.get('release_temporary' if release else 'renew_temporary')
+            if temporary and lease==temporary['lease'] and t['manual']:
+                if release:
+                    c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
+                    clear_temporary_takeover(c,ws,i)
+                else:
+                    c.execute('UPDATE temporary_takeover SET expires=? WHERE ws=? AND thread=?',(now()+(temporary['seconds'] or 300),ws,i))
+            return {'ok':True}
+        if 'auto_resume_seconds' in body:
+            seconds=body['auto_resume_seconds']
+            require(body.get('manual') is True and not body.get('reply') and type(seconds) is int and seconds in (0,60,180,300,600,1800,3600),'자동 복귀 설정 오류',422)
+            require(t['kind'] in ('public','test'),'이 채널에서는 지속 수동 상담만 지원합니다.',409)
+        if 'expected_lease' in body:
+            require(bool(body.get('reply')) and 'manual' not in body and bool(t['manual']) and (temporary or {}).get('lease','')==body['expected_lease'],'상담 모드가 변경되었습니다. 다시 개입해 주세요.',409)
         if body.get('resume_on_close') is True:
             require(body.get('status')=='resolved' and not body.get('reply') and 'manual' not in body,'완료 후 AI 복귀 요청 형식 오류',422)
             require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
             c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
+            clear_temporary_takeover(c,ws,i)
         if 'manual' in body:
             require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(type(body['manual']) is bool,'상담 방식 오류',422)
-            require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
-            c.execute('UPDATE thread SET manual=? WHERE id=?',(int(body['manual']),i))
+            if body['manual'] and t['kind'] in ('public','test'):
+                cancel_live_chat(c,ws,i)
+            else:
+                require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
+            c.execute('UPDATE thread SET manual=? WHERE ws=? AND id=?',(int(body['manual']),ws,i))
+            clear_temporary_takeover(c,ws,i)
+            if 'auto_resume_seconds' in body:
+                c.execute('INSERT INTO temporary_takeover(ws,thread,lease,seconds,expires) VALUES(?,?,?,?,?)',(ws,i,uid(),seconds,now()+(seconds or 300)))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
         if body.get('reply'):
             require(t['kind'] in ('public','test'),'외부 채널 직접 답변은 연결 승인 및 발송 검증 후 이용할 수 있습니다.',409)
             require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 답변하세요.',409)
-            c.execute('UPDATE thread SET manual=1 WHERE ws=? AND id=?',(ws,i))
+            c.execute("UPDATE thread SET manual=1,status='open' WHERE ws=? AND id=?",(ws,i))
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
+            temporary=temporary_takeover(c,ws,i)
+            if temporary:
+                if temporary['seconds']==0:
+                    c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
+                    clear_temporary_takeover(c,ws,i)
+                else:c.execute('UPDATE temporary_takeover SET expires=? WHERE ws=? AND thread=?',(now()+temporary['seconds'],ws,i))
     return {'ok':True}
 @app.get('/api/unknown')
 def unknown(ws=Depends(ident)):
     with db() as c:return [r|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown' AND id=?",(ws,r['id'])))} for r in rows(c,'SELECT id,thread,q,status,created FROM unknown WHERE ws=? ORDER BY created DESC',(ws,))]
 @app.get('/api/qr')
 def qr(ws=Depends(ident)):
-    with db() as c:w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요');url=APP_URL+'/c/'+w['slug']
+    with db() as c:
+        w=getw(c,ws);require(public_access(w),'유료 구독 또는 초청 체험 필요')
+        alias=one(c,'SELECT alias FROM brand_alias WHERE ws=?',(ws,)) if 'custom_url' in entitlements(w) else None
+        url=APP_URL+'/c/'+(alias['alias'] if alias else w['slug'])
     b=io.BytesIO();qrcode.make(url).save(b,format='PNG');return Response(b.getvalue(),media_type='image/png')
+
+def validate_blocked_times(items):
+    require(isinstance(items,list) and len(items)<=100,'예약 불가 일정은 최대 100개입니다.',422)
+    out=[]
+    for item in items:
+        require(isinstance(item,dict),'예약 불가 일정 형식 오류',422)
+        kind=item.get('kind');require(kind in ('date','weekly'),'예약 불가 일정 유형 오류',422)
+        name=bounded(item.get('name',''),100)
+        start=item.get('start','00:00');end=item.get('end','24:00')
+        require(isinstance(start,str) and isinstance(end,str) and re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d',start) and re.fullmatch(r'(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)',end) and start<end,'차단 시작·종료 시간을 확인하세요.',422)
+        rule={'kind':kind,'name':name,'start':start,'end':end}
+        if kind=='date':
+            try:
+                first=datetime.strptime(item.get('from',''),'%Y-%m-%d').date()
+                last=datetime.strptime(item.get('to',''),'%Y-%m-%d').date()
+                require(first<=last,'차단 시작일은 종료일보다 늦을 수 없습니다.',422)
+            except (ValueError,TypeError):fail(422,'차단 날짜 형식 오류')
+            rule.update({'from':first.isoformat(),'to':last.isoformat()})
+        else:
+            days=item.get('days',[])
+            require(isinstance(days,list) and days and all(type(x)==int and 0<=x<=6 for x in days),'반복 요일을 선택하세요.',422)
+            rule['days']=sorted(set(days))
+        out.append(rule)
+    return out
+
+def blocked_conflict(s,start,end,buffer=0):
+    zone=ZoneInfo(s['timezone'])
+    a=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).astimezone(zone)
+    b=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).astimezone(zone)
+    day=a.date()
+    while day<=b.date():
+        for rule in s.get('blocked_times',[]):
+            if rule['kind']=='date':
+                if not rule['from']<=day.isoformat()<=rule['to']:continue
+            elif day.weekday() not in rule['days']:continue
+            midnight=datetime.combine(day,datetime.min.time(),zone)
+            def at(t):
+                h,m=map(int,t.split(':'));return midnight+timedelta(hours=h,minutes=m)
+            if a<at(rule['end']) and b>at(rule['start']):return True
+        day+=timedelta(days=1)
+    return False
 
 def interval(s,start):
     try:
@@ -841,6 +990,7 @@ def interval(s,start):
 def resource_id(s,body):
     k=body.get('resource','default');require(k in [r['id'] for r in s.get('resources',[{'id':'default','name':'기본 담당자'}])],'담당자 선택 오류',422);return k
 def available(c,ws,start,end,exclude='',buffer=0,resource='default'):
+    if blocked_conflict(loads(getw(c,ws)['settings']),start,end,buffer):return False
     t0=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).isoformat();t1=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).isoformat()
     return not one(c,"SELECT b.id FROM booking b WHERE b.ws=? AND b.resource=? AND b.status='confirmed' AND b.start<? AND b.end>? AND b.id<>? AND NOT EXISTS(SELECT 1 FROM demo_sample_entity d WHERE d.ws=b.ws AND d.kind='booking' AND d.id=b.id)",(ws,resource,t1,t0,exclude)) and not google_calendar.busy_conflict(c,ws,t0,t1)
 def validate_fields(s,data):
@@ -908,7 +1058,7 @@ def confirm(i:str,body:dict):
 @app.get('/api/bookings')
 def bookings(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);require('calendar' in entitlements(w));return [booking_view(b)|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id']))),'sample_thread':(one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(ws,b['visitor'])) or {}).get('id') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id'])) else None} for b in rows(c,'SELECT * FROM booking WHERE ws=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,))]
+        w=getw(c,ws);require('calendar' in entitlements(w));return [booking_view(b)|{'consultation_thread':booking_consultation_thread(c,w,b['visitor']),'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id']))),'sample_thread':(one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(ws,b['visitor'])) or {}).get('id') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id'])) else None} for b in rows(c,'SELECT * FROM booking WHERE ws=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,))]
 @app.post('/api/bookings')
 def manual_booking(body:dict,ws=Depends(ident)):
     with db(True) as c:

@@ -98,6 +98,7 @@ def customer_call(body:dict):
             c.execute("UPDATE web_call SET state='expired',offer='',answer='',claim='',updated=? WHERE ws=? AND thread=? AND state IN ('ringing','claimed','answered') AND expires<=?",(now(),ws,tid,now()))
             i=uid();t=now()
             c.execute('INSERT INTO web_call VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,agent,tid,kind,'ringing',offer,'','','',t,t+RING_TTL,t))
+            clear_temporary_takeover(c,ws,tid)
             c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
             ops.event(c,ws,'handoff','고객 '+('영상' if kind=='video' else '음성')+' 통화 요청',tid)
             return {'id':i,'kind':kind,'state':'ringing','expires':t+RING_TTL}

@@ -170,7 +170,7 @@ function label(text,body,{labelId='',hint=''}={}){
  return `<div class="ui-field"><label class="label"${id?` for="${e(id)}"`:''}${labelId?` id="${e(labelId)}"`:''}>${e(text)}</label>${control}
   ${meta?`<div class="ui-field-meta">${hint?`<span class="ui-hint"${hintId?` id="${e(hintId)}"`:''}>${e(hint)}</span>`:''}</div>`:''}</div>`;
 }
-const names={agents:'AI 상담원 관리',inbox:'통합 상담함',preview:'채팅창 미리보기',education:'AI 교육시키기',calendar:'일정표 보기',customers:'고객·업무 관리',channels:'외부 채널 연동',alerts:'알림',settings:'설정',pricing:'요금제 및 결제',allinone:'올인원 패키지'}, states={open:'진행 중',pending:'승인 대기',pending_payment:'결제 확인 대기',confirmed:'확정',cancelled:'취소',completed:'완료',resolved:'처리 완료',draft:'작성 중'};
+const names={agents:'AI 상담원 관리',inbox:'통합 상담함','consultation-center':'상담센터',preview:'채팅창 미리보기',education:'AI 교육시키기',calendar:'일정표 보기',customers:'고객·업무 관리',channels:'외부 채널 연동',alerts:'알림',settings:'설정',pricing:'요금제 및 결제',allinone:'올인원 패키지'}, states={open:'진행 중',pending:'승인 대기',pending_payment:'결제 확인 대기',confirmed:'확정',cancelled:'취소',completed:'완료',resolved:'처리 완료',draft:'작성 중'};
 async function api(path,body,method){let r=await fetch(path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined?{}:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});if(r.status===204)return {};let x=await r.json().catch(()=>({detail:'서버 응답 오류'}));if(!r.ok){let err=new Error(typeof x.detail==='string'?x.detail:JSON.stringify(x.detail));err.status=r.status;throw err}return x}
 function toast(text){document.querySelector('.toast')?.remove();let d=document.createElement('div');d.className='toast';d.setAttribute('role','status');d.textContent=text;document.body.append(d);setTimeout(()=>d.remove(),3500)}
 const modalDismissals=new WeakMap();
@@ -214,9 +214,22 @@ function modal(title,html,{closeLabel='닫기',dismissOnBackdrop=true,canClose,o
  return overlay;
 }
 async function act(fn){try{await fn()}catch(x){toast(x.message)}}
-async function refresh(){me=await api('/api/me')}
+const seededLocalWorkspaces=new Set();
+async function refresh(){me=await api('/api/me');if(me.sample_tools&&!seededLocalWorkspaces.has(me.slug)){try{if(sessionStorage.getItem('csai-hide-samples:'+me.slug)!=='1')await api('/api/demo/samples',{});seededLocalWorkspaces.add(me.slug)}catch(x){console.warn('Local sample setup:',x.message)}}}
 async function switchDemoView(mode){if(educationBusy){toast('진행 중인 교육 작업을 마친 뒤 전환해 주세요.');return;}if(!['free','subscriber','subscriber_agent','developer'].includes(mode))return;await act(async()=>{await api('/api/demo/view',{mode});chatSession=null;chatMessages=[];threadId=null;previewAgent='';brandEditor='';inboxAgent='all';qualityAgent='';calendarAgent='';crmAgent='';calendarProfile=null;calendarRange=null;calendarRangeAnchor='';calendarRangeMode=false;selectedDate=null;estimate=null;educationAgent='';trainingChat=[];resetEducationDraft();$('#education-workspace')?.remove();await refresh();await render();toast('로컬 화면을 전환했습니다. 실제 결제는 없습니다.')})}
-function locked(key,description){let a=cfg.catalog.addons.find(x=>x.id===key);return card(a?.name||'추가 기능',`<p>${e(description)}</p><div class="banner">월 ${money(a?.price||0)} · 추가 결제 기능</div>${actionGroup({keepSize:true},btn('기능 미리보기',`CSAISetup.preview('${key}')`),btn('설정 체험',`featureDraft('${key}')`),btn('구독 구성에 추가',`CSAISetup.add('${key}')`,'primary'))}`)}
+function freeFeaturePreview(){return !!me&&!me.operator&&!me.trial;}
+function previewNotice(key,description,{detailsOnly=false}={}){
+ const action=key?`CSAISetup.add('${key}')`:"go('pricing')";
+ const addon=key?cfg.catalog.addons.find(a=>a.id===key):null;
+ return `<section class="card app-card paid-preview-notice" aria-label="미리보기 안내" data-paid-feature="${e(key||'')}"><div class="paid-preview-copy"><strong>${e(addon?.name||description)}</strong>${addon?`<span class="paid-preview-price">월 ${money(addon.price)}</span>`:''}</div>${actionGroup({keepSize:true},key?(detailsOnly?btn('상세 안내',`CSAISetup.preview('${key}')`):btn('설정 체험',`featureDraft('${key}')`)):'',btn(key?'구독 구성에 추가':'요금제 보기',action,'primary'))}</section>`;
+}
+function requirePreviewAccess(key){
+ if(key?has(key):me.public_access)return true;
+ if(key)CSAISetup.preview(key);else go('pricing');
+ return false;
+}
+let fieldsPreviewMode=null;
+function locked(key,description){let a=cfg.catalog.addons.find(x=>x.id===key);return previewNotice(key,description)+card(a?.name||'추가 기능',`<p>${e(description)}</p>${btn('기능 미리보기',`CSAISetup.preview('${key}')`)}`)}
 const uiIcon=name=>`<span class="ui-icon" style="--icon:url('/assets/icons/${e(name)}.svg')" aria-hidden="true"></span>`;
 const copyButtonTimers=new WeakMap();
 function copyButton(label,source='',className='secondary'){
@@ -253,9 +266,9 @@ async function copyToClipboard(button){
 function sidebarGroups(){
  const groups=[
   ['사업 현황',[['dashboard','오늘의 사업 현황','list']]],
-  ['상담 관리',[['inbox','통합 상담함','messages-square'],['preview','채팅창 미리보기','message-circle'],['setup','시작 및 교육 개선','list'],['reply-assistant','답장 비서','message-circle'],['education','AI 교육시키기','graduation-cap'],['agents','AI 상담원 관리','bot']]],
+  ['상담 관리',[['inbox','통합 상담함','messages-square'],['consultation-center','상담센터','message-circle'],['preview','채팅창 미리보기','message-circle'],['chat-page','고객 채팅 페이지','app-window'],['setup','시작 및 교육 개선','list'],['reply-assistant','답장 비서','message-circle'],['education','AI 교육시키기','graduation-cap'],['agents','AI 상담원 관리','bot'],['stats','상담 통계','chart-no-axes-combined'],['reports','일간·주간 리포트','receipt']]],
   ['업무 관리',[['calendar','일정표 보기','calendar-days'],['customers','고객·업무 관리','users-round'],['commerce','온라인 판매 관리','receipt'],['team','직원 관리','users-round'],['staff-desk','직원 상담함','messages-square']]],
-  ['서비스 관리',[['channels','외부 채널 연동','plug'],['developer','개발자 센터','external-link'],['alerts','알림','bell'],['settings','설정','settings'],['pricing','요금제 및 결제','wallet'],['features','전체 기능','list'],['credits','교육 크레딧','coins'],['addons','추가 기능','puzzle'],['orders','주문·구독 내역','receipt'],['allinone','올인원 패키지','puzzle']]]
+  ['서비스 관리',[['channels','외부 채널 연동','plug'],['developer','개발자 센터','external-link'],['alerts','알림','bell'],['settings','설정','settings'],['pricing','요금제 및 결제','wallet'],['features','전체 기능','list'],['service-plan','서비스 자료실','list'],['credits','교육 크레딧','coins'],['addons','추가 기능','puzzle'],['orders','주문·구독 내역','receipt'],['allinone','올인원 패키지','puzzle']]]
  ];
  if(me.operator)groups.push(['운영자 전용',[['invites','초청 및 체험 관리','ticket'],['costs','AI 사용량 및 원가','chart-no-axes-combined']]]);
  return groups;
@@ -338,6 +351,79 @@ function editMenuOrder(){
  dialog.showModal();
  groupButtons[0].focus();
 }
+const serviceNotices=[
+ {id:'development-preview',kind:'update',date:'2026-11-28',title:'무료 계정 기능 미리보기 개선',body:'기존 일정표, 고객·업무 관리, 판매 관리, 추가 브랜드 상담원 화면을 구독 전에도 둘러볼 수 있도록 개선하고 있습니다. 실제 등록, 저장 및 연동에는 해당 권한이 필요합니다.',demoOnly:true},
+ {id:'setup-consultation',kind:'update',date:'2026-11-28',title:'초기 구축 대행 상담 유형 안내',body:'기본 구축 대행과 맞춤 컨설팅 및 구축 대행의 작업 범위를 비교하고 전화 상담을 신청할 수 있습니다. 표시 금액은 시작 견적입니다.',demoOnly:true},
+ {id:'development-notice',kind:'notice',date:'2026-11-28',title:'개발 환경 이용 안내',body:'현재 개발 환경의 기능, 요금 및 외부 연동은 검증 중입니다. 실제 결제 및 발송과 구분하여 이용해 주세요.',demoOnly:true}
+];
+const serviceNoticeLabels={urgent:'긴급',notice:'공지',update:'업데이트'};
+function visibleServiceNotices(){return serviceNotices.filter(n=>!n.demoOnly||cfg.demo);}
+let serviceNoticeFilter='all',serviceNoticeOpen='';
+function serviceNoticeStrip(){
+ const items=visibleServiceNotices(),item=items.find(n=>n.kind==='urgent')||items[0];
+ return `<button type="button" class="service-notice-strip" data-kind="${e(item?.kind||'notice')}" onclick="openServiceNotices()" aria-label="공지사항 및 업데이트 전체 보기"><span class="service-notice-kind">${e(item?serviceNoticeLabels[item.kind]:'공지')}</span><span class="service-notice-title">${e(item?.title||'공지사항 및 업데이트')}</span>${uiIcon('chevron-right')}</button>`;
+}
+function openServiceNotices(){serviceNoticeFilter='all';serviceNoticeOpen='';if(route==='service-notices')render();else go('service-notices');}
+function filterServiceNotices(k){if(!['all','notice','update','urgent'].includes(k))return;serviceNoticeFilter=k;serviceNoticeOpen='';render();}
+function serviceNoticePage(){
+ const items=visibleServiceNotices().filter(n=>serviceNoticeFilter==='all'||n.kind===serviceNoticeFilter).sort((a,b)=>(b.kind==='urgent')-(a.kind==='urgent')||b.date.localeCompare(a.date));
+ return pageTop('공지사항 및 업데이트','서비스 안내와 변경 사항을 확인하세요.')+card('서비스 소식',`<div class="ui-tabs calendar-status-filters" role="group" aria-label="소식 유형">${[['all','전체'],['notice','공지사항'],['update','업데이트'],['urgent','긴급사항']].map(([key,label])=>`<button type="button" aria-pressed="${serviceNoticeFilter===key}" onclick="filterServiceNotices('${key}')">${label}</button>`).join('')}</div><div class="service-notice-list">${items.map(n=>`<details class="service-notice-item" ${serviceNoticeOpen===n.id?'open':''}><summary><span class="service-notice-kind-label">${e(serviceNoticeLabels[n.kind])}</span><strong>${e(n.title)}</strong><time datetime="${e(n.date)}">${e(n.date)}</time></summary><p>${e(n.body)}</p></details>`).join('')||emptyState(serviceNoticeFilter==='urgent'?'등록된 긴급사항이 없습니다.':'등록된 소식이 없습니다.')}</div>`);
+}
+function quickNavOptions(){
+ const short={dashboard:'홈',inbox:'상담함','consultation-center':'상담',preview:'채팅 미리보기','chat-page':'채팅 페이지',stats:'상담 통계',reports:'리포트',setup:'시작 설정','reply-assistant':'답장 비서',education:'AI 교육',agents:'상담원',calendar:'일정',customers:'고객 관리',commerce:'판매 관리',team:'직원 관리','staff-desk':'직원 상담',channels:'채널 연동',developer:'개발자',alerts:'알림',settings:'설정',pricing:'요금제',features:'전체 기능','service-plan':'자료실',credits:'크레딧',addons:'추가 기능',orders:'주문 내역',allinone:'올인원',invites:'초청 관리',costs:'원가 통계'};
+ return sidebarGroups().flatMap(([,items])=>items).map(([id,name,icon])=>[id,short[id]||name,icon]);
+}
+function quickNavKey(){return 'csai-mobile-quick-nav:'+me.slug;}
+function quickNavDefaults(){return ['dashboard','consultation-center','education','calendar','alerts'];}
+function quickNavSelection(){
+ const valid=new Set(quickNavOptions().map(([id])=>id));
+ try{const saved=JSON.parse(localStorage.getItem(quickNavKey()));if(Array.isArray(saved)){const ids=[...new Set(saved.filter(id=>valid.has(id)))].slice(0,5);if(ids.length>=3)return ids;}}catch{}
+ return quickNavDefaults();
+}
+function mobileQuickNav(){
+ const options=new Map(quickNavOptions().map(item=>[item[0],item]));
+ const items=quickNavSelection().map(id=>options.get(id)).filter(Boolean);
+ return `<nav class="mobile-quick-nav" aria-label="빠른 메뉴" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">${items.map(([id,name,icon])=>`<button type="button" class="${route===id?'active':''}" ${route===id?'aria-current="page"':''} onclick="quickNavigate('${id}')">${uiIcon(icon)}<span>${e(name)}</span></button>`).join('')}</nav>`;
+}
+async function quickNavigate(id){
+ if(!quickNavOptions().some(item=>item[0]===id))return;
+ if(id===route)return;
+ if(['inbox','consultation-center'].includes(route)&&threadId){
+  if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 이동할까요?'))return;
+  await leaveTemporary();threadId=null;
+ }
+ if(inboxDesk()&&id!=='consultation-center'){location.href='/#'+id;return;}
+ go(id);
+}
+function editQuickNav(){
+ let ids=quickNavSelection();
+ const options=quickNavOptions(),byId=new Map(options.map(item=>[item[0],item]));
+ const dialog=document.createElement('dialog'),opener=document.activeElement;
+ dialog.className='menu-order-dialog';
+ dialog.setAttribute('aria-labelledby','quick-nav-title');
+ dialog.innerHTML=`<header class="menu-order-header"><h2 id="quick-nav-title">퀵바 메뉴 변경</h2><p>모바일 하단 메뉴 3~5개를 선택하고 순서를 변경하세요.</p></header><div class="menu-order-body"><ul class="menu-order-list"></ul><label>메뉴 추가<select data-quick-add aria-label="추가할 메뉴"></select></label><button type="button" data-quick-action="add">추가</button></div><footer class="menu-order-footer"><button type="button" data-quick-action="reset">기본 메뉴로 복원</button><span role="status"></span><button type="button" data-quick-action="save" class="primary">저장</button><button type="button" data-quick-action="cancel">취소</button></footer>`;
+ const list=dialog.querySelector('.menu-order-list'), selectEl=dialog.querySelector('[data-quick-add]'),status=dialog.querySelector('[role="status"]');
+ function repaint(){
+  list.innerHTML=ids.map((id,i)=>{const [,name,icon]=byId.get(id);return `<li class="menu-order-row"><span class="menu-order-item">${uiIcon(icon)}<span>${e(name)}</span></span><div class="menu-order-moves"><button type="button" data-quick-action="up" data-index="${i}" aria-label="${e(name)} 위로" ${i===0?'disabled':''}>↑</button><button type="button" data-quick-action="down" data-index="${i}" aria-label="${e(name)} 아래로" ${i===ids.length-1?'disabled':''}>↓</button><button type="button" data-quick-action="remove" data-index="${i}" aria-label="${e(name)} 제거" ${ids.length<=3?'disabled':''}>−</button></div></li>`;}).join('');
+  selectEl.innerHTML='<option value="">메뉴 선택</option>'+options.filter(([id])=>!ids.includes(id)).map(([id,name])=>`<option value="${e(id)}">${e(name)}</option>`).join('');
+  selectEl.disabled=ids.length>=5;dialog.querySelector('[data-quick-action="add"]').disabled=ids.length>=5;status.textContent=`${ids.length}/5개 · 이 브라우저에 저장`;
+ }
+ dialog.addEventListener('close',()=>{dialog.remove();opener?.focus();},{once:true});
+ dialog.addEventListener('click',ev=>{
+  if(ev.target===dialog){dialog.close();return;}
+  const button=ev.target.closest('[data-quick-action]');if(!button||button.disabled)return;
+  const action=button.dataset.quickAction,i=Number(button.dataset.index);
+  if(action==='cancel'){dialog.close();return;}
+  if(action==='save'){try{localStorage.setItem(quickNavKey(),JSON.stringify(ids));}catch{status.textContent='저장할 수 없습니다';return;}const nav=document.querySelector('.mobile-quick-nav');if(nav)nav.outerHTML=mobileQuickNav();dialog.close();return;}
+  if(action==='reset')ids=quickNavDefaults();
+  if(action==='add'&&ids.length<5&&byId.has(selectEl.value)&&!ids.includes(selectEl.value))ids.push(selectEl.value);
+  if(action==='remove'&&ids.length>3&&i>=0&&i<ids.length)ids.splice(i,1);
+  if(action==='up'&&i>0&&i<ids.length)[ids[i],ids[i-1]]=[ids[i-1],ids[i]];
+  if(action==='down'&&i>=0&&i<ids.length-1)[ids[i],ids[i+1]]=[ids[i+1],ids[i]];
+  repaint();
+ });
+ repaint();document.body.append(dialog);dialog.showModal();
+}
 function shell(body){
  const wordmark=`<span class="sidebar-wordmark">
   <svg class="sidebar-wordmark-filter" width="0" height="0" aria-hidden="true" focusable="false">
@@ -349,12 +435,19 @@ function shell(body){
  </span>`;
  const quota=cfg.catalog.plans.find(x=>x.id===me.plan)?.quantity||1;
  const progress=me.trial||me.operator?'':`<div class="usage-track" role="progressbar" aria-label="이번 달 상담 사용량" aria-valuenow="${Math.max(0,quota-me.remaining)}" aria-valuemax="${quota}"><span style="width:${Math.max(0,Math.min(100,(quota-me.remaining)/quota*100))}%"></span></div>`;
- const demoSelector=me.demo_view?`<div class="demo-view-select"><label for="demo-view">로컬 화면 비교</label><select id="demo-view" onchange="switchDemoView(this.value)">${me.demo_view==='legacy'?'<option value="legacy" selected>기존 로컬 계정</option>':''}<option value="free" ${me.demo_view==='free'?'selected':''}>일반 무료 가입</option><option value="subscriber" ${me.demo_view==='subscriber'?'selected':''}>LITE 유료 구독 예시</option><option value="subscriber_agent" ${me.demo_view==='subscriber_agent'?'selected':''}>LITE + 추가 브랜드 상담원 예시</option><option value="developer" ${me.demo_view==='developer'?'selected':''}>개발 검수 · 기능 미리보기</option></select><small>각 계정 화면을 비교합니다 · 실제 결제 없음</small></div>`:'';
- return `<div class="layout" data-route="${e(route)}"><aside class="app-sidebar"><div class="brand sidebar-brand">${wordmark}<button type="button" class="mobile-toggle" onclick="this.closest('aside').classList.toggle('open')" aria-label="메뉴 열기">${uiIcon('menu')}</button></div><div class="sidebar-tenant"><strong>${e(me.settings.brand)}</strong><small>${me.demo_view==='developer'?'개발 검수 · 판매 요금제 아님':me.demo_view==='subscriber_agent'?'LITE · 추가 브랜드 상담원 이용 중':me.operator?'운영자 계정':me.trial?'초청 체험':e(me.plan.toUpperCase()+' 요금제')}</small></div>${demoSelector}<nav aria-label="관리 메뉴"><button type="button" class="menu-order-button" onclick="editMenuOrder()">${uiIcon('list')}<span>메뉴 순서 변경</span></button><div class="sidebar-nav-items">${sidebarNavItems()}</div></nav><div class="sidebar-bottom"><div class="usage-label"><span>남은 상담</span><b>${me.remaining.toLocaleString()}회</b></div>${progress}<div class="usage-label"><span>교육 크레딧</span><b>${me.credits.toLocaleString()} C</b></div>${me.trial?`<p class="sidebar-trial">예약 체험 ${me.trial.bookings_remaining}건 남음</p>`:''}<button type="button" class="usage-link" onclick="go('pricing')">${uiIcon('wallet')} 이용량 및 요금제</button><button type="button" class="sidebar-logout ui-button tertiary" onclick="logout()">${uiIcon('log-out')} 로그아웃</button></div></aside><main>${cfg.demo?'<div class="demo-note">개발 환경 · 실제 결제 없음 · '+(cfg.ai_connected?'실제 AI API 연결됨':'AI 응답은 로컬 규칙 기반 데모')+'</div>':''}${body}</main></div>`
+ const demoSelector=me.demo_view?`<div class="demo-view-select"><label for="demo-view">로컬 화면 비교</label><select id="demo-view" onchange="switchDemoView(this.value)">${me.demo_view==='legacy'?'<option value="legacy" selected>기존 로컬 계정</option>':''}<option value="free" ${me.demo_view==='free'?'selected':''}>일반 무료 가입</option><option value="subscriber" ${me.demo_view==='subscriber'?'selected':''}>LITE 유료 구독 예시</option><option value="subscriber_agent" ${me.demo_view==='subscriber_agent'?'selected':''}>LITE + 추가 브랜드 상담원 예시</option><option value="developer" ${me.demo_view==='developer'?'selected':''}>개발 검수 · 기능 미리보기</option></select><small>무료 가입 화면에서 모든 공통 샘플을 실제 무료 유저와 동일하게 확인할 수 있습니다 · 실제 결제 없음</small></div>`:'';
+ return `<div class="layout" data-route="${e(route)}"><aside class="app-sidebar"><div class="brand sidebar-brand">${wordmark}<button type="button" class="mobile-toggle" onclick="this.closest('aside').classList.toggle('open')" aria-label="메뉴 열기">${uiIcon('menu')}</button></div>${serviceNoticeStrip()}<div class="sidebar-tenant"><strong>${e(me.settings.brand)}</strong><small>${me.demo_view==='developer'?'개발 검수 · 판매 요금제 아님':me.demo_view==='subscriber_agent'?'LITE · 추가 브랜드 상담원 이용 중':me.operator?'운영자 계정':me.trial?'초청 체험':e(me.plan.toUpperCase()+' 요금제')}</small></div>${demoSelector}<nav aria-label="관리 메뉴"><button type="button" class="menu-order-button" onclick="editMenuOrder()">${uiIcon('list')}<span>메뉴 순서 변경</span></button><button type="button" class="menu-order-button" onclick="editQuickNav()">${uiIcon('settings')}<span>퀵바 메뉴 변경</span></button><div class="sidebar-nav-items">${sidebarNavItems()}</div></nav><div class="sidebar-bottom"><div class="usage-label"><span>남은 상담</span><b>${me.remaining.toLocaleString()}회</b></div>${progress}<div class="usage-label"><span>교육 크레딧</span><b>${me.credits.toLocaleString()} C</b></div>${me.trial?`<p class="sidebar-trial">예약 체험 ${me.trial.bookings_remaining}건 남음</p>`:''}<button type="button" class="usage-link" onclick="go('pricing')">${uiIcon('wallet')} 이용량 및 요금제</button><button type="button" class="sidebar-logout ui-button tertiary" onclick="logout()">${uiIcon('log-out')} 로그아웃</button></div></aside><main><div class="mobile-service-notice">${serviceNoticeStrip()}</div>${cfg.demo?'<div class="demo-note">개발 환경 · 실제 결제 없음 · '+(cfg.ai_connected?'실제 AI API 연결됨':'AI 응답은 로컬 규칙 기반 데모')+'</div>':''}${body}</main>${mobileQuickNav()}</div>`
 }
-function home(){return `<div class="hero"><div class="hero-inner"><div class="brand"><b>CS</b> AI <span class="brand-subtitle" aria-label="나의 클론 상담사"><span class="brand-typed" aria-hidden="true">나의 클론 상담사</span></span></div><span class="tag">AI 고객 상담 매니저</span><h1>나처럼 상담하는 AI</h1><p class="muted" style="font-size:15px;line-height:1.8;margin:0 0 30px">직접 교육하고, 링크 하나로 시작하세요.<br>당신의 고객 상담을 대신합니다.</p><div class="stack"><button class="google auth-button" onclick="google()"><img src="/assets/google-g.svg" alt=""><span>Google로 시작하기</span></button><button class="naver auth-button" onclick="modal('준비 중','<p>네이버 로그인은 준비 중입니다.</p>')"><img src="/assets/naver-n.svg" alt=""><span>네이버로 시작하기</span></button><button class="kakao auth-button" onclick="modal('준비 중','<p>카카오 로그인은 준비 중입니다.</p>')"><img src="/assets/kakao-talk.svg" alt=""><span>카카오로 시작하기</span></button></div><p class="muted" style="margin-top:24px">개발 환경 · 운영 약관 및 개인정보처리방침은 출시 전 확정</p></div></div>${landingBenefits()}${landingUnification()}`}
+function home(){return `<div class="hero"><div class="hero-inner"><div class="brand"><b>CS</b> AI <span class="brand-subtitle" aria-label="나의 클론 상담사"><span class="brand-typed" aria-hidden="true">나의 클론 상담사</span></span></div><span class="tag">AI 고객 상담 매니저</span><h1>나처럼 상담하는 AI</h1><p class="muted" style="font-size:15px;line-height:1.8;margin:0 0 30px">직접 교육하고, 링크 하나로 시작하세요.<br>당신의 고객 상담을 대신합니다.</p><div class="stack"><button class="google auth-button" onclick="google()"><img src="/assets/google-g.svg" alt=""><span>Google로 시작하기</span></button>${inboxDesk()?'':'<a class="ui-button secondary" href="/?desk=1#consultation-center">기존 회원 · 상담센터 바로 열기</a>'}<button class="naver auth-button" onclick="modal('준비 중','<p>네이버 로그인은 준비 중입니다.</p>')"><img src="/assets/naver-n.svg" alt=""><span>네이버로 시작하기</span></button><button class="kakao auth-button" onclick="modal('준비 중','<p>카카오 로그인은 준비 중입니다.</p>')"><img src="/assets/kakao-talk.svg" alt=""><span>카카오로 시작하기</span></button></div><p class="muted" style="margin-top:24px">개발 환경 · 운영 약관 및 개인정보처리방침은 출시 전 확정</p></div></div>${landingAudience()}${landingBenefits()}${landingUnification()}${landingOwnerLetter()}`}
+
+function landingAudience(){
+ return `<section class="landing-audience" aria-labelledby="landing-audience-title"><div class="landing-audience-inner"><p class="landing-benefits-kicker">BUILT FOR YOU</p><h2 id="landing-audience-title"><span>프리랜서를 위한.</span><span>자영업자를 위한.</span><span>온라인 사업자를 위한.</span></h2><p class="landing-audience-copy">혼자 일해도, 혼자 상담할 필요는 없으니까.</p></div></section>`
+}
+function landingOwnerLetter(){
+ return `<section class="landing-owner-letter" aria-labelledby="landing-owner-title"><div class="landing-owner-letter-inner"><p class="landing-benefits-kicker">TO. 사장님께</p><h2 id="landing-owner-title">사장님도 퇴근할 수 있도록.</h2><div class="landing-owner-copy"><p>고객의 문의에 답하느라 하루를 보내는 사장님께.</p><p>이제 상담은 당신의 클론에게 맡기고,<br>당신의 사업과 일상에 집중하세요.</p></div><button type="button" class="landing-owner-action" onclick="google()">나의 클론 상담사 만들기</button></div></section>`
+}
 function loginRoute(){return location.pathname==='/'&&new URLSearchParams(location.search).get('view')==='login';}
-function google(){location.href='/?view=login';}
+function google(){if(inboxDesk())sessionStorage.setItem('csai-desk-return','1');location.href='/?view=login';}
 function startGoogleLogin(){
  if(cfg.google_configured){location.href='/auth/google';return;}
  modal('Google 로그인 준비 중',helperText('Google 로그인 설정을 확인하고 있습니다.'));
@@ -396,7 +489,7 @@ function profileMarkup(s,{page=false}={}){
  const information=(hours?`<div class="chat-profile-info-row"><dt>영업시간</dt><dd>${e(hours)}</dd></div>`:'')+profileContacts(p);
  return `<section class="chat-profile-details${page?' chat-profile-page':' chat-profile-inline'}" aria-label="업체 정보"${page?' tabindex="0"':''}>
   <header class="chat-profile-hero">
-   ${photo.startsWith('data:image/png;base64,')?`<img class="chat-profile-photo" src="${e(photo)}" alt="업체 프로필 사진">`:''}
+   ${/^data:image\/(?:png|webp);base64,/.test(photo)?`<img class="chat-profile-photo" src="${e(photo)}" alt="업체 프로필 사진">`:''}
    <h3>${e(s.brand||title)}</h3>
    ${s.brand&&title&&title!==s.brand?`<p class="chat-profile-intro-title">${e(title)}</p>`:''}
    ${message?`<p class="chat-profile-copy">${e(message)}</p>`:''}
@@ -442,6 +535,7 @@ function chatDesignClasses({theme,density,bubble_radius}){
 function chatBrandName(brand,wave){
  return `<strong class="chat-brand-name${wave!==false?' has-name-wave':''}">${e(brand)}<span class="chat-brand-echo" aria-hidden="true" data-name="${e(brand)}"></span></strong>`;
 }
+function publicChatClass(){return 'public '+(location.pathname.startsWith('/widget/')?'public-chat-widget':'public-chat-page')}
 function phone(s,test=false,preview=false){
  activeChatProfile=s;
  const design=chatDesign(s);
@@ -453,7 +547,7 @@ function phone(s,test=false,preview=false){
   <div class="messages" id="messages" role="log" aria-live="polite">${welcomeMarkup(s)}${chatMessages.map(m=>photoBubble(m,'customer')).join('')}</div>
   <div class="chat-bottom"><div class="chat-suggestions" aria-label="추천 질문">${suggestions}</div>
    <div class="mention-wrap"><div id="mention-picker" class="mention-picker" role="listbox" aria-label="상담 주제 선택" hidden></div><form class="compose" onsubmit="event.preventDefault();sendChat()"><div class="compose-controls"><textarea id="msg" rows="1" maxlength="2000" placeholder="메시지 입력 · @ 주제 선택" aria-label="메시지 입력" aria-controls="mention-picker" aria-autocomplete="list" oninput="resizeCompose(this);if(!event.isComposing)updateMentionPicker(this)" oncompositionend="updateMentionPicker(this)" onclick="updateMentionPicker(this)" onblur="closeMentionPicker(this)" onkeydown="if(handleMentionKey(event))return;if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();sendChat()}"></textarea><button class="primary" id="send" type="submit" aria-label="전송">${uiIcon('send-horizontal')}</button></div><div class="compose-meta"></div></form></div>
-   ${publicMode?`<div class="chat-actions ui-actions ui-actions-keep-size">${btn('사장님께 알리기','requestStaffHandoff()')}${btn('AI 답변 오류 신고','reportCustomerAnswer()')}${btn('상담 마치기·평가','rateConsultation()')}${btn('이 기기에서 상담 이어가기','rememberChatDevice()')}${btn('새 상담','newPublicChat()')}${s.calendar?btn('내 예약 확인','customerBookings()'):''}${s.requests?.length?btn('업무 요청','customerRequest()'):''}${s.commerce?btn('상품·주문 문의','commerceCustomerModal()')+btn('인증 주문·배송 조회','customerOrderAccess()'):''}${s.photos?btn('사진 첨부',"photoUploadModal('customer')"):''}${s.files?btn('영상·파일 첨부',"photoUploadModal('customer','file')"):''}${s.web_calls?btn('음성·영상통화','chooseWebCall()'):''}</div>`:''}
+   ${publicMode?`<details class="customer-chat-tools"><summary>상담 도구</summary><div class="chat-actions ui-actions ui-actions-keep-size">${btn('사장님께 알리기','requestStaffHandoff()')}${btn('AI 답변 오류 신고','reportCustomerAnswer()')}${btn('상담 마치기·평가','rateConsultation()')}${btn('이 기기에서 상담 이어가기','rememberChatDevice()')}${btn('새 상담','newPublicChat()')}${s.calendar?btn('내 예약 확인','customerBookings()'):''}${s.requests?.length?btn('업무 요청','customerRequest()'):''}${s.commerce?btn('상품·주문 문의','commerceCustomerModal()')+btn('인증 주문·배송 조회','customerOrderAccess()'):''}${s.photos?btn('사진 첨부',"photoUploadModal('customer')"):''}${s.files?btn('영상·파일 첨부',"photoUploadModal('customer','file')"):''}${s.web_calls?btn('음성·영상통화','chooseWebCall()'):''}</div></details>`:''}
    <div class="phone-foot">${s.unbrand?'AI 상담':'AI 상담원이 응대하고 있습니다.'}${cfg.demo?' · 로컬 검증용':''}${publicMode?'':'<span class="resize-note"> · 오른쪽 아래 모서리를 끌어 크기 조절</span>'}</div>
   </div></section>`
 }
@@ -530,7 +624,7 @@ function chooseMention(index){
 }
 function quickChat(text){let field=$('#msg');if(!field||sending)return;field.value=text;field.focus();sendChat()}
 function bubble(role,body,allowCopy=false){let text=String(body??'');let parts=text.split(/(https:\/\/[^\s<>"']+)/g);const content=parts.map((x,i)=>{if(i%2===0)return e(x);try{let u=new URL(x);if(u.protocol==='https:')return `<a href="${e(u.href)}" rel="noopener noreferrer" target="_blank">${e(x)}</a>`}catch{}return e(x)}).join('');
- return `<div class="bubble ${role==='user'?'user':''}"><span data-chat-copy-text>${content}</span>${allowCopy&&text.trim()?copyButton('복사','','tertiary ui-copy-message'):''}</div>`;
+ return `<div class="bubble ${role==='user'?'user':''}"><span data-chat-copy-text>${content}</span></div>`;
 }
 let previewAgent='',brandEditor='',inboxAgent='all',selectedBrandCount=1;
 async function getChatSession(){if(chatSession)return chatSession;let saved=publicMode?sessionStorage.getItem('csai-session-'+slug):null;if(saved){try{chatMessages=await api('/api/session/'+enc(saved)+'/messages');chatSession=saved;return saved}catch{sessionStorage.removeItem('csai-session-'+slug)}}let s=await api('/api/session',publicMode?{slug,source:location.pathname.startsWith('/widget/')?'widget':'link'}:{test:true,agent:previewAgent});chatSession=s.token;if(publicMode)sessionStorage.setItem('csai-session-'+slug,chatSession);return chatSession}
@@ -598,16 +692,22 @@ async function preview(test=false){
  const brand=brands.find(item=>item.id===previewAgent);
  if(!brand)previewAgent='';
  const appearance=brand?null:await api('/api/appearance');
- const settings=brand?brand.settings:{...me.settings,...appearance};
+ const profile=await api('/api/chat-profile?agent='+enc(brand?.id||''));
+ const settings={...(brand?brand.settings:{...me.settings,...appearance}),chat_profile:profile,notice:profile.manual_notice};
  const enabled=brand?brand.enabled:me.enabled;
- const status=enabled?'공개 중':'비공개';
- const link=location.origin+'/c/'+(brand?.slug||me.slug);
+ const canOpen=!!(me.public_access&&enabled);
+ const status=canOpen?'공개 중':'비공개';
+ const link=location.origin+'/c/'+(brand?.slug||(has('custom_url')&&appearance?.alias)||me.slug);
+ const localLinkTest=!!(!brand&&cfg.demo&&!cfg.shared_test&&me.sample_tools&&me.sandbox_allowed);
  const publicNotice=brand?'비공개 상태에서도 관리자 테스트를 할 수 있습니다.':
   !me.public_access?'유료 구독 후 공개 채팅 및 QR을 사용할 수 있습니다.':
   enabled?'고객은 전용 링크와 QR코드로 상담할 수 있습니다.':'공개로 전환하면 고객이 전용 링크와 QR코드로 상담할 수 있습니다.';
- const publicAction=brand?btn('브랜드 설정',`brandEditor='${brand.id}';go('agents')`):
-  btn(enabled?'비공개로 전환':'공개로 전환',"act(async()=>{await api('/api/settings',{enabled:!me.enabled},'PATCH');await refresh();render()})",'primary');
- const qr=!brand&&me.public_access?`<div class="preview-qr">
+ const publicAction=brand?btn('브랜드 설정',`brandEditor='${brand.id}';go('agents')`):me.public_access?
+  btn(enabled?'비공개로 전환':'공개로 전환',"act(async()=>{await api('/api/settings',{enabled:!me.enabled},'PATCH');await refresh();render()})",'primary'):
+  btn('요금제 보기',"go('pricing')");
+ const openAction=canOpen?`<a class="ui-button primary" href="${e(link)}" target="_blank" rel="noopener noreferrer">고객 채팅창 열기</a>`:'';
+ const localAction=localLinkTest&&(!canOpen||!has('custom_url'))?btn('현재 계정으로 공개 링크 테스트','enableLocalPublicLinkTest()','secondary'):'';
+ const qr=!brand&&canOpen?`<div class="preview-qr">
   <button class="qr-ticket" type="button" aria-label="상담 QR코드 보기" aria-pressed="false" onclick="flipQrTicket(this)" onpointermove="tiltQrTicket(this,event)" onpointerleave="this.style.removeProperty('--qr-x');this.style.removeProperty('--qr-y')">
    <span class="qr-ticket-body"><span class="qr-ticket-front" aria-hidden="true"><strong>${e(me.settings.brand||'CS AI')}</strong><span>상담 QR코드 보기</span></span><span class="qr-ticket-back" aria-hidden="true"><img src="/api/qr" width="144" height="144" alt=""></span></span>
   </button>
@@ -615,8 +715,8 @@ async function preview(test=false){
  </div>`:'';
  const linkControls=`<div class="ui-section ui-stack">
   <div class="preview-heading"><h3>${brand?'브랜드 전용 상담 링크':'전용 상담 링크'}</h3>${statusBadge(status,enabled?'success':'neutral')}</div>
-  <div class="preview-link"><input id="public-link" aria-label="전용 상담 링크" readonly value="${e(link)}">${copyButton('링크 복사','public-link')}</div>
-  ${splitContent(stack(helperText(publicNotice)+actionGroup(publicAction)),qr)}
+  <div class="preview-link"><input id="public-link" aria-label="전용 상담 링크" readonly value="${e(link)}">${canOpen?copyButton('링크 복사','public-link'):''}</div>
+  ${splitContent(stack(helperText(publicNotice)+actionGroup(publicAction,openAction,localAction)+(localAction?helperText('로컬 전용 · 현재 프로필 유지 · 모의 구독 및 지정 URL 권한 적용 · 실제 결제 없음'):'')),qr)}
  </div>`;
  const localTest=!brand&&cfg.demo&&!cfg.shared_test&&me.sandbox_allowed&&!me.operator&&me.plan==='free';
  const previewLinks=[
@@ -637,12 +737,21 @@ async function preview(test=false){
  return pageTop(test?'AI 상담 테스트':'채팅창 미리보기',test?(cfg.demo&&!cfg.ai_connected?'AI API 미연결 · 로컬 규칙 기반 응답으로 테스트합니다.':'상담 답변은 사용량에서 차감됩니다.'):'고객은 로그인 없이 상담합니다.')+
   `<div class="preview-brand">${brandSelect('preview-brand',brands,previewAgent,'choosePreviewBrand(this.value)')}</div>
   <div class="preview-workspace">
-   <div class="preview-stage">${phone(settings,test,!test)}</div>
+   <div class="preview-stage preview-mode-page" data-preview-mode="page"><div class="preview-controls"><div class="preview-mode-switch" aria-label="미리보기 유형"><button type="button" aria-pressed="true" onclick="setPreviewMode('page')">페이지형</button><button type="button" aria-pressed="false" onclick="setPreviewMode('widget')">위젯형</button></div><button type="button" class="preview-expand-button" aria-label="전체 화면 미리보기" aria-expanded="false" title="전체 화면 미리보기" onclick="togglePreviewFull()">${workspaceControlIcon('expand')}</button></div>${phone(settings,test,!test)}</div>
    <div class="preview-settings">${card('공개 및 상담 설정',`<div class="ui-stack">${linkControls}${actions}${usage}</div>`)}${test?'':appearance?previewAppearance(appearance,settings.brand):card('채팅 디자인',chatBrandWaveSetting(settings.brand_name_wave,brand.id))}</div>
   </div>`;
 }
+function fitPreviewToScreen(){const stage=$('.preview-stage');if(!stage)return;if(!matchMedia('(max-width:700px)').matches){stage.style.removeProperty('--preview-fit-height');return;}if(stage.classList.contains('preview-expanded'))return;const phone=stage.querySelector('.phone');if(phone){const top=phone.getBoundingClientRect().top+window.scrollY;stage.style.setProperty('--preview-fit-height',Math.max(340,window.innerHeight-top-14)+'px');}}
+window.addEventListener('resize',fitPreviewToScreen);
+function setPreviewMode(mode){if(!['page','widget'].includes(mode))return;const stage=$('.preview-stage');if(!stage)return;stage.dataset.previewMode=mode;stage.classList.toggle('preview-mode-page',mode==='page');stage.classList.toggle('preview-mode-widget',mode==='widget');stage.querySelectorAll('.preview-mode-switch button').forEach((b,i)=>b.setAttribute('aria-pressed',String(i===(mode==='page'?0:1))));requestAnimationFrame(fitPreviewToScreen);}
+function workspaceControlIcon(kind){
+ const paths={expand:'M8 3H3v5 M16 3h5v5 M21 16v5h-5 M3 16v5h5',collapse:'M3 8h5V3 M21 8h-5V3 M16 21v-5h5 M8 21v-5H3',external:'M13 5h6v6 M19 5l-9 9 M19 13v6H5V5h6',send:'M12 19V5 M6 11l6-6 6 6'};
+ return '<svg class="workspace-control-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+paths[kind]+'"/></svg>';
+}
+function togglePreviewFull(){const stage=$('.preview-stage');if(stage){const full=stage.classList.toggle('preview-expanded');const b=stage.querySelector('.preview-expand-button');if(b){b.setAttribute('aria-expanded',String(full));b.setAttribute('aria-label',full?'전체 화면 닫기':'전체 화면 미리보기');b.title=full?'전체 화면 닫기':'전체 화면 미리보기';b.innerHTML=workspaceControlIcon(full?'collapse':'expand');}if(!full)requestAnimationFrame(fitPreviewToScreen);}}
 function brandSelect(id,brands,value,handler,includeAll=false){return brands.length?label('관리 브랜드',select(id,[...(includeAll?[['all','전체 브랜드']]:[]),['',me.settings.brand+' · 기본'],...brands.map(a=>[a.id,a.settings.brand])],value).replace('<select','<select onchange="'+handler+'"')):''}
 function choosePreviewBrand(id){if(sending){toast('답변 완료 후 브랜드를 변경해 주세요.');return;}previewAgent=id;chatSession=null;chatMessages=[];render()}
+async function enableLocalPublicLinkTest(){if(!cfg.demo||cfg.shared_test||!me.sample_tools||!me.sandbox_allowed)return;if(!confirm('현재 로컬 계정의 프로필을 유지하고 공개 상담 및 지정 URL을 모의 활성화할까요? 실제 결제는 없습니다. 무료 가입 화면으로 다시 전환하면 권한이 초기화됩니다.'))return;await act(async()=>{await api('/api/demo/billing',{plan:me.plan==='free'?'lite':me.plan,addons:[...new Set([...(me.addons||[]),'custom_url'])]});await api('/api/settings',{enabled:true},'PATCH');await refresh();await render();toast('로컬 공개 상담 및 지정 URL 테스트가 활성화되었습니다.');});}
 async function enableLocalChatTesting(){await act(async()=>{if(me.demo_view==='free')await api('/api/demo/view',{mode:'subscriber'});else await api('/api/demo/billing',{plan:'lite',addons:[]});chatSession=null;chatMessages=[];await refresh();await render();toast('유료 구독 예시로 전환했습니다. 실제 결제는 없습니다.')})}
 let memoryTransfer=null;let educationAgent='',trainingChat=[],educationMethod='direct',educationDraft=null,educationBusy=false;
 const educationMethods=[['direct','직접 교육','대화·업무 지침 입력','messages-square'],['file','파일 교육','PDF·문서·이미지','list'],['website','웹사이트 교육','공개 홈페이지 URL','external-link'],['memory','외부 AI 기억 이전','ChatGPT 대화 이전','receipt']];
@@ -1081,16 +1190,19 @@ function inboxChannelBadge(t){
  return `<span class="inbox-channel inbox-channel-${color}">${e(inboxChannel(t))}</span>`;
 }
 function inboxChannel(t){return t.source==='widget'?'홈페이지 위젯':t.source==='link'?'CS AI 상담 링크':channelNames[t.kind]||t.kind;}
-function applyInboxFilters(){inboxKind=val('inbox-kind');inboxSource=val('inbox-source');inboxQuery=val('inbox-q').trim();inboxUnread=!!$('#inbox-unread')?.checked;inboxPriority=val('inbox-priority');threadId=null;render()}
-async function loadInboxThreads(){
+async function applyInboxFilters(){if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 필터를 변경할까요?'))return;await leaveTemporary();inboxKind=val('inbox-kind');inboxSource=val('inbox-source');inboxQuery=val('inbox-q').trim();inboxUnread=!!$('#inbox-unread')?.checked;inboxPriority=val('inbox-priority');threadId=null;render()}
+function sharedPreviewEnabled(){if(!me)return false;if(me.sample_tools){try{if(sessionStorage.getItem('csai-hide-samples:'+me.slug)==='1')return false;}catch{}return true;}return freeFeaturePreview();}
+function previewInboxThread(id){return sharedPreviewEnabled()&&previewData().sampleThreads.find(t=>t.id===id);}async function inboxDetailFor(id){const example=previewInboxThread(id);return example?structuredClone(example):api('/api/inbox/'+enc(id));}async function loadInboxThreads(){
  let ts=await api('/api/inbox?agent='+enc(inboxAgent)+'&kind='+enc(['all','customer'].includes(inboxKind)?'':inboxKind)+'&q='+enc(inboxQuery));
- if(inboxKind==='customer')ts=ts.filter(t=>t.kind!=='test');
+ if(sharedPreviewEnabled()&&(!inboxAgent||inboxAgent==='all')){const examples=previewData().sampleThreads.filter(t=>(['all','customer'].includes(inboxKind)||inboxKind===t.kind)&&(!inboxQuery||(t.name+' '+t.messages.map(m=>m.body).join(' ')).toLowerCase().includes(inboxQuery.toLowerCase())));ts=ts.concat(examples.map(t=>({...t,manual:inboxDirect(t)}))).sort((a,b)=>(b.activity||b.created)-(a.activity||a.created));}if(inboxKind==='customer')ts=ts.filter(t=>t.kind!=='test');
  if(inboxSource==='manual')ts=ts.filter(t=>t.manual||t.paused_by);
  if(inboxSource==='widget'||inboxSource==='link')ts=ts.filter(t=>t.source===inboxSource);
  if(inboxUnread)ts=ts.filter(t=>t.unread>0);
  if(inboxPriority!=='all')ts=ts.filter(t=>!t.sample&&t.kind!=='test'&&(inboxPriority==='unassigned'?!t.assignment?.assignee:t.assignment?.priority===inboxPriority));
  return ts;
 }
+function replyCompletionEnabled(){try{return localStorage.getItem('csai-reply-completion:'+me?.slug)!=='off';}catch{return true;}}
+function toggleReplyCompletion(control){try{localStorage.setItem('csai-reply-completion:'+me?.slug,control.checked?'on':'off');}catch{}document.querySelectorAll('.reply-completion-toggle').forEach(x=>{x.checked=control.checked;});document.querySelectorAll('.reply-with-history textarea').forEach(field=>{field.closest('.reply-with-history').dataset.completionEnabled=control.checked?'on':'off';if(!control.checked)clearReplySuggestion(field);else if(document.activeElement===field)updateReplySuggestion(field);});}
 function replyWithHistory(id,title,messages,{maxLength=0}={}){
  const limit=maxLength||2000;
  const portableText=message=>message&&!message.photo&&!message.attachment?String(message.body||'').replace(/\r\n?/g,'\n').trim():'';
@@ -1110,11 +1222,12 @@ function replyWithHistory(id,title,messages,{maxLength=0}={}){
   if(repeated&&prior.length>=12)break;
  }
  const field=maxLength?ta(id).replace('<textarea',`<textarea maxlength="${maxLength}"`):ta(id);
- if(!prior.length)return label(title,field);
+ const saved=inboxSnippets.map(x=>String(x.body||'').replace(/\r\n?/g,'\n').trim()).filter(x=>x&&x.length<=limit);
+ const enabled=replyCompletionEnabled();
  const withEvents=field.replace('<textarea',`<textarea
   onfocus="updateReplySuggestion(this)" oninput="if(!event.isComposing)updateReplySuggestion(this)"
   onselect="updateReplySuggestion(this)" onkeydown="replySuggestionKey(event)"`);
- return `<div class="reply-with-history" data-reply-history="${e(JSON.stringify({repeated,prior}))}">
+ return `<div class="reply-with-history" data-completion-enabled="${enabled?'on':'off'}" data-reply-history="${e(JSON.stringify({repeated,prior,saved,limit}))}">
   ${label(title,withEvents)}
   <div class="reply-history-ghost" hidden>
    <p class="reply-history-source" id="${id}-suggestion">이 상담의 이전 AI 답변</p>
@@ -1129,7 +1242,7 @@ function replyWithHistory(id,title,messages,{maxLength=0}={}){
 function clearReplySuggestion(field){
  const panel=field.closest('.reply-with-history').querySelector('.reply-history-ghost');
  panel.hidden=true;
- field.removeAttribute('aria-describedby');
+ const described=(field.getAttribute('aria-describedby')||'').split(/\s+/).filter(x=>x&&x!==field.id+'-suggestion');if(described.length)field.setAttribute('aria-describedby',described.join(' '));else field.removeAttribute('aria-describedby');
 }
 function updateReplySuggestion(field){
  const scope=field.closest('.reply-with-history');
@@ -1137,12 +1250,15 @@ function updateReplySuggestion(field){
  const draft=field.value;
  const history=JSON.parse(scope.dataset.replyHistory);
  const atEnd=field.selectionStart===draft.length&&field.selectionEnd===draft.length;
- const prefixMatch=draft.trim().length>=2&&history.prior.find(answer=>answer.length>draft.length&&answer.startsWith(draft));
- const remaining=draft?prefixMatch&&prefixMatch.slice(draft.length):history.repeated;
- if(field.dataset.composing||!atEnd||scope.dataset.dismissed===draft||!remaining){clearReplySuggestion(field);return '';}
+ const match=answer=>answer.length>draft.length&&answer.startsWith(draft)&&answer.length<=history.limit;
+ const savedMatch=draft.trim().length>=2&&history.saved.find(match);
+ const priorMatch=draft.trim().length>=2&&history.prior.find(match);
+ const remaining=draft?(savedMatch||priorMatch)?.slice(draft.length):history.repeated;
+ if(scope.dataset.completionEnabled==='off'||field.dataset.composing||!atEnd||scope.dataset.dismissed===draft||!remaining){clearReplySuggestion(field);return '';}
+ panel.querySelector('.reply-history-source').textContent=savedMatch?'저장된 답변 추천':'이 상담의 이전 AI 답변';
  panel.querySelector('.reply-history-completion').textContent=remaining;
  panel.hidden=false;
- field.setAttribute('aria-describedby',field.id+'-suggestion');
+ const described=new Set((field.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));described.add(field.id+'-suggestion');field.setAttribute('aria-describedby',[...described].join(' '));
  return remaining;
 }
 function acceptReplySuggestion(field){
@@ -1153,7 +1269,7 @@ function acceptReplySuggestion(field){
  clearReplySuggestion(field);
  field.focus();
  field.dispatchEvent(new Event('input',{bubbles:true}));
- toast('이전 AI 답변을 초안에 넣었습니다.');
+ toast('추천 답변을 초안에 넣었습니다.');
 }
 document.addEventListener('compositionstart',event=>{
  const field=event.target;
@@ -1179,9 +1295,112 @@ function replySuggestionKey(event){
   acceptReplySuggestion(field);
  }
 }
+
+const sampleManualThreads=new Set(),sampleTemporaryThreads=new Map();
+const sampleModeKey=id=>(me?.slug||'guest')+':'+id;
+let activeTemporary=null,temporaryRenewAt=0;
+function inboxTemporary(t){if(t.sample){const lease=sampleTemporaryThreads.get(sampleModeKey(t.id));if(lease&&lease.expires<=Date.now()/1000){sampleTemporaryThreads.delete(sampleModeKey(t.id));sampleManualThreads.delete(sampleModeKey(t.id));return null;}return lease||null;}return t.temporary||null;}
+function temporaryClock(expires){const left=Math.max(0,Math.ceil(expires-Date.now()/1000));return String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0');}
+function rememberTemporary(t){const lease=t&&inboxTemporary(t);activeTemporary=lease?{...lease,id:t.id,sample:!!t.sample}:null;}
+async function leaveTemporary(){const lease=activeTemporary;activeTemporary=null;if(!lease)return;if(lease.sample){sampleTemporaryThreads.delete(sampleModeKey(lease.id));sampleManualThreads.delete(sampleModeKey(lease.id));return;}try{await api('/api/inbox/'+enc(lease.id),{release_temporary:lease.lease});}catch(x){toast('자동 복귀 요청 실패 · 설정 시간이 지나면 복귀합니다.');}}
+window.addEventListener('pagehide',()=>{const lease=activeTemporary;if(lease&&!lease.sample&&!inboxReplyDraftActive()){fetch('/api/inbox/'+enc(lease.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({release_temporary:lease.lease}),keepalive:true}).catch(()=>{});}});
+function refreshTemporaryClock(){document.querySelectorAll('[data-temporary-expires]').forEach(el=>{el.textContent=temporaryClock(Number(el.dataset.temporaryExpires));});}
+setInterval(refreshTemporaryClock,1000);
+let inboxDetailSignature='',inboxModeSignature='';
+const inboxDesk=()=>new URLSearchParams(location.search).get('desk')==='1';
+const inboxCenter=()=>route==='consultation-center';
+const inboxWorkspace=()=>route==='inbox'||inboxCenter();
+const inboxDirect=t=>{if(t.sample)inboxTemporary(t);return t.sample?sampleManualThreads.has(sampleModeKey(t.id)):!!t.manual;};
+const inboxCanReply=t=>['public','test'].includes(t.kind)||(['naver','telegram'].includes(t.kind)&&(t.sample||t.channel_reply?.available));
+const inboxModeKey=t=>JSON.stringify([t.id,inboxDirect(t),inboxTemporary(t)?.lease||'',t.paused_by||'',t.status,inboxCanReply(t)]);
+function sampleDisplayText(value,isSample){return isSample?String(value??'').replace(/^샘플\s*·\s*/,''):value;}
+function sampleRecord(x){return !!(x?.sample||x?.preview||String(x?.id||'').startsWith('preview-'));}
+function sampleTitle(value,isSample){return isSample?'샘플 · '+sampleDisplayText(value,true):value;}
+function inboxMessageMarkup(t){return t.messages.map(m=>`<div class="inbox-message ${m.role==='user'?'from-customer':'from-staff'}${t.sample?' sample-chat-message':''}"><small>${e(m.role==='user'?'고객':m.role==='staff'?'담당자':'AI 상담사')} · ${e(new Date(m.created*1000).toLocaleString('ko-KR'))}</small>${m.photo||m.attachment?photoBubble(m,'owner',t.id):bubble(m.role==='user'?'assistant':'user',sampleDisplayText(m.body,t.sample),false)}${!m.photo&&!m.attachment&&String(m.body||'').trim()?`<details class="inbox-message-menu"><summary aria-label="메시지 메뉴">···</summary>${btn('복사','copyInboxMessage(this)','tertiary ui-sm')}${!t.sample&&m.role==='assistant'?btn('참고 교육 정보',`showAnswerContext('${m.id}')`):''}</details>`:''}</div>`).join('')}
+function copyInboxMessage(b){const value=b.closest('.inbox-message')?.querySelector('[data-chat-copy-text]')?.textContent||'';if(value)navigator.clipboard.writeText(value).then(()=>toast('복사했습니다.')).catch(()=>toast('복사하지 못했습니다.'))}
+function inboxModeBar(t){
+ const supported=['public','test'].includes(t.kind)||t.sample;
+ const direct=inboxDirect(t),temporary=inboxTemporary(t);
+ if(!inboxCanReply(t))return '<div class="inbox-mode-bar"><span>외부 채널에서 직접 응대</span>'+(t.sample?'':btn(t.manual?'이 상담 AI 재개':'이 상담 AI 일시 중지',`switchInboxMode(${!t.manual})`))+'</div>';
+ const status=t.paused_by?'상위 수동 설정 적용 중':temporary?'일시 개입 중':direct?'수동 상담 유지':'AI 자동 상담 중';
+ const controls=temporary?btn('수동 유지','switchInboxMode(true,null)')+btn('AI 복귀','switchInboxMode(false)'):direct?btn('AI 상담 재개','switchInboxMode(false)'):supported?btn('직접 개입','switchInboxMode(true,300)','primary')+btn('수동 유지','switchInboxMode(true,null)'):btn('직접 상담 개입','switchInboxMode(true)','primary');
+ const options=temporary?'<label class="takeover-settings"><span>자동 복귀</span><select aria-label="자동 복귀 시간" onchange="switchInboxMode(true,Number(this.value))">'+[[0,'전송 직후'],[60,'1분'],[180,'3분'],[300,'5분'],[600,'10분'],[1800,'30분'],[3600,'60분']].map(([v,k])=>'<option value="'+v+'" '+(v===temporary.seconds?'selected':'')+'>'+k+'</option>').join('')+'</select></label>':'';
+ return '<div class="inbox-mode-bar takeover-bar"><div class="takeover-status"><span class="takeover-dot '+(direct||t.paused_by?'is-manual':'')+'"></span><span>'+e(status)+'</span>'+(temporary?'<span class="takeover-clock" data-temporary-expires="'+temporary.expires+'">'+temporaryClock(temporary.expires)+'</span>':'')+'</div><div class="takeover-actions">'+controls+'</div>'+options+(temporary&&t.paused_by?'<small class="takeover-note">복귀 후에도 상위 수동 설정이 유지됩니다.</small>':'')+'</div>';
+}
+async function switchInboxMode(manual,seconds=null){
+ const id=threadId;if(!id)return;
+ if(!manual&&inboxReplyDraftActive()&&!confirm('작성 중인 답변을 닫고 AI로 복귀할까요?'))return;
+ if(manual&&seconds===null&&!confirm('AI가 자동으로 복귀하지 않는 수동 상담으로 전환할까요?'))return;
+ await act(async()=>{const t=await inboxDetailFor(id);if(threadId!==id)return;
+ if(t.sample){if(manual){sampleManualThreads.add(sampleModeKey(id));if(seconds!==null)sampleTemporaryThreads.set(sampleModeKey(id),{lease:crypto.randomUUID(),seconds,expires:Date.now()/1000+(seconds||300)});else sampleTemporaryThreads.delete(sampleModeKey(id));}else{sampleManualThreads.delete(sampleModeKey(id));sampleTemporaryThreads.delete(sampleModeKey(id));}}
+ else{await api('/api/inbox/'+enc(id),manual&&seconds!==null?{manual:true,auto_resume_seconds:seconds}:{manual});}
+ if(threadId===id){await render();}
+ });
+}
+function resizeOwnerComposer(field){field.style.height='auto';field.style.height=Math.min(120,Math.max(42,field.scrollHeight))+'px';}
+function inboxComposer(t){const id=['public','test'].includes(t.kind)||t.sample?'staff-reply':'external-reply';const send=t.sample?"sendSampleInboxMessage('staff')":id==='staff-reply'?"sendOwnerInboxReply()":"sendExternalReply()";return `<div class="owner-compose"><div class="owner-compose-input">${replyWithHistory(id,'메시지 입력',t.messages,{maxLength:id==='external-reply'?1000:2000}).replace('<textarea','<textarea rows="1" placeholder="메시지 입력"').replace('oninput="if(!event.isComposing)updateReplySuggestion(this)"','oninput="resizeOwnerComposer(this);if(!event.isComposing)updateReplySuggestion(this)"')}</div><button type="button" class="primary owner-send" aria-label="전송" onclick="${send}">${workspaceControlIcon('send')}</button></div>`}
+async function sendOwnerInboxReply(){const id=threadId,reply=val('staff-reply').trim();if(!reply)return toast('메시지를 입력하세요.');if(ownerReplyBusy)return;ownerReplyBusy=true;try{await act(async()=>{const t=await api('/api/inbox/'+enc(id));if(threadId!==id||!t.manual)return toast('직접 상담 모드를 확인하세요.');await api('/api/inbox/'+enc(id),{reply,expected_lease:t.temporary?.lease||''});if(threadId===id)await render()})}finally{ownerReplyBusy=false}}
+let ownerReplyBusy=false;
+function inboxReplyDraftActive(){return ['staff-reply','external-reply','sample-customer-reply'].some(id=>$('#'+id)?.value)||['inbox-note','inbox-tags','inbox-assignee','inbox-due-date'].some(id=>{const x=$('#'+id);return x&&x.value!==x.defaultValue})||!!$('.modal')}
+let deskInstallPrompt=null;
+window.addEventListener('beforeinstallprompt',ev=>{if(!publicMode){ev.preventDefault();deskInstallPrompt=ev}});
+async function installInboxDesk(){if('serviceWorker'in navigator){try{await navigator.serviceWorker.register('/push-sw.js')}catch{}}if(deskInstallPrompt){await deskInstallPrompt.prompt();deskInstallPrompt=null;return;}modal('상담센터 바로가기 설치','<p>Chrome 또는 Edge 메뉴에서 앱 설치 또는 홈 화면에 추가를 선택하세요. iPhone은 Safari 공유 메뉴의 홈 화면에 추가를 이용하세요.</p><p>설치가 지원되지 않으면 상담센터 URL을 즐겨찾기 하세요.</p>')}
+function openInboxWindow(event,link){if(matchMedia('(max-width:700px)').matches)return;const win=window.open('about:blank','_blank','popup,width=1100,height=760');if(win){event.preventDefault();win.opener=null;win.location.replace(link.href)}}
+function deskLinks(){return '<div class="inbox-desk-links"><a class="ui-button primary" href="/#consultation-center">상담센터 바로 열기</a><a class="ui-button secondary" href="/?desk=1#consultation-center" target="_blank" rel="noopener" onclick="openInboxWindow(event,this)">독립 창으로 열기</a>'+btn('바로가기 설치','installInboxDesk()')+'</div>'}
+function inboxDeskShell(body){return `<div class="inbox-desk-shell" data-route="consultation-center"><header class="inbox-desk-header"><strong>CS AI 상담센터</strong><span>${e(me.settings.brand)}</span><a href="/#dashboard">관리자 대시보드</a>${btn('알림 설정',"location.href='/#alerts'")}${btn('로그아웃','logout()')}</header><main>${body}</main>${mobileQuickNav()}</div>`}
+
+function sampleInboxReply(detail){if(!inboxCanReply(detail))return externalReplyControls(detail);return inboxDirect(detail)?inboxComposer(detail)+actionGroup({keepSize:true},inboxSnippets.length?btn('저장 답변 불러오기','chooseInboxSnippet()'):''):'';}
+let sampleInboxSending=false;
+async function sendSampleInboxMessage(role){
+ if(sampleInboxSending)return;
+ if(role==='staff'&&!sampleManualThreads.has(sampleModeKey(threadId)))return toast('직접 상담 모드로 전환하세요.');
+ const id=threadId,field=role==='staff'?'staff-reply':'sample-customer-reply',value=val(field).trim();
+ if(!value)return toast('메시지를 입력하세요.');
+ sampleInboxSending=true;
+ try{const example=previewInboxThread(id);if(example){const stamp=Math.floor(Date.now()/1000);example.messages.push({id:crypto.randomUUID(),role,body:value,created:stamp});example.activity=stamp;example.last=value;example.unread=role==='staff'?0:example.unread+1;if(role==='user'&&!sampleManualThreads.has(sampleModeKey(id))){const answer='샘플 AI 답변 · 문의 내용을 접수했습니다. 업체에 등록된 정보에 따라 안내합니다.';example.messages.push({id:crypto.randomUUID(),role:'assistant',body:answer,created:stamp});example.last=answer;}}else await api('/api/demo/samples/'+enc(id)+'/message',{role,message:value});if(role==='staff'){const lease=sampleTemporaryThreads.get(sampleModeKey(id));if(lease){if(lease.seconds===0){sampleTemporaryThreads.delete(sampleModeKey(id));sampleManualThreads.delete(sampleModeKey(id));}else lease.expires=Date.now()/1000+lease.seconds;}}if(inboxWorkspace()&&threadId===id){await render();const chat=$('.inbox-conversation');if(chat)chat.scrollTop=chat.scrollHeight;}}catch(err){toast(err.message);}finally{sampleInboxSending=false;}
+}
+
+function centerActivityLabel(stamp,now=Date.now()){
+ const d=new Date(Number(stamp)*1000);
+ if(!Number.isFinite(d.getTime())||Number(stamp)<=0)return '';
+ const minutes=Math.max(0,Math.floor((now-d.getTime())/60000));
+ if(minutes===0)return '방금 전';
+ if(minutes<=60)return minutes+'분 전';
+ return d.toDateString()===new Date(now).toDateString()?d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+}
+function centerIsRecent(stamp,now=Date.now()){const age=now-Number(stamp)*1000;return Number(stamp)>0&&age>=0&&age<61*60000;}
+function refreshCenterAges(list){list.querySelectorAll('[data-center-activity]').forEach(node=>{const stamp=Number(node.dataset.centerActivity);const label=centerActivityLabel(stamp);if(node.textContent!==label)node.textContent=label;const badge=node.parentElement.querySelector('.center-new');if(badge)badge.hidden=!centerIsRecent(stamp);});}
+function consultationTitle(t){return t.preview?sampleTitle(t.name,true):t.sample?'샘플 · 고객 '+String(t.id).slice(-6).toUpperCase():t.kind==='test'?'관리자 테스트':t.consultation?.title||'고객 '+String(t.id).slice(-6).toUpperCase();}
+function consultationCustomer(t){return t.consultation?.customer_name?' · '+t.consultation.customer_name:'';}
+function renderCenterList(ts){
+ return ts.map(t=>{const title=consultationTitle(t),mode=t.paused_by?'상위 수동':inboxTemporary(t)?'일시 개입':inboxDirect(t)?'수동 유지':t.status==='resolved'?'완료':t.status==='pending'?'확인 필요':'AI 상담';
+ const stamp=Number(t.activity||t.created)||0,time=centerActivityLabel(stamp);
+ return `<button type="button" class="inbox-entry center-entry ${threadId===t.id?'selected':''}${t.sample?' sample-record':''}" onclick="openInboxThread('${e(t.id)}')" aria-pressed="${threadId===t.id}"><span class="center-avatar">${uiIcon('user-round')}</span><span class="center-entry-body"><span class="center-entry-title"><strong>${e(title)}</strong>${t.unread?`<span class="center-new" ${centerIsRecent(stamp)?'':'hidden'}>NEW</span>`:''}<time data-center-activity="${stamp}">${e(time)}</time></span><span class="center-entry-meta">${e(inboxChannel(t))} · ${e(mode+consultationCustomer(t))}</span><span class="inbox-excerpt">${e(t.consultation?.summary||sampleDisplayText(t.last||'새 상담',t.sample))}</span></span>${t.unread?'<span class="center-unread">'+e(t.unread)+'</span>':''}</button>`}).join('')||emptyState('조건에 맞는 상담이 없습니다.');
+}
+async function centerBack(){if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 목록으로 이동할까요?'))return;await leaveTemporary();threadId=null;render()}
+async function centerTab(kind){if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 목록을 변경할까요?'))return;await leaveTemporary();inboxUnread=kind==='unread';inboxSource=kind==='manual'?'manual':'all';threadId=null;render()}
+function centerExtras(t,assignment,annotation){
+ const last=t.messages.filter(m=>m.role==='user').at(-1);
+ if(t.sample)return (me.sample_tools||t.preview)?accordion('샘플 고객 메시지 체험',label('고객이 보낼 메시지',ta('sample-customer-reply'))+btn('고객 메시지 보내기',"sendSampleInboxMessage('user')")):'';
+ return actionGroup({keepSize:true},btn('완료 처리',"updateThread({status:'resolved'})"),t.manual?btn('완료 후 AI 복귀','closeAndResumeAI()'):'',last&&t.kind!=='test'?btn('읽음 처리',`markInboxRead('${t.id}','${last.id}')`):'',t.kind==='test'?btn('테스트 기록 삭제','deleteTestThread()'):'',['naver','kakao','telegram','line','instagram'].includes(t.kind)?btn('이전 상담','showRelatedThreads()'):'',t.messages.some(m=>m.role==='assistant')?btn('최근 AI 답변 오류 표시','reportOwnerAnswer()'):'',t.messages.length?btn('상담 핵심 보기','showInboxBrief()'):'',t.consultation?.booking?btn('관련 예약 일정',`jumpLinkedBooking('${e(t.consultation.booking.start)}','${e(t.consultation.booking.agent||'')}')`):'',t.messages.some(m=>m.role==='staff')&&t.kind!=='test'?btn('직접 상담 기록으로 교육','staffTrainingPreview()'):'',t.kind!=='test'&&['crm','quote','tasks','leads','complaints'].some(has)?btn('업무로 등록','convertModal()'):'',t.kind==='public'?btn('주문 조회 승인','ownerOrderAccess()'):'',t.web_calls&&t.kind==='public'?btn('통화 요청 확인',"checkWebCall('owner')"):'')+(assignment?inboxAssignmentHtml(assignment):'')+(annotation?inboxAnnotationHtml(annotation):'')+(!['public','test'].includes(t.kind)?externalReplyControls(t,false):'');
+}
+function centerAttachments(t){
+ const items=actionGroup({keepSize:true},t.photos&&t.kind==='public'&&!t.sample?btn('사진 첨부',"photoUploadModal('owner')"):'',t.files&&t.kind==='public'&&!t.sample?btn('영상·파일 첨부',"photoUploadModal('owner','file')"):'',inboxSnippets.length?btn('저장 답변','chooseInboxSnippet()'):'',!t.sample&&t.messages.some(m=>m.role==='user')?btn('AI 답장 추천','openInboxDraftAssistant()'):'');
+ return items?'<details class="center-attachments"><summary aria-label="첨부 및 답변 도구">+</summary><div>'+items+'</div></details>':'';
+}
+function centerComposer(t){
+ if(!inboxCanReply(t))return t.kind==='kakao'?'<a class="center-external" href="https://center-pf.kakao.com/" target="_blank" rel="noopener noreferrer">카카오에서 직접 상담하기</a>':'<p class="center-external">외부 채널 관리자에서 직접 응대하세요.</p>';
+ if(!inboxDirect(t))return '';
+ return '<div class="center-compose-row">'+centerAttachments(t)+inboxComposer(t)+'</div>';
+}
+function centerWorkspace({detail,brands,filter,list,modes,assignment,annotation,sampleTools,scope}){
+ const active=detail?'<div class="center-chat-head'+(detail.sample?' sample-chat-surface':'')+'"><button type="button" class="center-back" aria-label="상담 목록으로" onclick="centerBack()">←</button><div class="center-avatar">'+uiIcon('user-round')+'</div><div class="center-identity"><strong>'+e(consultationTitle(detail))+'</strong><small>'+e(inboxChannel(detail))+' · '+e((states[detail.status]||detail.status)+consultationCustomer(detail))+'</small></div><details class="center-chat-tools"><summary aria-label="상담 상세 메뉴">···</summary><div class="center-popover">'+centerExtras(detail,assignment,annotation)+'</div></details></div><div class="inbox-conversation center-messages'+(detail.sample?' sample-chat-surface':'')+'" role="log" aria-live="polite">'+inboxMessageMarkup(detail)+'</div><div class="center-chat-bottom"><div class="inbox-live-mode">'+inboxModeBar(detail)+'</div>'+centerComposer(detail)+'</div>':'<div class="center-empty"><strong>상담을 선택하세요.</strong><p>AI 상담을 관찰하거나 직접 고객에게 답변할 수 있습니다.</p></div>';
+ return `<section class="center-workspace ${detail?'has-selected-thread':''}"><section class="center-list-pane"><div class="center-list-head"><div><h1>상담센터</h1><span id="inbox-live-status" role="status">자동 갱신 · 3초 간격</span></div>${inboxDesk()?'':'<a class="center-open-window" href="/?desk=1#consultation-center" target="_blank" rel="noopener" onclick="openInboxWindow(event,this)" title="상담센터 독립 창 열기" aria-label="상담센터 독립 창 열기">'+workspaceControlIcon('external')+'</a>'}<details class="center-global-tools"><summary aria-label="상담센터 메뉴">···</summary><div class="center-popover"><a class="ui-button secondary" href="/#inbox">통합 상담함</a><a class="ui-button secondary" href="/?desk=1#consultation-center" target="_blank" rel="noopener" onclick="openInboxWindow(event,this)">독립 창 열기</a>${btn('바로가기 설치','installInboxDesk()')}${btn('자주 쓰는 답변','manageInboxSnippets()')}${btn('채널별 통계','showChannelMetrics()')}${btn('외부 발송 문제','showDeliveryIssues()')}${btn('새로고침','refreshInboxNow()')}${btn('알림 설정',"location.href='/#alerts'")}${sampleTools}${consultationControls(modes,brands)}${scope}</div></details></div><div class="center-list-tabs"><button type="button" class="${!inboxUnread&&inboxSource!=='manual'?'active':''}" onclick="centerTab('all')">전체</button><button type="button" class="${inboxUnread?'active':''}" onclick="centerTab('unread')">안 읽음</button><button type="button" class="${inboxSource==='manual'?'active':''}" onclick="centerTab('manual')">직접 상담</button></div><details class="center-filters"><summary>검색 및 필터</summary>${brandSelect('inbox-brand',brands,inboxAgent,'inboxAgent=this.value;threadId=null;render()',true)}${filter}${checkbox('inbox-unread','안 읽은 문의만',{checked:inboxUnread,form:'inbox-filter'})}</details><div id="inbox-live-list" class="inbox-list center-list">${list}</div></section><section class="inbox-detail-card center-chat-pane">${active}</section></section>`;
+}
+
 async function inbox(){
  let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];let policy=await api('/api/history-policy'),ts=await loadInboxThreads();
- let detail=threadId?await api('/api/inbox/'+threadId):null;const modes=await api('/api/consultation-mode');
+ let detail=threadId?await inboxDetailFor(threadId):null;const modes=await api('/api/consultation-mode');
  inboxSnippets=await api('/api/inbox-snippets');let annotation=detail&&!detail.sample&&detail.kind!=='test'?await api('/api/inbox/'+threadId+'/annotation'):null;let assignment=annotation?await api('/api/inbox/'+threadId+'/assignment'):null;
  const channels=[['customer','고객 상담'],['all','전체 기록'],['public','CS AI 상담 링크'],['naver','네이버 톡톡'],['kakao','카카오 AI 챗봇'],['telegram','텔레그램'],['line','LINE'],['instagram','인스타그램 DM'],['test','관리자 테스트']];
  const sources=[['all','모든 유입·모드'],['manual','직접 상담만'],['link','직접 링크 유입'],['widget','위젯 유입']];
@@ -1197,21 +1416,21 @@ async function inbox(){
    <button class="ui-button primary" type="submit">찾기</button>
   </div>
  </form>`;
- inboxBrands=brands;inboxSnapshot=JSON.stringify(ts);let list=renderInboxList(ts,brands);
- let detailBody=detail?`<p class="muted">${detail.sample?'<span class="sample-tag">샘플 · 읽기 전용</span> ':''}${inboxChannelBadge(detail)} · ${e(states[detail.status]||detail.status)} · 메시지 ${detail.messages.length}개</p><div class="inbox-conversation">${detail.messages.map(m=>`<div class="inbox-message ${m.role==='user'?'from-customer':''}"><small>${e(m.role==='user'?'고객':m.role==='staff'?'담당자':'AI 상담사')} · ${e(new Date(m.created*1000).toLocaleString('ko-KR'))}</small>${photoBubble(m,'owner',detail.id)}${!detail.sample&&m.role==='assistant'?btn('참고 교육 정보',`showAnswerContext('${m.id}')`):''}</div>`).join('')}</div>${detail.sample?'<p class="muted">디자인 확인용 가상 대화입니다. 답변·상태 변경·업무 등록은 할 수 없습니다.</p>':`<div class="row" style="margin-top:15px">${btn(detail.kind==='kakao'?(detail.manual?'이 상담 AI 재개':'이 상담 AI 일시 중지'):(detail.manual?'개별 직접 상담 해제':'이 상담만 직접 처리'),`updateThread({manual:${!detail.manual}})`)}${detail.paused_by?'<span class="muted">'+e(pauseLabel(detail.paused_by))+' · 상위 설정 해제 전 AI 재개 불가</span>':''}${btn('완료 처리',"updateThread({status:'resolved'})")}${detail.manual?btn('완료 후 AI 복귀','closeAndResumeAI()'):''}${['naver','kakao','telegram','line','instagram'].includes(detail.kind)?btn('동일 고객 이전 상담','showRelatedThreads()'):''}${detail.messages.some(m=>m.role==='assistant')?btn('최근 AI 답변 오류 표시','reportOwnerAnswer()'):''}${detail.kind==='test'?btn('테스트 기록 삭제','deleteTestThread()'):''}</div>${detail.kind!=='test'&&detail.messages.some(m=>m.role==='user')?btn('읽음 처리',`markInboxRead('${detail.id}','${detail.messages.filter(m=>m.role==='user').at(-1).id}')`):''}${assignment?inboxAssignmentHtml(assignment):''}${annotation?inboxAnnotationHtml(annotation):''}${['public','test'].includes(detail.kind)?section('inbox-reply-heading','직접 답변',replyWithHistory('staff-reply','답변 내용',detail.messages)+
-  actionFooter([btn('답변 전송',"updateThread({reply:val('staff-reply'),manual:true})",'primary')])):externalReplyControls(detail)}${actionGroup({keepSize:true},detail.photos&&detail.kind==='public'?btn('사진 첨부',"photoUploadModal('owner')"):'',detail.files&&detail.kind==='public'?btn('영상·파일 첨부',"photoUploadModal('owner','file')"):'',detail.web_calls&&detail.kind==='public'?btn('통화 요청 확인',"checkWebCall('owner')"):'',detail.kind==='public'?btn('주문 조회 승인','ownerOrderAccess()'):'',inboxSnippets.length?btn('저장 답변 불러오기','chooseInboxSnippet()'):'',detail.messages.some(m=>m.role==='user')?btn('AI 답장 3가지 추천','openInboxDraftAssistant()'):'',detail.messages.length?btn('상담 핵심 보기','showInboxBrief()'):'',detail.kind!=='test'&&detail.messages.some(m=>m.role==='staff')?btn('직접 상담 기록으로 교육','staffTrainingPreview()'):'',detail.kind!=='test'&&['crm','quote','tasks','leads','complaints'].some(has)?btn('업무로 등록','convertModal()'):'')}`}`:emptyState('상담 기록에서 대화를 선택하면 메시지와 답변 도구가 여기에 표시됩니다.');
+ rememberTemporary(detail);inboxBrands=brands;inboxSnapshot=JSON.stringify(ts);inboxDetailSignature=detail?JSON.stringify(detail.messages):'';inboxModeSignature=detail?inboxModeKey(detail):'';let list=renderInboxList(ts,brands);
+ let detailBody=detail?`<p class="muted">${inboxChannelBadge(detail)} · ${e(states[detail.status]||detail.status)} · 메시지 ${detail.messages.length}개</p><div class="inbox-conversation${detail.sample?' sample-chat-surface':''}" role="log" aria-live="polite">${inboxMessageMarkup(detail)}</div><div class="inbox-live-mode">${inboxModeBar(detail)}</div>${detail.sample?sampleInboxReply(detail):`<div class="row" style="margin-top:15px">${detail.paused_by?'<span class="muted">'+e(pauseLabel(detail.paused_by))+' · 상위 설정 해제 전 AI 재개 불가</span>':''}${btn('완료 처리',"updateThread({status:'resolved'})")}${detail.manual?btn('완료 후 AI 복귀','closeAndResumeAI()'):''}${['naver','kakao','telegram','line','instagram'].includes(detail.kind)?btn('동일 고객 이전 상담','showRelatedThreads()'):''}${detail.messages.some(m=>m.role==='assistant')?btn('최근 AI 답변 오류 표시','reportOwnerAnswer()'):''}${detail.kind==='test'?btn('테스트 기록 삭제','deleteTestThread()'):''}</div>${detail.kind!=='test'&&detail.messages.some(m=>m.role==='user')?btn('읽음 처리',`markInboxRead('${detail.id}','${detail.messages.filter(m=>m.role==='user').at(-1).id}')`):''}${assignment?inboxAssignmentHtml(assignment):''}${annotation?inboxAnnotationHtml(annotation):''}${['public','test'].includes(detail.kind)?(inboxDirect(detail)?inboxComposer(detail):''):externalReplyControls(detail,false)+(inboxCanReply(detail)&&inboxDirect(detail)?inboxComposer(detail):'')}${actionGroup({keepSize:true},inboxDirect(detail)&&detail.photos&&detail.kind==='public'?btn('사진 첨부',"photoUploadModal('owner')"):'',inboxDirect(detail)&&detail.files&&detail.kind==='public'?btn('영상·파일 첨부',"photoUploadModal('owner','file')"):'',detail.web_calls&&detail.kind==='public'?btn('통화 요청 확인',"checkWebCall('owner')"):'',detail.kind==='public'?btn('주문 조회 승인','ownerOrderAccess()'):'',inboxDirect(detail)&&inboxCanReply(detail)&&inboxSnippets.length?btn('저장 답변 불러오기','chooseInboxSnippet()'):'',inboxDirect(detail)&&inboxCanReply(detail)&&detail.messages.some(m=>m.role==='user')?btn('AI 답장 3가지 추천','openInboxDraftAssistant()'):'',detail.messages.length?btn('상담 핵심 보기','showInboxBrief()'):'',detail.kind!=='test'&&detail.messages.some(m=>m.role==='staff')?btn('직접 상담 기록으로 교육','staffTrainingPreview()'):'',detail.kind!=='test'&&['crm','quote','tasks','leads','complaints'].some(has)?btn('업무로 등록','convertModal()'):'')}`}`:emptyState('상담 기록에서 대화를 선택하면 메시지와 답변 도구가 여기에 표시됩니다.');
  let sampleTools=me.sample_tools?`<div class="inbox-sample-tools"><span>화면 검토용 샘플 · 상담·예약·업무·알림 연결 · 실제 사용량 차감 없음</span><div>${actionGroup({keepSize:true},btn('연결 샘플 9건 넣기','addDemoSamples()'),btn('샘플만 지우기','removeDemoSamples()','danger ui-sm'))}</div></div>`:'';
  let scope=`<p class="inbox-scope">현재 조회 가능 범위: 최근 ${policy.accessible_days.toLocaleString()}일${policy.older_threads?` · 조회 범위 밖 ${policy.older_threads.toLocaleString()}건`:''}${!has('retention')&&!cfg.demo?` <button type="button" onclick="go('addons')">장기 보관 옵션 보기</button>`:''}</p>`;
- return pageTop('통합 상담함','CS AI에서 처리한 상담을 채널별로 확인하세요.')+`<section class="card app-card inbox-toolbar">${brandSelect('inbox-brand',brands,inboxAgent,'inboxAgent=this.value;threadId=null;render()',true)}${filter}<div class="inbox-toolbar-controls">${checkbox('inbox-unread','안 읽은 문의만',{checked:inboxUnread,form:'inbox-filter',className:'inbox-unread'})}<div class="ui-actions inbox-toolbar-actions">${btn('새로고침','refreshInboxNow()','secondary ui-sm')}${btn('자주 쓰는 답변','manageInboxSnippets()','secondary ui-sm')}${btn('답장 비서','go(\'reply-assistant\')','secondary ui-sm')}${btn('외부 발송 문제','showDeliveryIssues()','tertiary ui-sm')} ${btn('채널별 상담 통계','showChannelMetrics()','tertiary ui-sm')}</div></div><div class="inbox-toolbar-status"><span id="inbox-live-status">목록 자동 갱신 · 8초 간격</span>${scope}</div>${sampleTools}${consultationControls(modes,brands)}</section>`+`<div class="grid inbox-grid">${card('상담 기록',`
+ if(inboxCenter())return centerWorkspace({detail,brands,filter,list,modes,assignment,annotation,sampleTools,scope});
+ return pageTop('통합 상담함','고객 상담을 실시간으로 관찰하고 직접 응대하세요.')+(inboxDesk()?'':deskLinks())+`<section class="card app-card inbox-toolbar">${brandSelect('inbox-brand',brands,inboxAgent,'inboxAgent=this.value;threadId=null;render()',true)}${filter}<div class="inbox-toolbar-controls">${checkbox('inbox-unread','안 읽은 문의만',{checked:inboxUnread,form:'inbox-filter',className:'inbox-unread'})}<div class="ui-actions inbox-toolbar-actions"><div class="inbox-tool-row">${btn('자주 쓰는 답변','manageInboxSnippets()','secondary ui-sm')}<label class="ui-check inbox-completion-control" title="저장 문구 및 이전 AI 답변을 추천합니다. 사용량 차감 없음"><input type="checkbox" class="ui-choice reply-completion-toggle" ${replyCompletionEnabled()?'checked':''} onchange="toggleReplyCompletion(this)"><span>답변 자동완성</span></label></div><div class="inbox-tool-row inbox-tool-links">${btn('외부 발송 문제','showDeliveryIssues()','tertiary ui-sm')}${btn('채널별 상담 통계','showChannelMetrics()','tertiary ui-sm')}</div></div></div><div class="inbox-toolbar-status"><span id="inbox-live-status">상담 자동 갱신 · 3초 간격</span>${scope}</div>${sampleTools}${consultationControls(modes,brands)}</section>`+`<div class="grid inbox-grid ${detail?'has-selected-thread':''}"><section class="card app-card inbox-record-card"><div class="inbox-record-heading"><h2>상담 기록</h2><button type="button" class="ui-button secondary ui-sm inbox-refresh-icon" onclick="refreshInboxNow()" aria-label="상담 기록 새로고침" title="상담 기록 새로고침"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 6.6M20 4v7h-7"/></svg></button></div>
   <p class="inbox-pull-hint ui-helper">목록 맨 위에서 아래로 당겨 새로고침</p>
   <div class="inbox-pull">
    <div class="inbox-pull-indicator" aria-hidden="true"><span class="inbox-pull-mark"><span class="inbox-pull-drop"></span>${uiIcon('chevron-down')}</span><span data-pull-label></span></div>
    <div class="inbox-pull-announcement" role="status"></div>
    <div id="inbox-live-list" class="inbox-list">${list}</div>
-  </div>`)}${card('상담 상세',detailBody)}</div>`
+  </div></section><section class="card app-card inbox-detail-card">${btn('상담 목록으로','centerBack()','tertiary inbox-back')}${detailBody}${detail?.sample&&(me.sample_tools||detail.preview)?accordion('샘플 고객 메시지 체험',label('고객이 보낼 메시지',ta('sample-customer-reply'))+btn('고객 메시지 보내기',"sendSampleInboxMessage('user')",'secondary')):''}</section></div>`
 }
-async function addDemoSamples(){await act(async()=>{let r=await api('/api/demo/samples',{});let ts=await api('/api/inbox');threadId=ts.find(t=>t.sample)?.id||null;inboxKind='all';inboxQuery='';toast(r.created?'상담·일정·업무·알림 샘플을 넣었습니다.':'샘플이 이미 있습니다.');render()})}
-async function removeDemoSamples(){if(!confirm('이 데모 계정의 샘플 상담만 지울까요?'))return;await act(async()=>{let r=await api('/api/demo/samples',undefined,'DELETE');threadId=null;toast('샘플 상담 '+r.removed+'건을 지웠습니다.');render()})}
+async function addDemoSamples(){await act(async()=>{let r=await api('/api/demo/samples',{});try{sessionStorage.removeItem('csai-hide-samples:'+me.slug)}catch{}let ts=await api('/api/inbox');threadId=ts.find(t=>t.sample)?.id||null;inboxKind='all';inboxQuery='';toast(r.created?'상담·일정·업무·알림 샘플을 넣었습니다.':'샘플이 이미 있습니다.');render()})}
+async function removeDemoSamples(){if(!confirm('이 데모 계정의 샘플 상담만 지울까요?'))return;await act(async()=>{let r=await api('/api/demo/samples',undefined,'DELETE');try{sessionStorage.setItem('csai-hide-samples:'+me.slug,'1')}catch{}threadId=null;toast('샘플 상담 '+r.removed+'건을 지웠습니다.');render()})}
 async function staffTrainingPreview(){await act(async()=>{const r=await api('/api/inbox/'+threadId+'/education-source');staffSourceAgent=r.agent||'';modal('직접 상담 기록으로 교육',`<p>담당자가 직접 답변한 ${r.pairs}개 질문·답변을 가져왔습니다. 고객 발화는 질문으로만 사용합니다.</p><p class="muted">전화번호·이메일 등 일부 정보는 자동 제거되지만, 이름·주소·기밀은 직접 확인하고 삭제해 주세요.</p>${label('교육할 자료 검토',ta('staff-education-source',r.text))}<label><input type="checkbox" id="staff-education-consent"> 교육에 사용할 권한이 있으며 개인정보·기밀 정보를 확인했습니다.</label>${btn('교육 화면으로 가져오기','loadStaffTraining()','primary')}`);})}
 let staffSourceAgent='';
 function loadStaffTraining(){if(educationBusy){toast('진행 중인 교육을 먼저 완료해 주세요.');return;}if(!checked('staff-education-consent')){toast('자료 이용 동의가 필요합니다.');return;}const text=val('staff-education-source').trim();if(!text||text.length>30000){toast('교육 자료는 30,000자 이하로 입력하세요.');return;}if(educationAgent!==staffSourceAgent){educationDraft=null;$('#education-workspace')?.remove();}educationDraft=educationDraft||{values:{},dates:[],files:[],upload:[],memory:[],open:[]};educationDraft.values['training-conversation']=text;educationDraft.values['training-text']='담당자의 실제 답변을 기준으로 사업 정보와 상담 방식을 교육해 주세요.';educationDraft.open[0]=true;educationMethod='direct';estimate=null;trainingChat=[];educationAgent=staffSourceAgent;$('.modal')?.remove();go('education');}
@@ -1265,36 +1484,13 @@ async function deleteTestThread(){
   await render();
  });
 }
-async function alerts(){let u=await api('/api/unknown');return pageTop('알림 및 미학습 질문','담당자 확인이 필요한 질문을 직접 교육하세요.')+card('새로운 질문',u.map(x=>`<div class="line">${x.sample?'<span class="sample-tag">샘플 · 읽기 전용</span>':''}<span class="status">${e(states[x.status])}</span><h3>${e(x.q)}</h3>${x.sample?btn('연결된 상담 보기',`openSampleThread('${x.thread}')`):x.status==='open'?`${ta('answer-'+x.id)}${btn('직접 답변으로 교육',`act(async()=>{showEducationQuote(await api('/api/faq',{q:(await api('/api/unknown')).find(z=>z.id==='${x.id}').q,a:val('answer-${x.id}'),unknown:'${x.id}'}))})`,'primary')}`:''}</div>`).join('')||emptyState('확인할 질문이 없습니다.'))}
+async function alerts(){let u=await api('/api/unknown');if(sharedPreviewEnabled())u=u.concat(previewData().questions);return pageTop('알림 및 미학습 질문','미학습 질문과 업무 알림을 확인하고 수신 방법을 관리하세요.')+card('새로운 질문',helperText('AI가 답변하지 못한 질문을 확인하고 직접 답변을 교육하면 이후 상담에 활용할 수 있습니다.')+(u.map(x=>`<div class="line question-row${sampleRecord(x)?' sample-record':''}"><div class="question-copy"><span class="status">${e(x.status==='open'?'확인 필요':states[x.status]||x.status)}</span><h3>${e(sampleTitle(x.q,sampleRecord(x)))}</h3></div><div class="question-action">${x.preview?(x.status==='open'?btn('교육 체험',`previewQuestionTrain('${x.id}')`,'primary'):helperText('샘플 교육 완료')):x.sample?btn('상담 보기',`openSampleThread('${x.thread}')`):x.status==='open'?`${ta('answer-'+x.id)}${btn('직접 답변으로 교육',`act(async()=>{showEducationQuote(await api('/api/faq',{q:(await api('/api/unknown')).find(z=>z.id==='${x.id}').q,a:val('answer-${x.id}'),unknown:'${x.id}'}))})`,'primary')}`:''}</div></div>`).join('')||emptyState('확인할 질문이 없습니다.')))}
 function localDate(iso){let d=new Date(iso),z=(route==='calendar'?calendarProfile?.timezone:null)||me?.settings.timezone||'Asia/Seoul';return new Intl.DateTimeFormat('sv-SE',{timeZone:z,year:'numeric',month:'2-digit',day:'2-digit'}).format(d)}
 function localTime(iso){return new Intl.DateTimeFormat('ko-KR',{timeZone:(route==='calendar'?calendarProfile?.timezone:null)||me?.settings.timezone||'Asia/Seoul',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso))}
 function dateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
 let calendarAgent='',calendarProfile=null;
-let calFilter='confirmed',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='',calendarMotion=null,calendarRecords=[];
+let calFilter='all',calendarRange=null,calendarRangeMode=false,calendarRangeAnchor='',calendarMotion=null,calendarRecords=[];
 function calendarRangeContains(date){return !!calendarRange&&date>=calendarRange.start&&date<=calendarRange.end}
-function calendarRangeSet(start,end){
- if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||start>end){toast('시작일과 종료일을 확인하세요.');return;}
- calendarRangeMode=true;calendarRange={start,end};calendarRangeAnchor='';selectedDate=start;
- if(calendarMotion){calendarMotion.setRange(start,end);return;}
- const [y,m]=start.split('-').map(Number);calendarMonth=new Date(y,m-1,1);render();
-}
-async function calendarRangeToggle(){
- calendarRangeMode=!calendarRangeMode;
- calendarRangeAnchor='';
- calendarRange=null;
- await render();
- $('#calendar-period-toggle')?.focus();
-}
-function calendarRangeFields(day){
- if(!calendarRangeMode)return '';
- return `<div class="calendar-range-control">
-  <p class="ui-helper" id="range-status" role="status">${calendarRangeAnchor?'종료일을 선택하세요. 날짜 위에 마우스를 올리면 범위가 미리 표시됩니다.':'시작일과 종료일을 누르거나 날짜를 드래그하세요. 날짜를 직접 입력할 수도 있습니다.'}</p>
-  <form class="calendar-range-fields" onsubmit="event.preventDefault();calendarRangeSet(val('range-start'),val('range-end'))">
-   ${dateRangePicker('range',{start:calendarRange?.start||day,end:calendarRange?.end||day})}
-   <button type="submit" class="ui-button primary">조회</button>
-  </form>
- </div>`;
-}
 const calendarFilters=[['all','전체'],['confirmed','확정'],['pending','승인·결제 대기']];
 const calendarPending=b=>b.status==='pending'||b.status==='pending_payment';
 function calendarFiltered(bs){return bs.filter(b=>calFilter==='all'||(calFilter==='pending'&&calendarPending(b))||b.status===calFilter);}
@@ -1308,7 +1504,7 @@ function calendarStatusFilters(){
  return `<div class="ui-tabs calendar-status-filters" role="group" aria-label="일정 상태">${calendarFilters.map(([key,text])=>
   `<button type="button" data-calendar-filter="${key}" aria-pressed="${calFilter===key}" onclick="setCalendarFilter('${key}')">${text}</button>`).join('')}</div>`;
 }
-function calendarDay(){return selectedDate||dateKey(calendarMonth.getFullYear(),calendarMonth.getMonth(),1);}
+function calendarDay(){if(selectedDate)return selectedDate;const today=localDate(new Date());const month=dateKey(calendarMonth.getFullYear(),calendarMonth.getMonth(),1);return today.slice(0,7)===month.slice(0,7)?today:month;}
 function calendarList(bs){
  const day=calendarDay(),range=calendarRangeMode&&calendarRange;
  const dayLabel=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',timeZone:'UTC'}).format(new Date(day+'T00:00:00Z'));
@@ -1372,9 +1568,8 @@ function updateCalendarPanels(){
 function mountCalendarMotion(){
  calendarMotion?.destroy();calendarMotion=null;const root=$('#db-calendar');if(!root)return;
  const counts={};for(const b of calendarFiltered(calendarRecords)){const d=localDate(b.start);counts[d]=(counts[d]||0)+1;}
- calendarMotion=DBMotion.calendar(root,{year:calendarMonth.getFullYear(),month:calendarMonth.getMonth(),range:calendarRangeMode,day:calendarDay(),start:calendarRange?.start,end:calendarRangeAnchor?null:calendarRange?.end,anchor:calendarRangeAnchor,counts},st=>{
-  calendarMonth=new Date(st.year,st.month,1);selectedDate=st.day;calendarRangeAnchor=st.anchor?st.start:'';calendarRange=calendarRangeMode&&st.start?{start:st.start,end:st.end||st.start}:null;
-  if($('#range-start')){$('#range-start').value=st.start||st.day;$('#range-end').value=st.end||st.start||st.day;$('#range-status').textContent=st.anchor?'종료일을 선택하세요. 날짜 위에 마우스를 올리면 범위가 미리 표시됩니다.':'시작일과 종료일을 누르거나 날짜를 드래그하세요. 날짜를 직접 입력할 수도 있습니다.';}
+ calendarMotion=DBMotion.calendar(root,{year:calendarMonth.getFullYear(),month:calendarMonth.getMonth(),range:true,directRange:true,day:calendarDay(),start:calendarRange?.start||calendarDay(),end:calendarRangeAnchor?null:calendarRange?.end||calendarDay(),anchor:!!calendarRangeAnchor,counts},st=>{
+  calendarMonth=new Date(st.year,st.month,1);selectedDate=st.day;calendarRangeAnchor=st.anchor?st.start:'';calendarRange=st.start?{start:st.start,end:st.end||st.start}:null;calendarRangeMode=!!(st.start&&st.end&&st.start!==st.end);
   updateCalendarPanels();
  });
 }
@@ -1392,36 +1587,76 @@ function calendarGrid(id='db-calendar',tools=''){
   <div class="db-calendar-foot"><span class="db-calendar-sum db-roll"></span><span class="db-calendar-chip db-roll"></span></div>
  </div>`;
 }
+const previewStateByAccount=new Map();
+function previewData(){
+ const key=me?.slug||'guest';if(previewStateByAccount.has(key))return previewStateByAccount.get(key);
+ const stamp=Math.floor(Date.now()/1000),date=new Date();
+ const bookingExamples=[
+  ['지난 촬영 상담','completed',-14,10,1],['기업 프로필 촬영','confirmed',-10,14,2],
+  ['제품 촬영','completed',-7,13,2],['예약 취소','cancelled',-5,15,1],
+  ['행사 촬영','completed',-2,11,2],['개인 프로필','confirmed',-1,16,1],
+  ['가족 촬영','confirmed',0,10,1],['프로필 촬영','pending',0,14,1],['상품 촬영','pending_payment',0,16,2],
+  ['출장 촬영','confirmed',1,10,3],['예약 변경 문의','cancelled',2,15,1],
+  ['단체 촬영','confirmed',3,11,2],['기업 행사 촬영','pending',4,14,3],
+  ['여행 스냅','confirmed',5,10,2],['스튜디오 촬영','confirmed',7,13,2],
+  ['웨딩 상담','pending_payment',10,15,1],['상품 사진 촬영','confirmed',14,11,2],
+  ['연말 행사 상담','pending',21,16,1]
+ ];
+ const bookings=bookingExamples.map(([name,status,offset,h,duration],i)=>{const d=new Date(date);d.setDate(d.getDate()+offset);const day=dateKey(d.getFullYear(),d.getMonth(),d.getDate());const time=n=>day+'T'+String(n).padStart(2,'0')+':00:00+09:00';return {id:'preview-booking-'+i,sample:true,preview:true,status,start:time(h),end:time(h+duration),resource:'default',fields:[{key:'name',label:'예약명'},{key:'note',label:'메모'}],payload:{name:'샘플 · '+name,note:'고객 상담을 통한 접수 예시'},paid:status==='confirmed'||status==='completed'};});
+ const questions=[{id:'preview-question-1',sample:true,preview:true,status:'open',q:'샘플 · 주말 방문 시 주차가 가능한가요?'},{id:'preview-question-2',sample:true,preview:true,status:'open',q:'샘플 · 예약 날짜 변경은 언제까지 가능한가요?'}];
+ const events=[['new','새로운 고객 상담 접수'],['handoff_urgent','긴급 담당자 확인 요청'],['booking','예약 확정 안내'],['unknown','미학습 질문 접수']].map(([kind,title],i)=>({id:'preview-event-'+i,sample:true,preview:true,kind,title:'샘플 · '+title,created:stamp-i*180,seen:false}));
+ const work=[['tasks','예약 일정 확인','pending'],['complaints','배송 지연 문의','open'],['quote','행사 촬영 견적 요청','pending'],['leads','가족 촬영 구매 문의','resolved'],['crm','고객 연락 요청','open']].map(([kind,title,status],i)=>({id:'preview-work-'+i,sample:true,preview:true,kind,title:'샘플 · '+title,status,details:'담당자 검토 및 처리 흐름 체험'}));
+ const sampleThreads=[
+  ['가족 촬영','public',2,false,[['user','주말에 가족사진 예약 가능한가요?']]],
+  ['상품 교환','naver',12,false,[['user','상품 사이즈를 교환하고 싶습니다.']]],
+  ['가격 안내','public',38,false,[['user','프로필 촬영 가격이 궁금합니다.']]],
+  ['AI 상담 후 직접 개입','public',5,true,[['user','예약 시간을 변경하고 싶어요.'],['assistant','변경 가능한 시간을 담당자가 확인하겠습니다.'],['staff','안녕하세요. 담당자입니다. 원하시는 시간을 알려주세요.'],['user','토요일 오후 3시 가능한가요?']]],
+  ['담당자 직접 상담','public',9,true,[['user','기업 행사 촬영 견적을 요청합니다.'],['staff','안녕하세요. 행사 일정과 예상 인원을 알려주시면 확인하겠습니다.'],['user','다음 주 금요일, 30명입니다.']]]
+ ].map(([name,kind,age,manual,history],i)=>{const activity=stamp-age*60,created=activity-(history.length-1)*60,id='preview-thread-'+i;const messages=history.map(([role,body],j)=>({id:'preview-message-'+i+'-'+j,role,body,created:created+j*60}));if(manual)sampleManualThreads.add(sampleModeKey(id));return {id,name,kind,source:'link',sample:true,preview:true,manual,status:'open',unread:1,created,activity,last:messages.at(-1).body,agent:'',paused_by:'',messages};});
+ const state={sampleThreads,bookings,questions,events,work,contacts:[{id:'preview-crm-1',name:'샘플 · 김고객',email:'',phone:'',notes:'가족 촬영 문의 · 담당자 확인 대기',threads:[]},{id:'preview-crm-2',name:'샘플 · 이고객',email:'',phone:'',notes:'프로필 촬영 예약 완료',threads:[]}],quoteItems:[{id:'preview-quote-1',name:'샘플 · 행사 촬영',price:350000,active:true}],quoteOffers:[{id:'preview-offer-1',amount:350000,items:[{name:'샘플 · 행사 촬영',quantity:1}],status:'draft'}],commerce:{enabled:true,products:[{id:'preview-product-1',sku:'DEMO-001',name:'샘플 · 프로필 촬영',variant:'기본',price:90000,stock:12,published:true,url:'',description:'촬영 상품 예시'}],orders:[{id:'preview-order-1',channel:'smartstore',reference:'DEMO-1001',product:'샘플 · 프로필 촬영',quantity:1,amount:90000,state:'preparing',carrier:'',tracking:''}],requests:[{id:'preview-request-1',kind:'exchange',channel:'smartstore',reference:'DEMO-1001',details:'샘플 · 상품 옵션 변경 요청',state:'pending',thread:''}]},email:{settings:{email:'',enabled:true},deliveries:[{status:'샘플 · 발송 완료',error:''},{status:'샘플 · 발송 대기',error:''}],live_enabled:false,auto_enabled:false},report:{settings:{frequency:'daily',enabled:true},worker_enabled:false,reports:[{period:'샘플 · 전일 상담 리포트',summary:{threads:12,resolved:8,unknown:2,messages:54}}]},push:{configured:false,live:false,devices:[],kinds:[],deliveries:[{created:stamp,status:'샘플 · 기기 알림 발송 완료'}]}};
+ previewStateByAccount.set(key,state);return state;
+}
+function previewCalendarRecords(){return previewData().bookings;}
+function previewBookingAction(id,status){const b=previewData().bookings.find(x=>x.id===id);if(!b)return;b.status=status;if(status==='confirmed')b.paid=true;toast('샘플 일정 상태 변경 · 실제 예약에는 반영되지 않습니다.');render();}
+function previewQuestionTrain(id){const item=previewData().questions.find(x=>x.id===id);if(!item)return;modal('샘플 질문 교육',helperText(item.q)+label('답변',ta('preview-answer',''))+btn('교육 체험',`finishPreviewQuestion('${id}')`,'primary'))}
+function finishPreviewQuestion(id){if(!val('preview-answer').trim())return toast('답변을 입력하세요.');const item=previewData().questions.find(x=>x.id===id);if(item)item.status='resolved';$('.modal')?.remove();toast('샘플 교육 완료 · 실제 지식에는 반영되지 않습니다.');render();}
+function previewEmailAction(send){const n=previewData().email;n.settings={email:val('notify-email'),enabled:checked('notify-enabled')};if(send)n.deliveries.unshift({status:'샘플 · 발송 완료',error:''});toast(send?'샘플 발송 완료 · 실제 이메일은 보내지 않습니다.':'샘플 설정 저장 완료');render();}
+function previewPushAction(action){const r=previewData().push;if(action==='register')r.devices=[{id:'preview-device',created:Math.floor(Date.now()/1000),preferences:{kinds:[],silent:false}}];if(action==='remove')r.devices=[];if(action==='test')r.deliveries.unshift({created:Math.floor(Date.now()/1000),status:'샘플 · 테스트 알림 완료'});toast('샘플 기기 알림 체험 · 실제 등록 및 발송 없음');render();}
+function savePreviewQuoteItem(id){previewUpsert(previewData().quoteItems,id,{name:val('qe-name'),price:Number(val('qe-price'))});$('.modal')?.remove();render();}function previewSendQuote(id){const x=previewData().quoteOffers.find(z=>z.id===id);if(x)x.status='sent';toast('샘플 견적 발송 완료 · 실제 발송 없음');render();}function previewWorkAction(id,status){const w=previewData().work.find(x=>x.id===id);if(w)w.status=status;toast('샘플 업무 상태 변경');render();}
+
 async function calendar(){
- if(!has('calendar'))return pageTop('일정표 보기','업체 맞춤 일정 양식 및 승인 관리')+locked('calendar','자체 일정표, 수동 관리, 맞춤 양식 설정을 이용할 수 있습니다.');
+ try{const jump=JSON.parse(sessionStorage.getItem('csai-calendar-jump'));if(jump){sessionStorage.removeItem('csai-calendar-jump');calendarAgent=jump.agent||'';calendarMonth=new Date(jump.start);selectedDate=new Date(jump.start).toLocaleDateString('sv-SE',{timeZone:me.settings.timezone||'Asia/Seoul'});calFilter='all';}}catch{}
+ const readOnly=!has('calendar');
+ if(readOnly&&!freeFeaturePreview())return pageTop('일정표 보기','업체 맞춤 일정 양식 및 승인 관리')+locked('calendar','자체 일정표, 수동 관리, 맞춤 양식 설정을 이용할 수 있습니다.');
  const id=renderId;
  const brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(brand=>brand.available):[];
  if(id!==renderId)return '';
  if(calendarAgent&&!brands.some(brand=>brand.id===calendarAgent))calendarAgent='';
- const scope=calendarAgent,brandPath='/api/brand-calendar/'+enc(scope);
+ const scope=readOnly?'':calendarAgent,brandPath='/api/brand-calendar/'+enc(scope);
  const [data,requests]=await Promise.all([
-  api(scope?brandPath:'/api/bookings'),
-  has('change_booking')?api(scope?brandPath+'/changes':'/api/booking-changes'):null,
+  readOnly?[]:api(scope?brandPath:'/api/bookings'),
+  !readOnly&&has('change_booking')?api(scope?brandPath+'/changes':'/api/booking-changes'):null,
  ]);
  if(id!==renderId)return '';
- const bookings=scope?data.bookings:data;
+ const bookings=readOnly?previewCalendarRecords():scope?data.bookings:sharedPreviewEnabled()&&me.sample_tools?data.concat(previewCalendarRecords()):data;
  calendarRecords=bookings;
  calendarProfile=scope?data.settings:null;
  const queue=calendarQueue(bookings);
+ const hasPreviewBookings=bookings.some(b=>b.preview);
  const tools=actionGroup(
   btn('맞춤 일정 양식',scope?"brandCalendarFields()":"go('fields')"),
   btn('직접 일정 등록','manualBooking()','primary'),
   btn('예약 설정',scope?"brandCalendarSettings()":"go('booking-settings')"),
   btn('담당자 관리','resourceModal()'),
  );
- const sample=bookings.find(b=>b.sample&&b.status==='confirmed');
+ const sample=readOnly?null:bookings.find(b=>b.sample&&!b.preview&&b.sample_thread&&b.status==='confirmed');
  const sampleCard=sample?card('샘플 · 상담에서 확정된 예약',helperText('자동 확정 설정을 켠 뒤 고객이 예약 양식을 확인하면 일정표에 등록되는 예시입니다. 실제 예약이나 상담 사용량에는 포함되지 않습니다.')+
   actionFooter([btn('샘플 확정 일정 보기',`jumpSampleBooking('${sample.start}')`,'primary'),btn('연결된 상담 보기',`openSampleThread('${sample.sample_thread}')`)])):
-  !scope&&me.sample_tools?card('예약 흐름 샘플 보기',helperText('상담부터 확정 일정, 담당자 알림까지 연결된 가상 기록을 넣어 확인하세요.')+
+  !readOnly&&!scope&&me.sample_tools?card('예약 흐름 샘플 보기',helperText('상담부터 확정 일정, 담당자 알림까지 연결된 가상 기록을 넣어 확인하세요.')+
    actionFooter([btn('연결 샘플 넣기','addDemoSamples()','primary')])):'';
- return `<div class="card app-card calendar-workspace" data-calendar-scope="${e(scope)}">
+ return (readOnly?previewNotice('calendar','일정표 및 가상 예약을 직접 둘러볼 수 있습니다'):'')+`<div class="card app-card calendar-workspace" data-calendar-scope="${e(scope)}">
   <header class="calendar-workspace-head">
-   ${pageTop('일정표 보기','일정을 조회하고 고객 예약을 관리하세요.')}
+   ${pageTop('일정표 보기','AI 상담에서 접수·확정된 예약이 자동으로 등록됩니다.')}
    ${brandSelect('calendar-brand',brands,scope,'switchCalendarBrand(this.value)')}
    ${scope?helperText('추가 브랜드 전용 일정표입니다. 예약 설정에서 고객 예약을 활성화할 수 있습니다. 구글 캘린더 연결은 준비 중입니다.'):''}
    <div class="calendar-tools" role="group" aria-label="일정 등록 및 설정">${tools}</div>
@@ -1429,14 +1664,8 @@ async function calendar(){
   <section class="calendar-section" aria-labelledby="calendar-lookup-heading">
    <h2 id="calendar-lookup-heading">일정 조회</h2>
    ${calendarStatusFilters()}
-   <div id="calendar-range-controls" ${calendarRangeMode?'':'hidden'}>${calendarRangeFields(calendarDay())}</div>
    <div class="calendar-lookup-grid">
-    ${calendarGrid('db-calendar',`<div class="calendar-grid-tools">
-     <button id="calendar-period-toggle" type="button" class="ui-button ${calendarRangeMode?'secondary':'primary'} ui-sm" aria-expanded="${calendarRangeMode}" aria-controls="calendar-range-controls" onclick="calendarRangeToggle()">
-      ${uiIcon('calendar-days')}${calendarRangeMode?'하루 보기':'기간 선택'}
-     </button>
-     ${helperText(calendarRangeMode?'시작일을 고른 뒤 마우스를 움직여 범위를 미리 보세요.':'시작일부터 종료일까지 조회')}
-    </div>`)}
+    ${calendarGrid('db-calendar',helperText('날짜를 누르면 조회됩니다. 기간은 두 날짜를 선택하거나 드래그하세요.')+(hasPreviewBookings?actionGroup(btn('샘플 7일 일정 조회','showPreviewCalendarWeek()')):''))}
     <section id="calendar-results" class="calendar-grid-panel calendar-results" aria-labelledby="calendar-results-heading">${calendarList(bookings)}</section>
    </div>
   </section>
@@ -1449,29 +1678,56 @@ async function calendar(){
   </section>
  </div>${sampleCard}`;
 }
+async function showPreviewCalendarWeek(){const today=localDate(new Date()),end=new Date(today+'T00:00:00Z');end.setUTCDate(end.getUTCDate()+6);calendarMonth=new Date(Number(today.slice(0,4)),Number(today.slice(5,7))-1,1);selectedDate=today;calendarRange={start:today,end:end.toISOString().slice(0,10)};calendarRangeMode=true;calendarRangeAnchor='';calFilter='all';await render();$('#calendar-results')?.scrollIntoView({block:'nearest'});}
 async function jumpSampleBooking(start){calendarRange=null;calendarRangeMode=false;calendarRangeAnchor='';calendarMonth=new Date(start);selectedDate=localDate(start);calFilter='confirmed';await render();$('#calendar-results')?.scrollIntoView({block:'nearest'});}
 function openSampleThread(id){threadId=id;inboxKind='customer';inboxQuery='';go('inbox')}
-function bookingCard(b){return `<div class="line">${b.sample?'<span class="sample-tag">샘플 · 읽기 전용</span>':''}<div class="row between"><strong class="blue">${e(localDate(b.start))} ${e(localTime(b.start))}–${e(localTime(b.end))}</strong><span class="status">${e(states[b.status])}</span></div>${b.fields.map(f=>b.payload[f.key]?`<div class="row between"><small>${e(f.label)}</small><span>${e(b.payload[f.key])}</span></div>`:'').join('')}<p class="muted">담당자: ${e(resources().find(r=>r.id===b.resource)?.name||b.resource)}</p><p class="muted">결제 확인: ${b.paid?'완료':'미확인 / 불필요 여부는 업체 정책 확인'}</p>${b.sample?'<p class="muted">고객 확인 후 일정표에 등록된 화면 예시입니다. 실제 일정과 분리되어 있습니다.</p>':`<div class="row">${['pending','pending_payment'].includes(b.status)?btn('확인 및 확정',`approveBooking('${b.id}',${b.status==='pending_payment'})`,'primary'):''}${['confirmed','pending','pending_payment'].includes(b.status)?btn('취소',`bookingAction('${b.id}','cancel')`):''}${b.status==='confirmed'?btn('완료',`bookingAction('${b.id}','complete')`):''}${b.status==='confirmed'&&has('change_booking')?btn('일정 변경',`changeBooking('${b.id}')`):''}${!b.agent&&has('google_calendar')&&['confirmed','cancelled','completed'].includes(b.status)?btn('구글 일정 동기화',`syncCalendar('${b.id}')`):''}</div>`}</div>`}
-async function bookingAction(id,action){if(action==='cancel'&&!confirm('일정을 취소하시겠습니까?'))return;await act(async()=>{await api(calendarBookingPath(id),{action});render()})}
-function approveBooking(id,pay){modal('예약 확정',`<p>고객이 확인한 양식과 예약 조건을 검토하세요.</p>${pay?'<label><input class="check" id="paid-ok" type="checkbox"> 외부 결제 내역을 직접 확인했습니다.</label>':''}${btn('확정',`act(async()=>{await api(calendarBookingPath('${id}'),{action:'approve',paid:${pay?"checked('paid-ok')":"false"}});$('.modal').remove();render()})`,'primary')}`)}
-function changeBooking(id){modal('일정 변경',label('변경 일시',input('new-start','','datetime-local'))+btn('변경 저장',`act(async()=>{await api(calendarBookingPath('${id}'),{action:'change',start:val('new-start')});$('.modal').remove();render()})`,'primary'))}
-function fieldsPage(){if(!has('calendar'))return locked('calendar','일정 양식은 일정표에 포함됩니다.');if(fields===null)fields=structuredClone(me.settings.fields);return pageTop('맞춤 일정 등록 양식','시작 및 종료 일시는 시스템 필수 항목입니다. 나머지는 업체가 정합니다.')+card('수집 항목',`<p class="muted">라벨 · 형식 · 필수 · 삭제 / 순서: 위·아래 버튼</p>${fields.map((f,i)=>`<div class="fieldrow"><input value="${e(f.label)}" onchange="fields[${i}].label=this.value">${select('type-'+i,['text','phone','number','date','time','select','boolean'].map((x,j)=>[x,['텍스트','전화','숫자','날짜','시간','선택','예/아니오'][j]]),f.type).replace('<select','<select onchange="fields['+i+'].type=this.value;render()"')}<label><input type="checkbox" class="check" ${f.required?'checked':''} onchange="fields[${i}].required=this.checked">필수</label>${btn('×',`fields.splice(${i},1);render()`)}</div><div class="row" style="margin-bottom:8px">${i>0?btn('↑',`swapField(${i},-1)`):''}${i<fields.length-1?btn('↓',`swapField(${i},1)`):''}${f.type==='select'?`<input placeholder="선택지: 쉼표 구분" value="${e((f.options||[]).join(','))}" onchange="fields[${i}].options=this.value.split(',').map(x=>x.trim()).filter(Boolean)">`:''}</div>`).join('')}${stack('<div class="row">'+input('field-name','','text','새 항목 이름')+btn('항목 추가','addField()')+'</div>'+
+function openBookingConversation(id){if(!id)return;threadId=id;inboxAgent='all';inboxUnread=false;inboxSource='all';go('consultation-center');}
+async function jumpLinkedBooking(start,agent){if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 일정표로 이동할까요?'))return;await leaveTemporary();threadId=null;calendarAgent=agent||'';calendarRange=null;calendarRangeMode=false;calendarRangeAnchor='';calendarMonth=new Date(start);selectedDate=new Date(start).toLocaleDateString('sv-SE',{timeZone:me.settings.timezone||'Asia/Seoul'});calFilter='all';if(inboxDesk()){sessionStorage.setItem('csai-calendar-jump',JSON.stringify({start,agent}));location.href='/#calendar';return;}go('calendar');}
+function bookingCard(b){return `<div class="line${sampleRecord(b)?' sample-record':''}"><div class="row between"><strong class="blue">${e(localDate(b.start))} ${e(localTime(b.start))}–${e(localTime(b.end))}</strong><span class="status">${e(states[b.status])}</span></div>${b.fields.map(f=>b.payload[f.key]?`<div class="row between"><small>${e(f.label)}</small><span>${e(sampleTitle(b.payload[f.key],sampleRecord(b)&&f.key==='name'))}</span></div>`:'').join('')}<p class="muted">담당자: ${e(resources().find(r=>r.id===b.resource)?.name||b.resource)}</p><p class="muted">결제 확인: ${b.paid?'완료':'미확인 / 불필요 여부는 업체 정책 확인'}</p>${b.consultation_thread&&!b.sample?btn('관련 상담 열기',`openBookingConversation('${e(b.consultation_thread)}')`):''}${b.preview?'<div class="row">'+(['pending','pending_payment'].includes(b.status)?btn('확정 체험',`previewBookingAction('${b.id}','confirmed')`,'primary'):'')+(['confirmed','pending','pending_payment'].includes(b.status)?btn('취소 체험',`previewBookingAction('${b.id}','cancelled')`):'')+(b.status==='confirmed'?btn('완료 체험',`previewBookingAction('${b.id}','completed')`):'')+'</div>':b.sample?'<p class="muted">고객 확인 후 일정표에 등록된 화면 예시입니다. 실제 일정과 분리되어 있습니다.</p>':`<div class="row">${['pending','pending_payment'].includes(b.status)?btn('확인 및 확정',`approveBooking('${b.id}',${b.status==='pending_payment'})`,'primary'):''}${['confirmed','pending','pending_payment'].includes(b.status)?btn('취소',`bookingAction('${b.id}','cancel')`):''}${b.status==='confirmed'?btn('완료',`bookingAction('${b.id}','complete')`):''}${b.status==='confirmed'&&has('change_booking')?btn('일정 변경',`changeBooking('${b.id}')`):''}${!b.agent&&has('google_calendar')&&['confirmed','cancelled','completed'].includes(b.status)?btn('구글 일정 동기화',`syncCalendar('${b.id}')`):''}</div>`}</div>`}
+async function bookingAction(id,action){if(!requirePreviewAccess('calendar'))return;if(action==='cancel'&&!confirm('일정을 취소하시겠습니까?'))return;await act(async()=>{await api(calendarBookingPath(id),{action});render()})}
+function approveBooking(id,pay){if(!requirePreviewAccess('calendar'))return;modal('예약 확정',`<p>고객이 확인한 양식과 예약 조건을 검토하세요.</p>${pay?'<label><input class="check" id="paid-ok" type="checkbox"> 외부 결제 내역을 직접 확인했습니다.</label>':''}${btn('확정',`act(async()=>{await api(calendarBookingPath('${id}'),{action:'approve',paid:${pay?"checked('paid-ok')":"false"}});$('.modal').remove();render()})`,'primary')}`)}
+function changeBooking(id){if(!requirePreviewAccess('calendar'))return;modal('일정 변경',label('변경 일시',input('new-start','','datetime-local'))+btn('변경 저장',`act(async()=>{await api(calendarBookingPath('${id}'),{action:'change',start:val('new-start')});$('.modal').remove();render()})`,'primary'))}
+function fieldsPage(){const readOnly=!has('calendar');if(readOnly&&!freeFeaturePreview())return locked('calendar','일정 양식은 일정표에 포함됩니다.');if(fieldsPreviewMode!==readOnly){fields=null;fieldsPreviewMode=readOnly;}if(fields===null)fields=structuredClone(me.settings.fields);return (readOnly?previewNotice('calendar','맞춤 일정 양식 설정 체험'):'')+pageTop('맞춤 일정 등록 양식','시작 및 종료 일시는 시스템 필수 항목입니다. 나머지는 업체가 정합니다.')+card('수집 항목',`<p class="muted">라벨 · 형식 · 필수 · 삭제 / 순서: 위·아래 버튼</p>${fields.map((f,i)=>`<div class="fieldrow"><input value="${e(f.label)}" onchange="fields[${i}].label=this.value">${select('type-'+i,['text','phone','number','date','time','select','boolean'].map((x,j)=>[x,['텍스트','전화','숫자','날짜','시간','선택','예/아니오'][j]]),f.type).replace('<select','<select onchange="fields['+i+'].type=this.value;render()"')}<label><input type="checkbox" class="check" ${f.required?'checked':''} onchange="fields[${i}].required=this.checked">필수</label>${btn('×',`fields.splice(${i},1);render()`)}</div><div class="row" style="margin-bottom:8px">${i>0?btn('↑',`swapField(${i},-1)`):''}${i<fields.length-1?btn('↓',`swapField(${i},1)`):''}${f.type==='select'?`<input placeholder="선택지: 쉼표 구분" value="${e((f.options||[]).join(','))}" onchange="fields[${i}].options=this.value.split(',').map(x=>x.trim()).filter(Boolean)">`:''}</div>`).join('')}${stack('<div class="row">'+input('field-name','','text','새 항목 이름')+btn('항목 추가','addField()')+'</div>'+
   divider()+actionGroup({keepSize:true},btn('양식 저장','saveFields()','primary'),btn('돌아가기',"go('calendar')"))) }`)}
 function addField(){let name=val('field-name').trim();if(!name)return;fields.push({key:'f_'+crypto.randomUUID().slice(0,8),label:name,type:'text',required:false});render()}
 function swapField(i,d){[fields[i],fields[i+d]]=[fields[i+d],fields[i]];render()}
-async function saveFields(){await act(async()=>{await api('/api/settings',{fields},'PATCH');await refresh();fields=structuredClone(me.settings.fields);toast('새 양식 버전을 저장했습니다.')})}
-function bookingSettings(){if(!has('calendar'))return locked('calendar','일정표 권한이 필요합니다.');let s=me.settings;return pageTop('예약 설정','영업시간과 소요시간을 기준으로 예약 가능 여부를 검증합니다.')+card('예약 가능 시간',`${label('시간대',input('tz',s.timezone))}${label('영업 시작',input('open',s.open,'time'))}${label('영업 종료',input('close',s.close,'time'))}${label('기본 소요시간(분)',input('duration',s.duration,'number'))}${label('예약 사이 여유 시간(분)',input('buffer',s.buffer,'number'))}<p>휴무 요일</p><div class="row">${['월','화','수','목','금','토','일'].map((x,i)=>`<label><input type="checkbox" class="check closed" value="${i}" ${s.closed_days.includes(i)?'checked':''}>${x}</label>`).join('')}</div><p><label><input id="payment-required" type="checkbox" class="check" ${s.payment_required?'checked':''}> 외부 결제 확인 후 확정</label></p>${label('예약 모드',select('booking-mode',[['manual','수동 승인'],['auto','자동 확정'],['off','OFF']],s.modes.booking))}${btn('저장','saveBookingSettings()','primary')}<p class="muted">자동 확정은 자동 예약 옵션이 있어야 적용됩니다. 현재 단일 담당자/리소스 기준입니다.</p>`)}
-async function saveBookingSettings(){await act(async()=>{await api('/api/settings',{timezone:val('tz'),open:val('open'),close:val('close'),duration:+val('duration'),buffer:+val('buffer'),closed_days:[...document.querySelectorAll('.closed:checked')].map(x=>+x.value),payment_required:checked('payment-required'),modes:{booking:val('booking-mode')}},'PATCH');await refresh();toast('예약 설정 저장')})}
+async function saveFields(){if(!requirePreviewAccess('calendar'))return;await act(async()=>{await api('/api/settings',{fields},'PATCH');await refresh();fields=structuredClone(me.settings.fields);toast('새 양식 버전을 저장했습니다.')})}
+let bookingBlockSerial=0;
+function bookingBlockRow(rule={}){
+ const id='booking-block-'+(++bookingBlockSerial),kind=rule.kind||'date',allDay=rule.start==='00:00'&&rule.end==='24:00'||!rule.start;
+ return `<div class="booking-block-row" data-booking-block>
+  <div class="row between"><strong>차단 일정</strong><button type="button" class="ui-button secondary ui-sm" onclick="this.closest('[data-booking-block]').remove()">삭제</button></div>
+  ${label('일정 이름',input(id+'-name',rule.name||'','text','예: 점심시간, 휴가').replace('<input','<input data-block-name maxlength="100"'))}
+  ${label('반복 유형',select(id+'-kind',[['date','특정 날짜 또는 기간'],['weekly','매주 반복']],kind).replace('<select','<select data-block-kind onchange="toggleBookingBlock(this.closest(\'[data-booking-block]\'))"'))}
+  <div class="booking-settings-grid" data-block-date ${kind==='weekly'?'hidden':''}>
+   ${label('시작일',input(id+'-from',rule.from||'','date').replace('<input','<input data-block-from'))}
+   ${label('종료일',input(id+'-to',rule.to||'','date').replace('<input','<input data-block-to'))}
+  </div>
+  <div data-block-week ${kind==='weekly'?'':'hidden'}><p class="ui-helper">반복 요일</p><div class="booking-weekdays">${['월','화','수','목','금','토','일'].map((day,i)=>`<label><input type="checkbox" data-block-day value="${i}" ${(rule.days||[0,1,2,3,4,5,6]).includes(i)?'checked':''}><span>${day}</span></label>`).join('')}</div></div>
+  <label class="ui-check"><input class="ui-choice" type="checkbox" data-block-all ${allDay?'checked':''} onchange="toggleBookingBlock(this.closest('[data-booking-block]'))"><span>종일 예약 차단</span></label>
+  <div class="booking-settings-grid" data-block-hours ${allDay?'hidden':''}>
+   ${label('시작 시간',input(id+'-start',allDay?'12:00':rule.start||'12:00','time').replace('<input','<input data-block-start'))}
+   ${label('종료 시간',input(id+'-end',allDay?'13:00':rule.end==='24:00'?'23:59':rule.end||'13:00','time').replace('<input','<input data-block-end'))}
+  </div>
+ </div>`;
+}
+function toggleBookingBlock(row){row.querySelector('[data-block-date]').hidden=row.querySelector('[data-block-kind]').value==='weekly';row.querySelector('[data-block-week]').hidden=!row.querySelector('[data-block-date]').hidden;row.querySelector('[data-block-hours]').hidden=row.querySelector('[data-block-all]').checked;}
+function bookingBlockFields(prefix,s){return `<div class="booking-block-list" id="${prefix}-blocked">${(s.blocked_times||[]).map(bookingBlockRow).join('')}</div><button type="button" class="ui-button secondary" onclick="addBookingBlock('${prefix}')">+ 예약 불가 일정 추가</button>`;}
+function addBookingBlock(prefix){const list=document.getElementById(prefix+'-blocked');if(list.children.length>=100){toast('최대 100개까지 등록할 수 있습니다.');return;}list.insertAdjacentHTML('beforeend',bookingBlockRow());list.lastElementChild.querySelector('[data-block-name]').focus();}
+function readBookingBlocks(prefix){return [...document.getElementById(prefix+'-blocked').querySelectorAll('[data-booking-block]')].map(row=>{const get=k=>row.querySelector('[data-block-'+k+']'),kind=get('kind').value,all=get('all').checked;const rule={name:get('name').value.trim(),kind,start:all?'00:00':get('start').value,end:all?'24:00':get('end').value};if(kind==='date'){rule.from=get('from').value;rule.to=get('to').value||rule.from;if(!rule.from||rule.from>rule.to)throw Error('예약 불가 날짜를 확인하세요.');}else{rule.days=[...row.querySelectorAll('[data-block-day]:checked')].map(x=>+x.value);if(!rule.days.length)throw Error('반복 요일을 선택하세요.');}if(!rule.start||!rule.end||rule.start>=rule.end)throw Error('예약 불가 시간을 확인하세요.');return rule;});}
+function bookingScheduleFields(prefix,s){const p=prefix?prefix+'-':'',closed=prefix?'bc-closed':'closed';return `<div class="booking-settings-form">${label('시간대',input(p+'tz',s.timezone))}<div class="booking-settings-grid">${label('영업 시작',input(p+'open',s.open,'time'))}${label('영업 종료',input(p+'close',s.close,'time'))}${label('기본 소요시간(분)',input(p+'duration',s.duration,'number'))}${label('예약 사이 여유(분)',input(p+'buffer',s.buffer,'number'))}</div><p class="label">정기 휴무 요일</p><div class="booking-weekdays">${['월','화','수','목','금','토','일'].map((x,i)=>`<label><input type="checkbox" class="${closed}" value="${i}" ${s.closed_days.includes(i)?'checked':''}><span>${x}</span></label>`).join('')}</div></div>`;}
+function bookingSettings(){const readOnly=!has('calendar');if(readOnly&&!freeFeaturePreview())return locked('calendar','일정표 권한이 필요합니다.');const s=me.settings;return (readOnly?previewNotice('calendar','예약 설정 체험'):'')+pageTop('예약 설정','AI가 고객 예약을 접수할 수 있는 조건을 설정합니다.')+card('예약 가능 시간',bookingScheduleFields('',s))+card('예약 불가 일정',helperText('점심시간, 출장, 휴가 등 지정한 시간에는 신규 예약과 일정 변경이 차단됩니다. 기존 확정 예약은 유지됩니다.')+bookingBlockFields('main',s))+card('예약 처리 방식',`<div class="booking-settings-form">${checkbox('payment-required','외부 결제 확인 후 확정',{checked:s.payment_required})}${label('예약 모드',select('booking-mode',[['manual','수동 승인'],['auto','자동 확정'],['off','OFF']],s.modes.booking))}${helperText('자동 확정은 자동 예약 옵션이 있어야 적용됩니다.')}${actionFooter([btn('돌아가기',"go('calendar')"),btn('저장','saveBookingSettings()','primary')])}</div>`);}
+async function saveBookingSettings(){if(!requirePreviewAccess('calendar'))return;await act(async()=>{await api('/api/settings',{timezone:val('tz'),open:val('open'),close:val('close'),duration:+val('duration'),buffer:+val('buffer'),closed_days:[...document.querySelectorAll('.closed:checked')].map(x=>+x.value),blocked_times:readBookingBlocks('main'),payment_required:checked('payment-required'),modes:{booking:val('booking-mode')}},'PATCH');await refresh();toast('예약 설정 저장');go('calendar')})}
 function formFields(fs,prefix){return fs.map(f=>label(f.label+(f.required?' *':''),f.type==='select'?select(prefix+f.key,(f.options||[]).map(x=>[x,x]),''):f.type==='boolean'?select(prefix+f.key,[['','선택'],['예','예'],['아니오','아니오']],''):input(prefix+f.key,'',f.type==='phone'?'tel':f.type==='number'?'number':f.type==='date'?'date':f.type==='time'?'time':'text'))).join('')}
 function payload(fs,prefix){return Object.fromEntries(fs.map(f=>[f.key,val(prefix+f.key)]))}
 function manualBooking(){let s=calendarProfile||me.settings;modal('수동 일정 등록',label('업체 현지 시작 일시',input('manual-start','','datetime-local'))+label('담당자',select('manual-resource',resources().map(r=>[r.id,r.name]),'default'))+formFields(s.fields,'manual-')+(s.payment_required?'<label><input type="checkbox" class="check" id="manual-paid"> 결제 확인 완료</label>':'')+btn('일정 등록','submitManual()','primary'))}
-async function submitManual(){await act(async()=>{await api(calendarBookingPath(),{start:val('manual-start'),resource:val('manual-resource'),payload:payload((calendarProfile||me.settings).fields,'manual-'),version:(calendarProfile||me.settings).template_version,paid:$('#manual-paid')?.checked||false});$('.modal').remove();render()})}
+async function submitManual(){if(!has('calendar')&&freeFeaturePreview()){const start=val('manual-start');if(!start)return toast('일시를 선택하세요.');const fields=(calendarProfile||me.settings).fields;const p=payload(fields,'manual-');const d=new Date(start);previewData().bookings.push({id:'preview-booking-'+crypto.randomUUID(),sample:true,preview:true,status:'confirmed',start:d.toISOString(),end:new Date(d.getTime()+3600000).toISOString(),resource:val('manual-resource'),fields,payload:p,paid:$('#manual-paid')?.checked||false});$('.modal')?.remove();toast('샘플 일정 등록 완료');render();return;}if(!requirePreviewAccess('calendar'))return;await act(async()=>{await api(calendarBookingPath(),{start:val('manual-start'),resource:val('manual-resource'),payload:payload((calendarProfile||me.settings).fields,'manual-'),version:(calendarProfile||me.settings).template_version,paid:$('#manual-paid')?.checked||false});$('.modal').remove();render()})}
 let activeForm=null,activeDraft=null;
 async function bookingForm(token,prefill={}){await act(async()=>{activeForm=await api('/api/booking/form/'+enc(token));$('#booking-box')?.remove();$('#messages').insertAdjacentHTML('beforeend',`<section id="booking-box" class="card booking-form"><h3>예약 정보 확인</h3><p class="muted">시간대: ${e(activeForm.timezone)} · ${activeForm.duration}분</p>${label('담당자',select('booking-resource',activeForm.resources.map(r=>[r.id,r.name]),'default').replace('<select','<select onchange="clearSlots()"'))}${label('예약 날짜',input('booking-date','','date').replace('<input','<input onchange="clearSlots()"'))}${btn('가능 시간 조회','loadSlots()')}<div id="slots"></div>${formFields(activeForm.fields,'booking-')}${btn('예약 내용 확인','submitDraft()','primary')}<p class="muted">이 양식은 예약 접수에만 사용됩니다.</p></section>`);if(prefill.date)$('#booking-date').value=prefill.date;for(let [k,v] of Object.entries(prefill.payload||{})){let field=document.getElementById('booking-'+k);if(field)field.value=v}if(prefill.date){await loadSlots();if(prefill.time&&$('#booking-time')&&[...$('#booking-time').options].some(o=>o.value===prefill.time))$('#booking-time').value=prefill.time}$('#messages').scrollTop=$('#messages').scrollHeight})}
 async function loadSlots(){await act(async()=>{let r=await api('/api/booking/availability',{token:chatSession,date:val('booking-date'),resource:val('booking-resource')});$('#slots').innerHTML=r.length?label('예약 시간',select('booking-time',r.map(x=>[x,x]),r[0])):'<p class="muted">예약 가능한 시간이 없습니다.</p>'})}
 async function submitDraft(){await act(async()=>{if(!$('#booking-time'))throw Error('예약 시간을 먼저 조회하세요.');activeDraft=await api('/api/booking/draft',{token:chatSession,start:val('booking-date')+'T'+val('booking-time'),version:activeForm.template_version,resource:val('booking-resource'),payload:payload(activeForm.fields,'booking-')});$('#booking-box').innerHTML=`<h3>예약 내용 최종 확인</h3><p>${e(val('booking-date'))} ${e(val('booking-time'))} · ${activeForm.duration}분 · ${e(activeForm.resources.find(r=>r.id===activeDraft.resource)?.name||activeDraft.resource)}</p>${activeDraft.fields.map(f=>`<div class="row between"><small>${e(f.label)}</small><span>${e(activeDraft.payload[f.key]||'')}</span></div>`).join('')}<p class="muted">${activeForm.payment_required?'결제 확인 후 최종 확정됩니다.':'업체 설정에 따라 자동 확정 또는 승인 대기됩니다.'}</p>${actionGroup({keepSize:true},btn('확정 요청','confirmDraft()','primary'),btn('다시 작성','bookingForm(chatSession)'))}`})}
 async function confirmDraft(){await act(async()=>{let r=await api('/api/booking/'+activeDraft.id+'/confirm',{token:chatSession,confirmation:activeDraft.token});$('#booking-box').innerHTML=`<h3>${e(states[r.status])}</h3><p>예약번호: ${e(r.id)}</p><p class="muted">${r.status==='confirmed'?'예약이 확정되었습니다.':'업체 확인 후 확정됩니다.'}</p>`})}
-async function customers(){let keys=['crm','quote','tasks','leads','complaints'];let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];if(crmAgent&&!brands.some(x=>x.id===crmAgent))crmAgent='';let archived=brands.some(x=>x.id===crmAgent&&x.archived),a=keys.filter(has);let list=a.length?await api(workPath()):[];let stats=has('stats')?await api('/api/stats'):null;return pageTop('고객·업무 관리','업무 요청을 정리하고 진행 상태를 관리합니다.')+brandSelect('work-brand',brands,crmAgent,'crmAgent=this.value;render()')+(a.length?card('업무 등록',`${archived?'<p>보관된 브랜드 · 업무 조회만 가능</p>':`${label('분류',select('work-kind',a.map(k=>[k,cfg.catalog.addons.find(x=>x.id===k).name]),a[0]))}${label('제목',input('work-title'))}${label('내용',ta('work-detail'))}${btn('등록',"act(async()=>{await api('/api/work',{agent:crmAgent,kind:val('work-kind'),title:val('work-title'),details:val('work-detail')});render()})",'primary')}`}${list.map(x=>`<div class="line">${x.sample?'<span class="sample-tag">샘플 · 읽기 전용</span>':''}<b>${e(x.title)}</b><p>${e(x.details)}</p><small>${e(states[x.status])}</small>${x.sample?btn('연결된 상담 보기',`openSampleThread('${x.sample_thread}')`):archived?'':actionGroup({keepSize:true},btn('수정',`workEdit('${x.id}')`),btn('삭제',`workDelete('${x.id}',this)`))+(x.status==='open'?btn('완료',`act(async()=>{await api(workPath('${x.id}'),{});render()})`):'')}</div>`).join('')}`):locked('crm','고객 및 업무 기록을 관리합니다.'))+(has('crm')?await crmPanel():'')+(has('leads')?await leadPanel(archived):'')+(has('quote')?await quotePanel(list,archived):'')+(stats?card('계정 전체 상담 통계',`<p>상담 ${stats.threads}건 · 메시지 ${stats.messages}개 · 미학습 ${stats.unknown}건</p>`):locked('stats','상담 건수와 미학습 질문을 확인합니다.'))+(has('export')?card('계정 상담 기록 다운로드','<p class="muted">상담은 계정 전체, 고객 및 업무는 기본 브랜드 기준입니다.</p><a href="/api/export">엑셀로 저장</a>'):locked('export','상담 내역을 엑셀 파일로 저장합니다.'))}
+async function customers(){let keys=['crm','quote','tasks','leads','complaints'];let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];if(crmAgent&&!brands.some(x=>x.id===crmAgent))crmAgent='';let archived=brands.some(x=>x.id===crmAgent&&x.archived),a=keys.filter(has),preview=freeFeaturePreview()&&!a.length;let list=a.length?await api(workPath()):[];let stats=has('stats')?await api('/api/stats'):null;if(preview){a=keys;list=previewData().work;}else if(me.sample_tools&&sharedPreviewEnabled()&&!crmAgent){list=list.concat(previewData().work.filter(x=>a.includes(x.kind)));}return pageTop('고객·업무 관리','업무 요청을 정리하고 진행 상태를 관리합니다.')+brandSelect('work-brand',brands,crmAgent,'crmAgent=this.value;render()')+(preview?previewNotice('crm','고객·업무 관리 화면 체험'):'')+(a.length?card('업무 등록',`${archived?'<p>보관된 브랜드 · 업무 조회만 가능</p>':`${label('분류',select('work-kind',a.map(k=>[k,cfg.catalog.addons.find(x=>x.id===k).name]),a[0]))}${label('제목',input('work-title'))}${label('내용',ta('work-detail'))}${btn('등록',"act(async()=>{if(!requirePreviewAccess(val('work-kind')))return;await api('/api/work',{agent:crmAgent,kind:val('work-kind'),title:val('work-title'),details:val('work-detail')});render()})",'primary')}`}${list.map(x=>`<div class="line${sampleRecord(x)?' sample-record':''}"><b>${e(sampleTitle(x.title,sampleRecord(x)))}</b><p>${e(x.details)}</p><small>${e(states[x.status])}</small>${x.preview?btn(x.status==='resolved'?'다시 열기':'완료 체험',`previewWorkAction('${x.id}','${x.status==='resolved'?'open':'resolved'}')`):x.sample?btn('연결된 상담 보기',`openSampleThread('${x.sample_thread}')`):archived?'':actionGroup({keepSize:true},btn('수정',`workEdit('${x.id}')`),btn('삭제',`workDelete('${x.id}',this)`))+(x.status==='open'?btn('완료',`act(async()=>{await api(workPath('${x.id}'),{});render()})`):'')}</div>`).join('')}`):locked('crm','고객 및 업무 기록을 관리합니다.'))+(has('crm')||preview?await crmPanel():'')+(has('leads')||preview?await leadPanel(archived):'')+(has('quote')||preview?await quotePanel(list,archived):'')+(stats?card('계정 전체 상담 통계',`<p>상담 ${stats.threads}건 · 메시지 ${stats.messages}개 · 미학습 ${stats.unknown}건</p>`):(freeFeaturePreview()?previewNotice('stats','상담 통계 화면 체험')+card('계정 전체 상담 통계','<p>상담 —건 · 메시지 —개 · 미학습 —건</p>'):locked('stats','상담 건수와 미학습 질문을 확인합니다.')))+(has('export')?card('계정 상담 기록 다운로드','<p class="muted">상담은 계정 전체, 고객 및 업무는 기본 브랜드 기준입니다.</p><a href="/api/export">엑셀로 저장</a>'):(freeFeaturePreview()?card('계정 상담 기록 다운로드',helperText('상담은 계정 전체, 고객 및 업무는 기본 브랜드 기준입니다.')+btn('엑셀로 저장',"CSAISetup.preview('export')")):locked('export','상담 내역을 엑셀 파일로 저장합니다.')))}
 async function channels(){
   const modes=await api('/api/consultation-mode');
   const addon=k=>cfg.catalog.addons.find(a=>a.id===k),price=k=>money(addon(k)?.price||0);
@@ -1538,22 +1794,33 @@ async function submitAssistance(form){
   else showCheckout(order);
  })}finally{submit.disabled=false}
 }
-const setupEstimate='예상 비용 · 기본 세팅 50만 원부터, AI 상담·업무 자동화 구축 100만 원부터';
+const setupEstimate='예상 비용 · 기본 구축 대행 50만 원부터, 맞춤 컨설팅 및 구축 대행 100만 원부터';
 const setupCallback='전화번호를 남겨주시면 담당자가 연락드립니다. 상담 후 필요한 작업과 견적을 확인하고 진행 여부를 결정하세요.';
+const setupConsultationTypes={
+ basic:{title:'기본 구축 대행',price:'50만 원부터',intro:'사장님이 정해 놓은 운영 방식을 실제 사용할 수 있도록 구축합니다.',items:['사업 및 필요 기능 파악, 구독 패키지 구성 및 결제 안내','AI 상담사 교육, 기능 설정 및 지원되는 채널 연동','작동 테스트 및 사용법 안내']},
+ custom:{title:'맞춤 컨설팅 및 구축 대행',price:'100만 원부터',intro:'사장님과 함께 사업 운영 방식을 설계하고 구현합니다.',items:['기본 구축 대행 전체 포함','사업 운영 과정 분석, 상담 자료 정리 및 맞춤 AI 교육','견적·예약·취소 등 상황별 응대 및 예외 처리 기준 설계','맞춤 업무 자동화 설계 및 시나리오별 검수']},
+ undecided:{title:'상담 후 결정',price:'',intro:'어떤 구축이 적합한지 상담을 통해 안내받습니다.',items:[]}
+};
 function openSetupConsultation(){
-  modal('전체 세팅 대행 상담',`<form class="ui-flow-body" onsubmit="event.preventDefault();submitSetupConsultation(this)">
-   ${helperText(setupEstimate)}
+ const options=Object.entries(setupConsultationTypes).map(([key,o])=>`<label class="setup-consultation-option"><input type="radio" name="setup_type" value="${e(key)}" required><span><strong>${e(o.title)}${o.price?' · '+e(o.price):''}</strong><small>${e(o.intro)}</small>${o.items.length?'<ul>'+o.items.map(item=>'<li>'+e(item)+'</li>').join('')+'</ul>':''}</span></label>`).join('');
+ modal('초기 세팅 대행 상담',`<form class="ui-flow-body" onsubmit="event.preventDefault();submitSetupConsultation(this)">
+   <fieldset class="setup-consultation-options"><legend>희망 구축 유형을 선택하세요</legend>${options}</fieldset>
+   ${helperText('표시 금액은 시작 견적입니다. 최종 비용은 업무 범위와 난이도에 따라 결정되며, 구독료·교육 크레딧·외부 서비스 비용 및 미지원 기능의 별도 개발비는 포함되지 않습니다.')}
    ${label('연락받을 전화번호','<input name="phone" type="tel" autocomplete="tel" maxlength="32" required>')}
-   ${label('궁금한 점 (선택)','<textarea name="needs" maxlength="1200" placeholder="예: 카카오 연결, 교환·반품 답변 교육, 담당자 연결 기준 설정"></textarea>')}
+   ${label('궁금한 점 (선택)','<textarea name="needs" maxlength="1140" placeholder="예: 스냅 촬영 예약, 카카오 연결, 교환·반품 기준 설계"></textarea>')}
    ${helperText(setupCallback+' 상담 요청 시 결제되는 금액은 없습니다.')}
    ${flowActions('<button type="submit" class="ui-button primary">전화 상담 요청하기</button>')}</form>`);
 }
 async function submitSetupConsultation(form){
  const button=form.querySelector('[type=submit]');button.disabled=true;
  try{await act(async()=>{
+  const type=form.elements.setup_type.value;
+  if(!Object.prototype.hasOwnProperty.call(setupConsultationTypes,type))throw Error('희망 구축 유형을 선택하세요.');
+  const option=setupConsultationTypes[type];
+  const needs='[희망 구축 유형: '+option.title+']'+(form.elements.needs.value.trim()?'\n'+form.elements.needs.value.trim():'');
   form.dataset.client ||= crypto.randomUUID();
-  await api('/api/billing/setup-consultations',{phone:form.elements.phone.value,needs:form.elements.needs.value,client:form.dataset.client});
-  modal('상담 신청 완료',helperText('담당자가 신청 내용을 확인하고 입력하신 번호로 연락드립니다.'));
+  await api('/api/billing/setup-consultations',{phone:form.elements.phone.value,needs,client:form.dataset.client});
+  modal('상담 신청 완료',helperText(option.title+' 상담 신청이 접수되었습니다. 담당자가 신청 내용을 확인하고 입력하신 번호로 연락드립니다.'));
  })}finally{button.disabled=false}
 }
 async function assistanceQueue(){
@@ -1567,7 +1834,22 @@ function channelSetupGuide(channel){
  const steps=channel==='naver'?['톡톡 파트너센터의 연동 관리에서 챗봇 API를 신청하세요.','파트너 ID와 보내기 API 인증키를 아래에 입력하고 저장하세요.','저장 후 표시되는 수신 주소를 네이버의 이벤트 받을 URL에 등록하세요.']:['카카오 챗봇 관리자센터에서 내 채널에 연결할 봇을 선택하세요.','봇 ID를 아래에 입력하고 저장한 뒤 표시되는 스킬 URL을 복사하세요.','카카오에서 스킬 URL을 등록하고 폴백 블록의 응답을 스킬 데이터로 설정한 뒤 배포하세요.'];
  return '<ol>'+steps.map(x=>'<li>'+e(x)+'</li>').join('')+'</ol>'+assistEntry(channel);
 }
-function widgetCodeModal(){modal('홈페이지 위젯 코드',helperText('홈페이지 편집기의 HTML 삽입 영역에 아래 코드를 붙여넣고 게시하세요.')+assistEntry('web')+label('사이트에 삽입할 코드',ta('widget-code',`<iframe src="${location.origin}/widget/${me.slug}" title="AI 고객센터" width="380" height="650" style="border:0"></iframe>`))+copyButton('코드 복사','widget-code'))}
+function widgetCodeModal(){
+ const src=e(location.origin+'/widget/'+enc(me.slug));
+ const id='csai-widget-'+String(me.slug).replace(/[^a-zA-Z0-9_-]/g,'');
+ const floating=`<style>
+#${id}{position:fixed;right:16px;bottom:16px;z-index:2147483000;font-family:system-ui,sans-serif}
+#${id}>summary{list-style:none;cursor:pointer;background:#2468bd;color:#fff;padding:12px 18px;border-radius:24px;font-size:14px;font-weight:600;box-shadow:0 3px 15px #15284222}
+#${id}>summary::-webkit-details-marker{display:none}
+#${id} .csai-widget-close,#${id}[open] .csai-widget-open{display:none}
+#${id}[open] .csai-widget-close{display:inline}
+#${id} iframe{position:fixed;right:16px;bottom:72px;width:min(380px,calc(100vw - 32px));height:min(650px,calc(100dvh - 88px));border:1px solid #e0e6ed;border-radius:14px;background:#fff;box-shadow:0 6px 24px #15284222}
+@media(max-width:700px){#${id}[open]{inset:0;background:white}#${id}[open]>summary{border-radius:0;display:block;text-align:right;padding:14px 16px;height:52px;box-sizing:border-box}#${id} iframe{inset:52px 0 0;width:100%;height:calc(100dvh - 52px);border:0;border-radius:0}}
+</style>
+<details id="${id}"><summary><span class="csai-widget-open">고객 상담</span><span class="csai-widget-close">상담창 닫기</span></summary><iframe src="${src}" title="AI 고객센터" loading="lazy"></iframe></details>`;
+ const inlineCode=`<iframe src="${src}" title="AI 고객센터" width="380" height="650" style="border:0;max-width:100%"></iframe>`;
+ modal('홈페이지 위젯 코드',helperText('PC는 우측 하단, 모바일은 전체 화면으로 열리는 채팅 위젯입니다. 사이트의 HTML 삽입 영역에서 스타일과 iframe을 허용해야 합니다.')+assistEntry('web')+label('팝업 위젯 코드',ta('widget-code',floating))+copyButton('팝업 코드 복사','widget-code')+accordion('기존 페이지 삽입형 코드',label('삽입 코드',ta('widget-inline-code',inlineCode))+copyButton('삽입 코드 복사','widget-inline-code')));
+}
 function channelHelp(k){let a=cfg.catalog.addons.find(x=>x.id===k);modal(a.name,`<p>월 ${money(a.price)} 추가 옵션입니다.</p><p>${a.local?'로컬 구현이 있습니다. 공개 HTTPS 환경은 별도 검증이 필요합니다.':'공식 권한 및 실계정 검증 전까지 연결과 실제 판매를 차단합니다.'}</p>${k==='kakao'?kakaoChatbotNotice():''}${actionGroup({keepSize:true},btn('기능 미리보기',`CSAISetup.preview('${k}')`),btn('구독 구성에 추가',`CSAISetup.add('${k}')`,'primary'))}`)}
 function table(headers,rows,{numeric=[]}={}){
  const numberClass=index=>numeric.includes(index)?' class="ui-table-number"':'';
@@ -1709,7 +1991,7 @@ function togglePricingAssistance(enabled){
  if(enabled)sessionStorage.setItem(key,'1');
  else sessionStorage.removeItem(key);
 }
-function pricingBuilder(){let cat=cfg.catalog,selectedPackages=cat.packages.filter(p=>selectedAdd.has(p.id)),coveredBy=new Map();for(let p of selectedPackages)for(let id of p.includes)coveredBy.set(id,p.name);let chosen=cat.addons.filter(a=>selectedAdd.has(a.id)&&!coveredBy.has(a.id)),count=new Set([...coveredBy.keys(),...chosen.map(a=>a.id)]).size;let taskList=`<section class="price-task-list"><div class="price-task-head"><strong>내 구성</strong><span>추가 기능 ${count}개 선택</span></div>${selectedPackages.length||chosen.length?selectedPackages.map(p=>`<details class="ui-disclosure price-task-package price-group-${packageGroup[p.id]}"><summary><span class="price-task-check">${priceMark}</span><b>${e(p.name)} 패키지</b><small>${p.includes.length}개 포함</small></summary><div class="price-task-children">${p.includes.map(id=>{let a=cat.addons.find(x=>x.id===id);return `<div><span class="price-task-check">${priceMark}</span>${e(a?.name||id)}${a&&!a.local?' · 준비 중':''}</div>`}).join('')}</div></details>`).join('')+chosen.map(a=>`<div class="price-task-single price-group-${pricingGroups[a.group]}"><span class="price-task-check">${priceMark}</span>${e(a.name)}</div>`).join(''):'<p class="muted">패키지나 필요한 기능을 선택하세요.</p>'}</section>`;let packages=`<section class="price-section"><h3>패키지로 묶어 선택</h3><p class="muted">선택하면 포함된 개별 기능은 아래에서 취소선으로 표시되고 중복 결제되지 않습니다.</p>${cat.packages.map(p=>priceChoice(p,'package',packageGroup[p.id])).join('')}</section>`;let addons=[...new Set(cat.addons.map(a=>a.group))].map(g=>`<section class="price-section price-group-${pricingGroups[g]}"><h3>${e(g)}</h3>${cat.addons.filter(a=>a.group===g).map(a=>priceChoice(a,'addon',pricingGroups[g],coveredBy.get(a.id)||'')).join('')}</section>`).join('');return pageTop('요금제 및 결제','기본 상담 구독 + 교육 크레딧 + 유료 추가 기능')+billingTabs()+usageMeter()+`<div class="grid pricing-layout"><div class="pricing-left ui-stack ui-stack-sections">${card('AI 상담 월 구독',planPriceTable(cat.plans))}${planMotionCard(cat.plans)}</div>${card('맞춤 구독 구성',label('기본 요금제',select('plan',cat.plans.map(x=>[x.id,x.name+' · '+money(x.price)]),selectedPlan).replace('<select','<select onchange="selectPricingPlan(this)"'))+taskList+packages+addons+(selectedAdd.has('extra_agent')?label('추가 브랜드 수량',`<input id="extra-brand-quantity" type="number" min="1" max="1000" value="${selectedBrandCount}" onchange="changeBrandQuantity(this.value)">`):'')+pricingAssistanceOption()+`<div class="banner" id="quote-price"></div>${me.sandbox_allowed?btn('테스트용 구독 적용','applyPlan()','primary'):'<p>실제 결제 연동 준비 중</p>'}<p class="muted">실제 결제되지 않습니다. 준비 중 기능은 테스트 구독에도 실연동되지 않습니다.</p>`)}</div>`}
+function pricingBuilder(){let cat=cfg.catalog,selectedPackages=cat.packages.filter(p=>selectedAdd.has(p.id)),coveredBy=new Map();for(let p of selectedPackages)for(let id of p.includes)coveredBy.set(id,p.name);let chosen=cat.addons.filter(a=>selectedAdd.has(a.id)&&!coveredBy.has(a.id)),count=new Set([...coveredBy.keys(),...chosen.map(a=>a.id)]).size;let taskList=`<section class="price-task-list"><div class="price-task-head"><strong>내 구성</strong><span>추가 기능 ${count}개 선택</span></div>${selectedPackages.length||chosen.length?selectedPackages.map(p=>`<details class="ui-disclosure price-task-package price-group-${packageGroup[p.id]}"><summary><span class="price-task-check">${priceMark}</span><b>${e(p.name)} 패키지</b><small>${p.includes.length}개 포함</small></summary><div class="price-task-children">${p.includes.map(id=>{let a=cat.addons.find(x=>x.id===id);return `<div><span class="price-task-check">${priceMark}</span>${e(a?.name||id)}${a&&!a.local?' · 준비 중':''}</div>`}).join('')}</div></details>`).join('')+chosen.map(a=>`<div class="price-task-single price-group-${pricingGroups[a.group]}"><span class="price-task-check">${priceMark}</span>${e(a.name)}</div>`).join(''):'<p class="muted">패키지나 필요한 기능을 선택하세요.</p>'}</section>`;let packages=`<section class="price-section"><h3>패키지로 묶어 선택</h3><p class="muted">선택하면 포함된 개별 기능은 아래에서 취소선으로 표시되고 중복 결제되지 않습니다.</p>${cat.packages.map(p=>priceChoice(p,'package',packageGroup[p.id])).join('')}</section>`;let addons=[...new Set(cat.addons.map(a=>a.group))].map(g=>`<section class="price-section price-group-${pricingGroups[g]}"><h3>${e(g)}</h3>${cat.addons.filter(a=>a.group===g).map(a=>priceChoice(a,'addon',pricingGroups[g],coveredBy.get(a.id)||'')).join('')}</section>`).join('');return pageTop('요금제 및 결제','기본 상담 구독 + 교육 크레딧 + 유료 추가 기능')+billingTabs()+usageMeter()+`<div class="grid pricing-layout"><div class="pricing-left ui-stack ui-stack-sections">${card('AI 상담 월 구독',planPriceTable(cat.plans)+helperText('AI 답장 비서: 초안 3개 생성당 상담량 1회 차감. 무료 상담 테스트와 공유하며, 교육 크레딧은 차감하지 않습니다. 저장 답변·자동완성·복사·삽입은 차감 없음.'))}${planMotionCard(cat.plans)}</div>${card('맞춤 구독 구성',label('기본 요금제',select('plan',cat.plans.map(x=>[x.id,x.name+' · '+money(x.price)]),selectedPlan).replace('<select','<select onchange="selectPricingPlan(this)"'))+taskList+packages+addons+(selectedAdd.has('extra_agent')?label('추가 브랜드 수량',`<input id="extra-brand-quantity" type="number" min="1" max="1000" value="${selectedBrandCount}" onchange="changeBrandQuantity(this.value)">`):'')+pricingAssistanceOption()+`<div class="banner" id="quote-price"></div>${me.sandbox_allowed?btn('테스트용 구독 적용','applyPlan()','primary'):'<p>실제 결제 연동 준비 중</p>'}<p class="muted">실제 결제되지 않습니다. 준비 중 기능은 테스트 구독에도 실연동되지 않습니다.</p>`)}</div>`}
 let pricingMotionPrevious=new Map();
 function animatePricing(){let reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;document.querySelectorAll('.price-choice').forEach(row=>{let key=row.dataset.priceKey,on=Number(row.dataset.priceOn),strike=Number(row.dataset.priceStrike),previous=pricingMotionPrevious.get(key);pricingMotionPrevious.set(key,{on,strike});let from=previous||{on,strike},box=row.querySelector('.price-check'),path=row.querySelector('path'),line=row.querySelector('.price-strike'),spring=(x,k,c)=>({x,v:0,t:x,k,c}),fill=spring(from.on,300,24),pop=spring(1,520,13),check=spring(from.on,160,20),cross=spring(from.strike,140,22);fill.t=on;check.t=on;cross.t=strike;let changed=from.on!==on||from.strike!==strike;if(changed&&!reduce){pop.x=.7;pop.v=5}if(!changed||reduce){fill.x=on;check.x=on;cross.x=strike}let last=performance.now(),clamp=x=>Math.max(0,Math.min(1,x));function paint(){let f=clamp(fill.x);box.style.background=f>.01?`color-mix(in srgb, var(--price-accent) ${(f*100).toFixed(1)}%, #e8edf2)`:'';box.style.transform=`scale(${pop.x.toFixed(4)})`;path.style.strokeDasharray='18';path.style.strokeDashoffset=(18*(1-clamp(check.x))).toFixed(2);line.style.width=(clamp(cross.x)*100).toFixed(2)+'%'}paint();if(!changed||reduce)return;function frame(now){if(!row.isConnected)return;let dt=Math.min((now-last)/1000,1/30)/4;last=now;for(let i=0;i<4;i++)for(let s of [fill,pop,check,cross]){let a=-s.k*(s.x-s.t)-s.c*s.v;s.v+=a*dt;s.x+=s.v*dt}paint();if([fill,pop,check,cross].some(s=>Math.abs(s.x-s.t)>.002||Math.abs(s.v)>.02))requestAnimationFrame(frame)}requestAnimationFrame(frame)})}
 const pricingBaseRender=render;
@@ -1767,6 +2049,7 @@ function features(){
  const freeFeatures=['말투 설정','업체명·로고','공지·구매처 안내','기본 자동·수동 설정'];
  const basic=[
   ['최초 교육 20크레딧','포함','포함'],['최초 상담 테스트','1회','월 제공량'],
+  ['자주 쓰는 답변','차감 없음','차감 없음'],['답변 자동완성','차감 없음','차감 없음'],['AI 답장 비서 (초안 3개)','최초 1회 공유','상담량 1회 차감'],
   ...cfg.catalog.basic.map(name=>{
    if(name==='AI 교육 (크레딧 차감)')return [name,'크레딧 차감','크레딧 차감'];
    const free=name==='상담 내역 열람'?'1회 테스트 기록':freeFeatures.includes(name)?'포함':'미제공';
@@ -1775,7 +2058,7 @@ function features(){
  ];
  const extras=cfg.catalog.addons.map(addon=>[addon.name,'미제공',addon.local?'추가 결제':'추가 결제 · 준비 중']);
  return pageTop('전체 기능 비교','기본 포함, 별도 구매 및 준비 중 구분')+billingTabs()+
-  card('기본 제공',comparisonTable('기본 제공 기능 비교',columns,basic))+
+  card('기본 제공',comparisonTable('기본 제공 기능 비교',columns,basic)+helperText('답장 비서는 별도 추가 기능 구매 없이 이용할 수 있습니다. 생성 1회(초안 3개)는 기존 상담량 1회를 차감하며, 무료 회원은 최초 상담 테스트 1회를 공유합니다. 저장 문구·자동완성·복사·삽입은 차감되지 않습니다.'))+
   card('추가 결제 기능',comparisonTable('추가 결제 기능 비교',columns,extras))+(me.operator||me.demo_view==='developer'?card('관리자 샘플',btn('기능별 사용 예시','showAdminExamples()')):'');
 }
 function usageMeter(){const plan=cfg.catalog.plans.find(x=>x.id===me.plan),quota=Number(plan?.quantity||1),remaining=Math.max(0,Number(me.remaining)||0),used=Math.max(0,quota-remaining),bounded=Math.min(100,used/quota*100);return card('계정 공통 사용량',`<div class="real-usage-meter"><strong class="usage-number">${remaining.toLocaleString('ko-KR')}회</strong><small>남은 상담 횟수</small>${me.trial||me.operator?'':`<div class="real-meter-track" role="progressbar" aria-label="상담 사용량" aria-valuemin="0" aria-valuemax="${quota}" aria-valuenow="${Math.min(quota,used)}"><span style="--used:${bounded}%"></span></div><div class="row"><span>사용 ${used.toLocaleString('ko-KR')}회</span><span>제공 ${quota.toLocaleString('ko-KR')}회</span></div>`}<details class="ui-disclosure"><summary>교육 크레딧 잔액</summary><strong>${Math.max(0,Number(me.credits)||0).toLocaleString('ko-KR')} C</strong><p class="muted">교육 크레딧은 일회성 충전 잔액이며 월 상담량과 별개입니다.</p></details><p class="muted">추가 브랜드도 계정의 상담량과 교육 크레딧을 함께 사용합니다.</p></div>`)}
@@ -1926,9 +2209,9 @@ async function businessDashboard(){
   ['채팅 첨부 설정','paperclip','photoSettingsModal()'],
   ['음성·영상통화 설정','video','webCallSettings()'],
  ];
- return pageTop('오늘의 사업 현황',r.date+' · '+r.timezone)+
+ return pageTop('오늘의 사업 현황',r.date+' · '+r.timezone)+deskLinks()+
   `<div class="preview-brand">${brandSelect('business-brand',brands,businessAgent,'businessAgent=this.value;render()')}</div>`+
-  card('초기 세팅 대행',stack(helperText(setupEstimate)+helperText(setupCallback))+actionFooter([btn('상담 요청하기','openSetupConsultation()')]))+
+  `<section class="card app-card dashboard-setup-strip" aria-labelledby="dashboard-setup-title"><div class="dashboard-setup-copy"><h2 class="dashboard-setup-title" id="dashboard-setup-title">초기 세팅 대행</h2><p class="dashboard-setup-price"><span>기본 구축 50만 원~</span> · <span>맞춤 구축 100만 원~</span></p></div><button type="button" class="ui-button secondary dashboard-setup-action" onclick="openSetupConsultation()">상담 요청</button></section>`+
   card('상담 및 업무',metrics(activity))+
   (sales.length?card('판매 현황',metrics(sales)+'<p class="muted">판매 금액은 직접 등록한 주문의 합계이며 결제·정산 매출이 아닙니다.</p>'):'')+
   `<div class="grid dashboard-workspace">
@@ -1937,14 +2220,14 @@ async function businessDashboard(){
   </div>`;
 }
 function commercePath(path=''){return scopedUrl('/api/commerce'+path,commerceAgent)}
-async function commercePage(){if(!me.public_access)return pageTop('온라인 판매 관리','상품·주문·판매 요청을 관리합니다.')+card('판매 관리','<p>유료 상담 또는 체험 계정에서 사용할 수 있습니다.</p>');let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];if(commerceAgent&&!brands.some(x=>x.id===commerceAgent))commerceAgent='';let archived=brands.some(x=>x.id===commerceAgent&&x.archived),r=await api(commercePath());let intro=pageTop('온라인 판매 관리','판매처별 주문과 고객 문의를 한 곳에 기록합니다.')+brandSelect('commerce-brand',brands,commerceAgent,'commerceAgent=this.value;render()')+card('판매 관리 설정','<p class="muted">현재 수동 등록 방식입니다. 스마트스토어·쿠팡·자사몰과 실시간 주문·재고·배송 연동은 준비 중입니다. 실제 결제 및 환불은 판매처에서 처리하세요.</p>'+(archived?'<p>보관된 브랜드 · 조회만 가능</p>':btn(r.enabled?'판매 관리 끄기':'판매 관리 활성화',"toggleCommerce("+(!r.enabled)+")",'primary')));let edit=r.enabled&&!archived;return intro+card('상품·옵션·재고',(edit?actionGroup({keepSize:true},btn('상품 등록','editCommerceProduct()','primary'),btn('스마트스토어 상품 연동','smartstoreCatalogModal()'),btn('쿠팡 상품 연동','coupangCatalogModal()')):'')+r.products.map(x=>'<div class="line"><b>'+e(x.name)+' · '+e(x.variant||'기본')+'</b><p>'+e(x.sku)+' · '+money(x.price)+' · 수동 재고 '+e(x.stock)+'개 · '+(x.published?'공개':'비공개')+'</p>'+(edit?btn('수정',"editCommerceProduct('"+x.id+"')"):'')+'</div>').join(''))+card('주문 및 배송',(edit?actionGroup({keepSize:true},btn('주문 등록','editCommerceOrder()','primary'),btn('CSV 주문 가져오기','commerceImportModal()'),btn('스마트스토어 API 확인','smartstoreProbeModal()'),btn('스마트스토어 주문 조회','smartstoreOrderModal()'),btn('스마트스토어 주문 자동 동기화','smartstoreOrderSyncModal()'),btn('쿠팡 주문 연동','coupangModal()'),btn('쿠팡 주문 자동 동기화','coupangOrderSyncModal()')):'')+r.orders.map(x=>'<div class="line"><b>'+e(commerceChannels[x.channel])+' · '+e(x.reference)+'</b><p>'+e(x.product)+' × '+e(x.quantity)+' · '+money(x.amount)+' · '+e(commerceOrderStates[x.state])+'</p><small>'+e([x.carrier,x.tracking].filter(Boolean).join(' '))+'</small>'+(edit?btn('수정',"editCommerceOrder('"+x.id+"')"):'')+'</div>').join(''))+card('판매처 상품 Q&A',(edit?btn('스마트스토어·쿠팡 문의 관리','marketplaceQnaModal()','primary'):'')+'<p>실시간 채팅과 별도인 상품 문의를 조회하고 승인 후 답변합니다.</p>')+card('교환·반품·환불·배송 문의',r.requests.map(x=>'<div class="line"><b>'+e(commerceRequestKinds[x.kind])+' · '+e(commerceChannels[x.channel])+'</b><p>'+e(x.reference)+' · '+e(x.details)+'</p><small>'+e(commerceRequestStates[x.state])+'</small>'+btn('상담 열기',"openCommerceThread('"+x.thread+"')")+(edit?select('commerce-request-'+x.id,Object.entries(commerceRequestStates),x.state)+btn('처리 상태 저장',"saveCommerceRequest('"+x.id+"')"):'')+'</div>').join('')||'<p>접수된 요청이 없습니다.</p>')}
-async function toggleCommerce(enabled){await act(async()=>{await api(commercePath('/settings'),{enabled});render()})}
+async function commercePage(){const readOnly=!me.public_access;if(readOnly&&!freeFeaturePreview())return pageTop('온라인 판매 관리','상품·주문·판매 요청을 관리합니다.')+card('판매 관리','<p>유료 상담 또는 체험 계정에서 사용할 수 있습니다.</p>');let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];if(commerceAgent&&!brands.some(x=>x.id===commerceAgent))commerceAgent='';let archived=brands.some(x=>x.id===commerceAgent&&x.archived),r=readOnly?previewData().commerce:await api(commercePath());if(!readOnly&&me.sample_tools&&sharedPreviewEnabled()&&!commerceAgent){const demo=previewData().commerce;r={...r,products:r.products.concat(demo.products),orders:r.orders.concat(demo.orders),requests:r.requests.concat(demo.requests)};}let intro=(readOnly?previewNotice(null,'판매 관리 화면 체험'):'')+pageTop('온라인 판매 관리','판매처별 주문과 고객 문의를 한 곳에 기록합니다.')+brandSelect('commerce-brand',brands,commerceAgent,'commerceAgent=this.value;render()')+card('판매 관리 설정','<p class="muted">현재 수동 등록 방식입니다. 스마트스토어·쿠팡·자사몰과 실시간 주문·재고·배송 연동은 준비 중입니다. 실제 결제 및 환불은 판매처에서 처리하세요.</p>'+(archived?'<p>보관된 브랜드 · 조회만 가능</p>':btn(r.enabled?'판매 관리 끄기':'판매 관리 활성화',"toggleCommerce("+(!r.enabled)+")",'primary')));let edit=readOnly||r.enabled&&!archived;const commerceButton=(...args)=>readOnly?btn(args[0],/^(editCommerceProduct|editCommerceOrder|saveCommerceRequest)\(/.test(args[1])?args[1]:"showPreviewCommerceAction(this.textContent)",args[2]):btn(...args);return intro+card('상품·옵션·재고',(edit?actionGroup({keepSize:true},commerceButton('상품 등록','editCommerceProduct()','primary'),commerceButton('스마트스토어 상품 연동','smartstoreCatalogModal()'),commerceButton('쿠팡 상품 연동','coupangCatalogModal()')):'')+r.products.map(x=>'<div class="line'+(sampleRecord(x)?' sample-record':'')+'"><b>'+e(sampleTitle(x.name,sampleRecord(x)))+' · '+e(x.variant||'기본')+'</b><p>'+e(x.sku)+' · '+money(x.price)+' · 수동 재고 '+e(x.stock)+'개 · '+(x.published?'공개':'비공개')+'</p>'+(edit?commerceButton('수정',"editCommerceProduct('"+x.id+"')"):'')+'</div>').join(''))+card('주문 및 배송',(edit?actionGroup({keepSize:true},commerceButton('주문 등록','editCommerceOrder()','primary'),commerceButton('CSV 주문 가져오기','commerceImportModal()'),commerceButton('스마트스토어 API 확인','smartstoreProbeModal()'),commerceButton('스마트스토어 주문 조회','smartstoreOrderModal()'),commerceButton('스마트스토어 주문 자동 동기화','smartstoreOrderSyncModal()'),commerceButton('쿠팡 주문 연동','coupangModal()'),commerceButton('쿠팡 주문 자동 동기화','coupangOrderSyncModal()')):'')+r.orders.map(x=>'<div class="line'+(sampleRecord(x)?' sample-record':'')+'"><b>'+e(commerceChannels[x.channel])+' · '+e(x.reference)+'</b><p>'+e(sampleTitle(x.product,sampleRecord(x)))+' × '+e(x.quantity)+' · '+money(x.amount)+' · '+e(commerceOrderStates[x.state])+'</p><small>'+e([x.carrier,x.tracking].filter(Boolean).join(' '))+'</small>'+(edit?commerceButton('수정',"editCommerceOrder('"+x.id+"')"):'')+'</div>').join(''))+card('판매처 상품 Q&A',(edit?commerceButton('스마트스토어·쿠팡 문의 관리','marketplaceQnaModal()','primary'):'')+'<p>실시간 채팅과 별도인 상품 문의를 조회하고 승인 후 답변합니다.</p>')+card('교환·반품·환불·배송 문의',r.requests.map(x=>'<div class="line'+(sampleRecord(x)?' sample-record':'')+'"><b>'+e(commerceRequestKinds[x.kind])+' · '+e(commerceChannels[x.channel])+'</b><p>'+e(x.reference)+' · '+e(x.details)+'</p><small>'+e(commerceRequestStates[x.state])+'</small>'+commerceButton('상담 열기',"openCommerceThread('"+x.thread+"')")+(edit?select('commerce-request-'+x.id,Object.entries(commerceRequestStates),x.state)+commerceButton('처리 상태 저장',"saveCommerceRequest('"+x.id+"')"):'')+'</div>').join('')||'<p>접수된 요청이 없습니다.</p>')}
+function showPreviewCommerceAction(name){modal(name,helperText('샘플 연결 체험입니다. 실제 판매처에 접속하거나 주문 데이터를 가져오지 않습니다.')+btn('샘플 연결 확인',"$('.modal')?.remove();toast('샘플 검증 완료 · 실제 연동 없음')",'primary'))}function previewUpsert(items,id,data){const item=items.find(x=>x.id===id);if(item)Object.assign(item,data);else items.push({...data,id:'preview-'+crypto.randomUUID()});}async function toggleCommerce(enabled){if(!me.public_access&&freeFeaturePreview()){previewData().commerce.enabled=enabled;render();return;}if(!requirePreviewAccess(null))return;await act(async()=>{await api(commercePath('/settings'),{enabled});render()})}
 function openCommerceThread(id){inboxAgent=commerceAgent;threadId=id;go('inbox')}
-async function editCommerceProduct(id=''){await act(async()=>{let r=await api(commercePath()),x=r.products.find(z=>z.id===id)||{};if(id&&!x.id)throw Error('상품 없음');modal('상품 등록·수정',label('SKU (상품·옵션별 고유 코드)',input('cp-sku',x.sku))+label('상품명',input('cp-name',x.name))+label('옵션',input('cp-variant',x.variant))+label('원화 가격',input('cp-price',x.price??0,'number'))+label('수동 재고',input('cp-stock',x.stock??0,'number'))+label('HTTPS 판매 링크',input('cp-url',x.url))+label('고객에게 공개할 상품 설명',ta('cp-description',x.description))+'<label><input type="checkbox" id="cp-published" '+(x.published?'checked':'')+'> 고객 상품 목록·AI 상담에 공개</label>'+btn('저장',"saveCommerceProduct('"+id+"')",'primary'))})}
-async function saveCommerceProduct(id){await act(async()=>{await api(commercePath('/products'),{id,sku:val('cp-sku'),name:val('cp-name'),variant:val('cp-variant'),price:Number(val('cp-price')),stock:Number(val('cp-stock')),url:val('cp-url'),description:val('cp-description'),published:checked('cp-published')});$('.modal')?.remove();render()})}
-async function editCommerceOrder(id=''){await act(async()=>{let r=await api(commercePath()),x=r.orders.find(z=>z.id===id)||{};if(id&&!x.id)throw Error('주문 없음');modal('주문 등록·수정',label('판매처',select('co-channel',Object.entries(commerceChannels),x.channel||'smartstore'))+label('판매처 주문번호',input('co-ref',x.reference))+label('상품·옵션',input('co-product',x.product))+label('수량',input('co-qty',x.quantity??1,'number'))+label('주문 총액 (수동 기록)',input('co-amount',x.amount??0,'number'))+label('상태',select('co-state',Object.entries(commerceOrderStates),x.state||'received'))+label('택배사',input('co-carrier',x.carrier))+label('운송장 번호',input('co-tracking',x.tracking))+btn('저장',"saveCommerceOrder('"+id+"')",'primary'))})}
-async function saveCommerceOrder(id){await act(async()=>{await api(commercePath('/orders'),{id,channel:val('co-channel'),reference:val('co-ref'),product:val('co-product'),quantity:Number(val('co-qty')),amount:Number(val('co-amount')),state:val('co-state'),carrier:val('co-carrier'),tracking:val('co-tracking')});$('.modal')?.remove();render()})}
-async function saveCommerceRequest(id){await act(async()=>{await api(commercePath('/requests/'+enc(id)),{state:val('commerce-request-'+id)},'PATCH');render()})}
+async function editCommerceProduct(id=''){await act(async()=>{let r=(!me.public_access&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))?previewData().commerce:await api(commercePath()),x=r.products.find(z=>z.id===id)||{};if(id&&!x.id)throw Error('상품 없음');modal('상품 등록·수정',label('SKU (상품·옵션별 고유 코드)',input('cp-sku',x.sku))+label('상품명',input('cp-name',x.name))+label('옵션',input('cp-variant',x.variant))+label('원화 가격',input('cp-price',x.price??0,'number'))+label('수동 재고',input('cp-stock',x.stock??0,'number'))+label('HTTPS 판매 링크',input('cp-url',x.url))+label('고객에게 공개할 상품 설명',ta('cp-description',x.description))+'<label><input type="checkbox" id="cp-published" '+(x.published?'checked':'')+'> 고객 상품 목록·AI 상담에 공개</label>'+btn('저장',"saveCommerceProduct('"+id+"')",'primary'))})}
+async function saveCommerceProduct(id){if((!me.public_access&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){if(!val('cp-name').trim())return toast('상품명을 입력하세요.');previewUpsert(previewData().commerce.products,id,{sku:val('cp-sku'),name:'샘플 · '+val('cp-name').replace(/^샘플 · /,''),variant:val('cp-variant'),price:Number(val('cp-price')),stock:Number(val('cp-stock')),url:val('cp-url'),description:val('cp-description'),published:checked('cp-published')});$('.modal')?.remove();render();return;}await act(async()=>{await api(commercePath('/products'),{id,sku:val('cp-sku'),name:val('cp-name'),variant:val('cp-variant'),price:Number(val('cp-price')),stock:Number(val('cp-stock')),url:val('cp-url'),description:val('cp-description'),published:checked('cp-published')});$('.modal')?.remove();render()})}
+async function editCommerceOrder(id=''){await act(async()=>{let r=(!me.public_access&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))?previewData().commerce:await api(commercePath()),x=r.orders.find(z=>z.id===id)||{};if(id&&!x.id)throw Error('주문 없음');modal('주문 등록·수정',label('판매처',select('co-channel',Object.entries(commerceChannels),x.channel||'smartstore'))+label('판매처 주문번호',input('co-ref',x.reference))+label('상품·옵션',input('co-product',x.product))+label('수량',input('co-qty',x.quantity??1,'number'))+label('주문 총액 (수동 기록)',input('co-amount',x.amount??0,'number'))+label('상태',select('co-state',Object.entries(commerceOrderStates),x.state||'received'))+label('택배사',input('co-carrier',x.carrier))+label('운송장 번호',input('co-tracking',x.tracking))+btn('저장',"saveCommerceOrder('"+id+"')",'primary'))})}
+async function saveCommerceOrder(id){if((!me.public_access&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){if(!val('co-product').trim())return toast('상품명을 입력하세요.');previewUpsert(previewData().commerce.orders,id,{channel:val('co-channel'),reference:val('co-ref'),product:'샘플 · '+val('co-product').replace(/^샘플 · /,''),quantity:Number(val('co-qty')),amount:Number(val('co-amount')),state:val('co-state'),carrier:val('co-carrier'),tracking:val('co-tracking')});$('.modal')?.remove();render();return;}await act(async()=>{await api(commercePath('/orders'),{id,channel:val('co-channel'),reference:val('co-ref'),product:val('co-product'),quantity:Number(val('co-qty')),amount:Number(val('co-amount')),state:val('co-state'),carrier:val('co-carrier'),tracking:val('co-tracking')});$('.modal')?.remove();render()})}
+async function saveCommerceRequest(id){if((!me.public_access&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){const item=previewData().commerce.requests.find(x=>x.id===id);if(item)item.state=val('commerce-request-'+id);render();return;}await act(async()=>{await api(commercePath('/requests/'+enc(id)),{state:val('commerce-request-'+id)},'PATCH');render()})}
 async function commerceCustomerModal(){await act(async()=>{const token=await getChatSession(),r=await api('/api/customer/commerce/'+enc(token));commerceCustomerClient=crypto.randomUUID();modal('상품 및 주문 문의',r.products.map(p=>'<div class="line"><b>'+e(p.name)+' '+e(p.variant)+'</b><p>'+money(p.price)+' · '+e(p.description)+'</p>'+(p.url?'<a href="'+e(p.url)+'" target="_blank" rel="noopener noreferrer">판매처 보기</a>':'')+'</div>').join('')+label('요청 유형',select('cc-kind',Object.entries(commerceRequestKinds),'delivery'))+label('판매처',select('cc-channel',Object.entries(commerceChannels),'smartstore'))+label('주문번호 (재입고·기타 문의 제외)',input('cc-ref'))+label('문의 내용',ta('cc-details'))+'<p class="muted">접수만 진행하며 실제 배송·환불·교환은 판매처에서 확인해야 합니다. 카드번호 등 결제정보를 입력하지 마세요.</p>'+btn('확인 및 접수','submitCommerceCustomer()','primary'))})}
 async function submitCommerceCustomer(){if(commerceCustomerBusy)return;await act(async()=>{const token=chatSession,body={token,client:commerceCustomerClient,kind:val('cc-kind'),channel:val('cc-channel'),reference:val('cc-ref'),details:val('cc-details'),confirmed:true};commerceCustomerBusy=true;try{await api('/api/customer/commerce',body);$('.modal')?.remove();toast('판매 문의가 접수되었습니다.')}finally{commerceCustomerBusy=false}})}
 
@@ -2083,13 +2366,71 @@ async function instagramModal(agent=''){await act(async()=>{const brands=has('ex
 async function connectInstagram(agent){await act(async()=>{if(!checked('ig-confirm'))throw Error('Meta 메시지 권한과 구독 확인 필요');const token=val('ig-token');$('#ig-token').value='';await api(scopedUrl('/api/instagram/connect',agent),{token,confirmed:true,subscribed:true});instagramModal(agent)})}
 async function disconnectInstagram(agent){if(!confirm('CSAI의 계정 연결을 해제할까요? Meta 웹훅 구독은 별도로 관리해야 합니다.'))return;await act(async()=>{await api(scopedUrl('/api/instagram/disconnect',agent),{confirmed:true});instagramModal(agent)})}
 
-async function render(){captureEducationDraft();let id=++renderId;route=location.hash.slice(1)||'dashboard';if(!me){$('#app').innerHTML=home();return}CSAISetup.initialize();if(id!==renderId)return;let views={dashboard:businessDashboard,commerce:commercePage,setup:qualityHome,education,style,preview:()=>preview(),test:()=>preview(true),inbox,'reply-assistant':replyAssistantPage,alerts,settings,calendar,team:teamPage,'staff-desk':staffDesk,fields:fieldsPage,'booking-settings':bookingSettings,customers,channels,developer,pricing,features,credits,addons,allinone,orders,agents,invites,costs};try{let html=await (views[route]||education)();if(id!==renderId)return;captureEducationDraft();$('#app').innerHTML=shell(html);restoreEducationDraft();updatePrice();mountCalendarMotion();mountInboxPullRefresh();mountSettingsStack()}catch(x){if(id===renderId)$('#app').innerHTML=shell(card('오류',`<p class="error">${e(x.message)}</p>${btn('다시 시도','render()')}`))}}
-async function init(){try{if(location.hash.startsWith('#staff-invite=')){sessionStorage.setItem('csai-staff-invite',location.hash.slice(14));history.replaceState(null,'',location.pathname+'#staff-desk')}if(location.hash.startsWith('#invite=')){sessionStorage.setItem('csai-invite',location.hash.slice(8));history.replaceState(null,'',location.pathname+'#education')}cfg=await api('/api/config');if(publicMode){$('#app-design-system').media='all';pub=await api('/api/public/'+enc(slug));let saved=sessionStorage.getItem('csai-session-'+slug);if(!saved){try{const r=await api('/api/customer/resume',{slug,action:'load'});saved=r.token||null;if(saved)sessionStorage.setItem('csai-session-'+slug,saved)}catch{}}if(saved){try{chatMessages=await api('/api/session/'+enc(saved)+'/messages');chatSession=saved}catch{sessionStorage.removeItem('csai-session-'+slug)}}$('#app').innerHTML=`<div class="public">${phone(pub)}</div>`;setInterval(async()=>{if(!chatSession||sending||$('#booking-box'))return;try{const pollingToken=chatSession;let ms=await api('/api/session/'+enc(pollingToken)+'/messages');if(pollingToken!==chatSession)return;if(ms.length!==chatMessages.length){chatMessages=ms;$('#messages').innerHTML=welcomeMarkup(pub)+ms.map(m=>photoBubble(m,'customer')).join('');$('#messages').scrollTop=$('#messages').scrollHeight}}catch{}},4000);return}try{await refresh();if(sessionStorage.getItem('csai-staff-invite'))history.replaceState(null,'',location.pathname+'#staff-desk');selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons);}catch(x){if(x.status!==401)throw x}await render()}catch(x){$('#app').innerHTML=`<div class="hero"><div class="hero-inner"><h1>CS AI</h1><p class="error">${e(x.message)}</p><a href="/">처음으로</a></div></div>`}}
+// Catalog-backed page offers; never duplicate an existing purchase notice.
+const pagePaidFeatures={
+ calendar:['calendar','auto_booking','change_booking','google_calendar','booking_alert'],
+ 'booking-settings':['calendar','auto_booking','change_booking','google_calendar','booking_alert'],
+ customers:['crm','quote','tasks','leads','complaints','stats','export'],
+ alerts:['push','email','unknown_alert','new_alert','booking_alert','report'],
+ settings:['multilingual','design','unbrand','custom_url'],
+ inbox:['retention'],
+ 'consultation-center':['retention'],
+ preview:['design','unbrand','custom_url'],
+ 'chat-page':['design','unbrand','custom_url'],
+ stats:['stats'],
+ reports:['report'],
+ agents:['extra_agent'],
+ developer:['external_api','custom_integration'],
+};
+function ensurePagePaidNotices(main){
+ const existing=new Set([...main.querySelectorAll('.paid-preview-notice[data-paid-feature]')].map(n=>n.dataset.paidFeature));
+ if(!me||me.operator)return;
+ const catalog=new Set(cfg.catalog.addons.map(a=>a.id));
+ const missing=(pagePaidFeatures[route]||[]).filter(key=>catalog.has(key)&&!has(key)&&!existing.has(key));
+ if(missing.length)main.insertAdjacentHTML('beforeend',missing.map(key=>previewNotice(key,'',{detailsOnly:true})).join(''));
+}
+let paidPreviewHeaderObserver=null,paidPreviewScrollCleanup=null,paidPreviewRoute='',paidPreviewExpanded=true;
+function prioritizePaidPreviews(){
+ paidPreviewHeaderObserver?.disconnect();paidPreviewHeaderObserver=null;
+ paidPreviewScrollCleanup?.();paidPreviewScrollCleanup=null;
+ if(paidPreviewRoute!==route){paidPreviewRoute=route;paidPreviewExpanded=true;}
+ const main=$('.layout main');if(!main)return;
+ const header=$('.layout .app-sidebar');
+ const setup=main.querySelector(':scope > .dashboard-setup-strip');
+ ensurePagePaidNotices(main);
+ const notices=[...main.querySelectorAll('.paid-preview-notice')];
+ const seen=new Set();for(let i=0;i<notices.length;){const n=notices[i],key=n.dataset.paidFeature;if(key&&(has(key)||seen.has(key))){n.remove();notices.splice(i,1);continue;}if(key)seen.add(key);i++;}
+ const ordered=pagePaidFeatures[route]||[];const rank=n=>ordered.includes(n.dataset.paidFeature)?ordered.indexOf(n.dataset.paidFeature):ordered.length;notices.sort((a,b)=>rank(a)-rank(b));
+ if(!setup&&!notices.length)return;
+ const top=document.createElement('div');top.className='purchase-sticky-stack';
+ const first=main.querySelector(':scope > .mobile-service-notice');if(first)first.after(top);else main.prepend(top);
+ if(setup)top.append(setup);
+ if(notices.length){
+  const group=document.createElement('section');group.className='card app-card paid-preview-top paid-preview-always';group.setAttribute('aria-label','구독 및 결제 안내');
+  const body=document.createElement('div');body.className='paid-preview-list';body.id='page-paid-preview-list';notices.forEach(n=>body.append(n));
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='paid-preview-toggle';toggle.setAttribute('aria-controls',body.id);toggle.innerHTML=uiIcon('chevron-down');
+  const sync=()=>{body.hidden=!paidPreviewExpanded;toggle.setAttribute('aria-expanded',String(paidPreviewExpanded));toggle.setAttribute('aria-label',paidPreviewExpanded?'구독 기능 가격표 접기':'구독 기능 가격표 펼치기');toggle.title=toggle.getAttribute('aria-label');};
+  // Reopen on a return to the page top, not merely when the user collapses there.
+  const pageScrollTop=()=>{const root=document.scrollingElement;let y=root?.scrollTop||0;for(let node=main;node&&node!==document.body&&node!==root;node=node.parentElement){y+=Math.max(0,node.scrollTop||0);}return Math.max(0,y);};
+  let previousScroll=pageScrollTop(),leftTop=previousScroll>16;
+  const restoreAtTop=()=>{const y=pageScrollTop();if(y===previousScroll)return;if(y>16)leftTop=true;if(!paidPreviewExpanded&&leftTop&&y<=4&&y<previousScroll){paidPreviewExpanded=true;sync();leftTop=false;}previousScroll=y;};
+  toggle.addEventListener('click',()=>{paidPreviewExpanded=!paidPreviewExpanded;sync();previousScroll=pageScrollTop();leftTop=previousScroll>16;});
+  sync();group.append(body,toggle);top.append(group);
+  document.addEventListener('scroll',restoreAtTop,{capture:true,passive:true});
+  window.addEventListener('scroll',restoreAtTop,{passive:true});
+  paidPreviewScrollCleanup=()=>{document.removeEventListener('scroll',restoreAtTop,true);window.removeEventListener('scroll',restoreAtTop);};
+ }
+ const update=()=>{if(!matchMedia('(max-width:700px)').matches){top.style.removeProperty('--paid-sticky-offset');return;}if(header&&!header.classList.contains('open'))top.style.setProperty('--paid-sticky-offset',Math.ceil(header.getBoundingClientRect().height)+'px');};
+ update();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(update);paidPreviewHeaderObserver.observe(header);}
+}
+
+async function render(){captureEducationDraft();let id=++renderId;const nextRoute=location.hash.slice(1)||'dashboard';if(activeTemporary&&!['inbox','consultation-center'].includes(nextRoute)){await leaveTemporary();if(id!==renderId)return;}else if(activeTemporary&&activeTemporary.id!==threadId){await leaveTemporary();if(id!==renderId)return;}route=nextRoute;if(inboxDesk()&&route==='inbox')route='consultation-center';if(!me){$('#app').innerHTML=home();return}CSAISetup.initialize();if(id!==renderId)return;let views={dashboard:businessDashboard,'service-notices':serviceNoticePage,commerce:commercePage,setup:qualityHome,education,style,preview:()=>preview(),'chat-page':customerChatPage,stats:statsPage,reports:reportsPage,test:()=>preview(true),inbox,'consultation-center':inbox,'reply-assistant':replyAssistantPage,alerts,settings,calendar,team:teamPage,'staff-desk':staffDesk,fields:fieldsPage,'booking-settings':bookingSettings,customers,channels,developer,pricing,features,'service-plan':servicePlanPage,credits,addons,allinone,orders,agents,invites,costs};try{let html=await (views[route]||education)();if(id!==renderId)return;captureEducationDraft();$('#app').innerHTML=inboxDesk()&&inboxCenter()?inboxDeskShell(html):shell(html);prioritizePaidPreviews();restoreEducationDraft();updatePrice();mountCalendarMotion();mountInboxPullRefresh();mountSettingsStack();const ownerChat=$('.inbox-conversation');if(ownerChat)ownerChat.scrollTop=ownerChat.scrollHeight;requestAnimationFrame(fitPreviewToScreen);}catch(x){if(id===renderId)$('#app').innerHTML=shell(card('오류',`<p class="error">${e(x.message)}</p>${btn('다시 시도','render()')}`))}}
+async function init(){try{if(location.hash.startsWith('#staff-invite=')){sessionStorage.setItem('csai-staff-invite',location.hash.slice(14));history.replaceState(null,'',location.pathname+'#staff-desk')}if(location.hash.startsWith('#invite=')){sessionStorage.setItem('csai-invite',location.hash.slice(8));history.replaceState(null,'',location.pathname+'#education')}cfg=await api('/api/config');if(publicMode){$('#app-design-system').media='all';pub=await api('/api/public/'+enc(slug));let saved=sessionStorage.getItem('csai-session-'+slug);if(!saved){try{const r=await api('/api/customer/resume',{slug,action:'load'});saved=r.token||null;if(saved)sessionStorage.setItem('csai-session-'+slug,saved)}catch{}}if(saved){try{chatMessages=await api('/api/session/'+enc(saved)+'/messages');chatSession=saved}catch{sessionStorage.removeItem('csai-session-'+slug)}}$('#app').innerHTML=`<div class="${publicChatClass()}">${phone(pub)}</div>`;setInterval(async()=>{if(!chatSession||sending||$('#booking-box'))return;try{const pollingToken=chatSession;let ms=await api('/api/session/'+enc(pollingToken)+'/messages');if(pollingToken!==chatSession)return;if(ms.length!==chatMessages.length){chatMessages=ms;$('#messages').innerHTML=welcomeMarkup(pub)+ms.map(m=>photoBubble(m,'customer')).join('');$('#messages').scrollTop=$('#messages').scrollHeight}}catch{}},4000);return}try{await refresh();if(sessionStorage.getItem('csai-desk-return')&&!inboxDesk()){sessionStorage.removeItem('csai-desk-return');location.replace('/?desk=1#consultation-center');return;}if(sessionStorage.getItem('csai-staff-invite'))history.replaceState(null,'',location.pathname+'#staff-desk');selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons);}catch(x){if(x.status!==401)throw x}await render()}catch(x){$('#app').innerHTML=`<div class="hero"><div class="hero-inner"><h1>CS AI</h1><p class="error">${e(x.message)}</p><a href="/">처음으로</a></div></div>`}}
 /* v0.2 operational UI */
 function resources(){return (route==='calendar'?calendarProfile?.resources:null)||me?.settings.resources||[{id:'default',name:'기본 담당자'}]}
 function clearSlots(){if($('#slots'))$('#slots').innerHTML=''}
 let resourceDraft=[];
-function resourceModal(reset=true){if(reset)resourceDraft=structuredClone(resources());modal('담당자 관리',resourceDraft.map((r,i)=>`<div class="row line">${input('res-'+i,r.name)}${r.id!=='default'?btn('삭제',`resourceDraft.splice(${i},1);resourceModal(false)`):''}</div>`).join('')+actionGroup({keepSize:true},btn('담당자 추가',"resourceDraft.forEach((r,i)=>r.name=val('res-'+i));resourceDraft.push({id:'r_'+crypto.randomUUID().slice(0,8),name:'새 담당자'});resourceModal(false)"),btn('저장',"act(async()=>{resourceDraft.forEach((r,i)=>r.name=val('res-'+i));if(calendarAgent&&route==='calendar')await api('/api/brand-calendar/'+enc(calendarAgent)+'/settings',{resources:resourceDraft});else await api('/api/settings',{resources:resourceDraft},'PATCH');$('.modal').remove();render()})",'primary'))+'<p class="muted">담당자마다 중복 예약을 검사합니다. 영업시간은 업체 공통입니다.</p>')}
+function resourceModal(reset=true){if(!requirePreviewAccess('calendar'))return;if(reset)resourceDraft=structuredClone(resources());modal('담당자 관리',resourceDraft.map((r,i)=>`<div class="row line">${input('res-'+i,r.name)}${r.id!=='default'?btn('삭제',`resourceDraft.splice(${i},1);resourceModal(false)`):''}</div>`).join('')+actionGroup({keepSize:true},btn('담당자 추가',"resourceDraft.forEach((r,i)=>r.name=val('res-'+i));resourceDraft.push({id:'r_'+crypto.randomUUID().slice(0,8),name:'새 담당자'});resourceModal(false)"),btn('저장',"act(async()=>{resourceDraft.forEach((r,i)=>r.name=val('res-'+i));if(calendarAgent&&route==='calendar')await api('/api/brand-calendar/'+enc(calendarAgent)+'/settings',{resources:resourceDraft});else await api('/api/settings',{resources:resourceDraft},'PATCH');$('.modal').remove();render()})",'primary'))+'<p class="muted">담당자마다 중복 예약을 검사합니다. 영업시간은 업체 공통입니다.</p>')}
 const reviewFields={
  rules:{title:'응대 규칙',item:'규칙',limit:100,maxLength:1000},
  faq:{title:'모범 질문·답변',item:'질문·답변',limit:200},
@@ -2163,23 +2504,23 @@ async function workDelete(id,button){if(confirm('업무를 삭제할까요?'))aw
 const oldAlerts=alerts;
 alerts=async function(){
  let html=await oldAlerts();
- html+=focusEvents(await api('/api/events'));
- if(!has('email'))return html;
- const n=await api('/api/notifications');
- const status=n.live_enabled?'실제 발송 활성화 · 검증 필요':cfg.demo?'로컬 모의 전송 · 이메일은 발송되지 않음':'실제 발송 비활성화';
+ const events=await api('/api/events');html+=focusEvents(sharedPreviewEnabled()?events.concat(previewData().events):events);
+ const readOnly=!has('email');if(readOnly&&!freeFeaturePreview())return html;
+ const n=readOnly?previewData().email:await api('/api/notifications');
+ const status=readOnly?'샘플 체험 · 실제 발송 없음':n.live_enabled?'실제 발송 활성화 · 검증 필요':cfg.demo?'로컬 모의 전송 · 이메일은 발송되지 않음':'실제 발송 비활성화';
  const controls=stack(
   actionGroup({keepSize:true},
-   btn('저장',"act(async()=>{await api('/api/notifications',{email:val('notify-email'),enabled:checked('notify-enabled')});render()})"),
-   btn('대기 알림 보내기',"act(async()=>{let r=await api('/api/notifications/dispatch',{});toast('처리 '+r.results.length+'건');render()})",'primary')
+   btn('저장',readOnly?'previewEmailAction(false)':"act(async()=>{await api('/api/notifications',{email:val('notify-email'),enabled:checked('notify-enabled')});render()})"),
+   btn('대기 알림 보내기',readOnly?'previewEmailAction(true)':"act(async()=>{let r=await api('/api/notifications/dispatch',{});toast('처리 '+r.results.length+'건');render()})",'primary')
   )+
   helperText(status+' / 관련 알림 옵션 필요 / '+(n.auto_enabled?'자동 발송 설정 ON (워커 실행 필요)':'현재 수동 전송')),
   {gap:'compact'}
  );
- return html+card('이메일 알림',stack(
+ return html+(readOnly?previewNotice('email','이메일 알림 설정 체험'):'')+card('이메일 알림',helperText('신규 상담, 담당자 확인 요청 등 지원되는 업무 알림을 등록된 이메일로 받아봅니다.')+stack(
   `<div class="alert-fields">${stack(label('수신 주소',input('notify-email',n.settings.email||n.verified_email||'','email'))+
    helperText(cfg.demo?'개발 환경에서는 발송하지 않습니다.':'실제 이메일은 확인된 로그인 주소로만 발송합니다.')+
    `<label><input type="checkbox" class="ui-switch" id="notify-enabled" ${n.settings.enabled?'checked':''}> 전송 활성화</label>`)}</div>`+
-  controls+n.deliveries.map(d=>`<div class="line">${e(d.status)} ${e(d.error)}</div>`).join('')
+  controls+(readOnly||!me.sample_tools||!sharedPreviewEnabled()?n.deliveries:n.deliveries.concat(previewData().email.deliveries)).map(d=>`<div class="line">${e(d.status)} ${e(d.error)}</div>`).join('')
  ));
 };
 let channelEvent=null;function channelModal(k){channelEvent=crypto.randomUUID();modal('외부 채널 메시지 검증',label('테스트 고객 ID',input('external-user','demo-user'))+label('질문',ta('external-text'))+btn('메시지 처리',`channelTest('${k}')`,'primary')+'<pre id="channel-result" class="scrolltext"></pre><p class="muted">외부 채널로 전송하지 않습니다. 실제 메시지 형식과 동일 상담 엔진을 테스트합니다.</p>')}
@@ -2317,7 +2658,7 @@ function settingsAppearance(r){
   label('지정 상담 주소 (영문 소문자/숫자)',input('alias',r.alias))+
   actionFooter([btn('주소 저장',"act(async()=>{await api('/api/appearance',{alias:val('alias')});render()})")],{divided:false})+
   (r.alias?`<p><a href="/c/${e(r.alias)}" target="_blank" rel="noopener noreferrer">/c/${e(r.alias)}</a></p>`:''):
-  locked('custom_url','원하는 상담 주소 설정');
+  locked('custom_url','원하는 상담 주소 설정')+(cfg.demo&&!cfg.shared_test&&me.sample_tools&&me.sandbox_allowed?btn('지정 URL 로컬 테스트','enableLocalPublicLinkTest()'):'');
  return stack(
   section('settings-logo-heading','업체 로고',logo+upload+logoActions)+
   section('settings-design-heading','채팅 디자인',design)+
@@ -2550,14 +2891,16 @@ function agentUseCases(){
 }
 async function agents(){
  let intro=pageTop('AI 상담원 관리','업체 안에서 상담 주제나 브랜드를 나눠 운영할 때 사용하세요.')+agentUseCases();
- if(!has('extra_agent'))return intro+locked('extra_agent','다른 브랜드·사업의 전용 상담 링크와 독립적인 말투·교육 지식이 필요할 때 추가하세요. 한 브랜드의 여러 업무에는 기본 상담원 하나면 충분합니다.');
- let r=await api('/api/agents/list'),brands=r.agents.filter(x=>x.available),a=brandEditor==='new'?null:(brands.find(x=>x.id===brandEditor)||brands[0]);brandEditor=a?.id||'new';let s=a?.settings||{brand:'추가 브랜드 상담원',tone:'자연스럽고 정중하게',prompt:'등록된 정책으로만 상담하세요.',welcome:'안녕하세요. 무엇을 도와드릴까요?',fallback:'담당자 확인이 필요합니다.',emoji:false};
- let form=card('추가 브랜드 상담원 설정',label('브랜드 이름',input('agent-brand',s.brand))+label('업종 (쉼표 구분)',ta('agent-industries',(s.industries||[]).join(', ')))+label('업무 (쉼표 구분)',ta('agent-work',(s.desired_work||[]).join(', ')))+label('상담 방식',select('agent-consultation',[['ai','AI 우선'],['staff','담당자 직접 상담']],s.consultation_mode||'ai'))+label('상품·가격 안내',ta('agent-price',s.price||''))+label('위치 안내',ta('agent-location',s.location||''))+label('영업시간',ta('agent-hours',s.hours||''))+label('공지',ta('agent-notice',s.notice||''))+label('판매처 링크 (이름 | HTTPS 주소)',ta('agent-links',(s.links||[]).map(x=>x.name+' | '+x.url).join('\n')))+label('말투',input('agent-tone',s.tone))+label('첫 인사',input('agent-welcome',s.welcome))+label('모르는 질문 안내',ta('agent-fallback',s.fallback))+`<label><input class="check" id="agent-emoji" type="checkbox" ${s.emoji?'checked':''}> 이모지 사용</label>`+`<label><input type="checkbox" class="ui-switch" id="agent-enabled" ${a?.enabled?'checked':''}> 추가 브랜드 상담원 공개</label>`  +btn('저장','saveAgent()','primary')+(a?btn('채팅창 프로필 설정',`openProfileEditor('${a.id}')`):'')+(a?btn(a.archived?'보관 복구':'브랜드 보관',`archiveBrand('${a.id}',${!a.archived})`):'')+(a?`<p>별도 상담 주소: <a href="/c/${e(a.slug)}" target="_blank" rel="noopener noreferrer">/c/${e(a.slug)}</a></p><p class="muted">채팅창 미리보기 및 상담 테스트에서 브랜드를 선택하세요. 상담 내역은 업체의 통합 상담함에 함께 쌓입니다.</p>${actionGroup({keepSize:true},btn('관리자 테스트',`previewAgent='${a.id}';chatSession=null;chatMessages=[];go('test')`),btn('추가 브랜드 상담원 채팅창 열기',`window.open('/c/${e(a.slug)}','_blank','noopener')`,'primary'))}`:'')+'<p class="muted">교육 지식과 기본 사업 정보는 브랜드별로 분리되며, 상담량과 교육 크레딧은 계정 공통입니다.</p>');
+ const readOnly=!has('extra_agent');
+ if(readOnly&&!freeFeaturePreview())return intro+locked('extra_agent','다른 브랜드·사업의 전용 상담 링크와 독립적인 말투·교육 지식이 필요할 때 추가하세요. 한 브랜드의 여러 업무에는 기본 상담원 하나면 충분합니다.');
+ if(readOnly)intro+=previewNotice('extra_agent','추가 브랜드 상담원 설정 체험');
+ let r=readOnly?{agents:[],quantity:0}:await api('/api/agents/list'),brands=r.agents.filter(x=>x.available),a=brandEditor==='new'?null:(brands.find(x=>x.id===brandEditor)||brands[0]);brandEditor=a?.id||'new';let s=a?.settings||{brand:'추가 브랜드 상담원',tone:'자연스럽고 정중하게',prompt:'등록된 정책으로만 상담하세요.',welcome:'안녕하세요. 무엇을 도와드릴까요?',fallback:'담당자 확인이 필요합니다.',emoji:false};
+ let form=card('추가 브랜드 상담원 설정',label('브랜드 이름',input('agent-brand',s.brand))+label('업종 (쉼표 구분)',ta('agent-industries',(s.industries||[]).join(', ')))+label('업무 (쉼표 구분)',ta('agent-work',(s.desired_work||[]).join(', ')))+label('상담 방식',select('agent-consultation',[['ai','AI 우선'],['staff','담당자 직접 상담']],s.consultation_mode||'ai'))+label('상품·가격 안내',ta('agent-price',s.price||''))+label('위치 안내',ta('agent-location',s.location||''))+label('영업시간',ta('agent-hours',s.hours||''))+label('공지',ta('agent-notice',s.notice||''))+label('판매처 링크 (이름 | HTTPS 주소)',ta('agent-links',(s.links||[]).map(x=>x.name+' | '+x.url).join('\n')))+label('말투',input('agent-tone',s.tone))+label('첫 인사',input('agent-welcome',s.welcome))+label('모르는 질문 안내',ta('agent-fallback',s.fallback))+`<div class="agent-toggle-row"><label><input class="check" id="agent-emoji" type="checkbox" ${s.emoji?'checked':''}> 이모지 사용</label><label><input type="checkbox" class="ui-switch" id="agent-enabled" ${a?.enabled?'checked':''}> 추가 브랜드 상담원 공개</label></div>`  +btn('저장','saveAgent()','primary')+(a?btn('채팅창 프로필 설정',`openProfileEditor('${a.id}')`):'')+(a?btn(a.archived?'보관 복구':'브랜드 보관',`archiveBrand('${a.id}',${!a.archived})`):'')+(a?`<p>별도 상담 주소: <a href="/c/${e(a.slug)}" target="_blank" rel="noopener noreferrer">/c/${e(a.slug)}</a></p><p class="muted">채팅창 미리보기 및 상담 테스트에서 브랜드를 선택하세요. 상담 내역은 업체의 통합 상담함에 함께 쌓입니다.</p>${actionGroup({keepSize:true},btn('관리자 테스트',`previewAgent='${a.id}';chatSession=null;chatMessages=[];go('test')`),btn('추가 브랜드 상담원 채팅창 열기',`window.open('/c/${e(a.slug)}','_blank','noopener')`,'primary'))}`:'')+'<p class="muted">교육 지식과 기본 사업 정보는 브랜드별로 분리되며, 상담량과 교육 크레딧은 계정 공통입니다.</p>');
  let training=a?card('추가 브랜드 상담원 교육',`<p class="muted">AI 교육 화면에서 이 상담원을 선택해 별도 자료와 말투를 가르치세요. 교육 크레딧은 업체 공통 잔액에서 차감됩니다.</p>`+btn('이 상담원 교육하기',`educationAgent='${a.id}';trainingChat=[];estimate=null;resetEducationDraft();$('#education-workspace')?.remove();go('education')`,'primary')+`<pre class="scrolltext">${e(JSON.stringify(a.published,null,2))}</pre>`+(await api('/api/agents/versions')).map(v=>btn(new Date(v.created*1000).toLocaleString()+' 복원',`act(async()=>{await api('/api/agents/versions/${v.id}/restore',{});render()})`)).join('')):'';
  return intro+card('브랜드 목록',`<p>구매한 추가 브랜드 ${r.quantity}개 · 등록 ${brands.length}개</p>${brands.map(x=>btn(x.settings.brand+(x.archived?' · 보관':''),`brandEditor='${x.id}';render()`)).join('')}${brands.length<r.quantity?btn('새 브랜드 등록',"brandEditor='new';render()",'primary'):btn('브랜드 수량 추가',"go('pricing')")}`)+form+training;
 }
 
-async function saveAgent(){await act(async()=>{let saved=await api('/api/agents',{id:brandEditor==='new'?'':brandEditor,create:brandEditor==='new',brand:val('agent-brand'),industries:val('agent-industries').split(',').map(x=>x.trim()).filter(Boolean),desired_work:val('agent-work').split(',').map(x=>x.trim()).filter(Boolean),consultation_mode:val('agent-consultation'),price:val('agent-price'),location:val('agent-location'),hours:val('agent-hours'),notice:val('agent-notice'),links:val('agent-links').split('\n').filter(x=>x.trim()).map(x=>{let [name,url]=x.split('|').map(y=>y.trim());return {name,url}}),tone:val('agent-tone'),welcome:val('agent-welcome'),fallback:val('agent-fallback'),emoji:checked('agent-emoji'),enabled:checked('agent-enabled')});brandEditor=saved.id;render()})}
+async function saveAgent(){if(!requirePreviewAccess('extra_agent'))return;await act(async()=>{let saved=await api('/api/agents',{id:brandEditor==='new'?'':brandEditor,create:brandEditor==='new',brand:val('agent-brand'),industries:val('agent-industries').split(',').map(x=>x.trim()).filter(Boolean),desired_work:val('agent-work').split(',').map(x=>x.trim()).filter(Boolean),consultation_mode:val('agent-consultation'),price:val('agent-price'),location:val('agent-location'),hours:val('agent-hours'),notice:val('agent-notice'),links:val('agent-links').split('\n').filter(x=>x.trim()).map(x=>{let [name,url]=x.split('|').map(y=>y.trim());return {name,url}}),tone:val('agent-tone'),welcome:val('agent-welcome'),fallback:val('agent-fallback'),emoji:checked('agent-emoji'),enabled:checked('agent-enabled')});brandEditor=saved.id;render()})}
 
 function showWorkDraft(w){$('#work-draft')?.remove();$('#messages').insertAdjacentHTML('beforeend',`<section id="work-draft" class="card booking-form"><h3>업무 요청 내용 확인</h3>${label('제목',input('draft-title',w.title))}${label('상세 내용',ta('draft-detail',w.details))}${actionGroup({keepSize:true},btn('확인 및 접수',`submitWorkDraft('${w.kind}')`,'primary'),btn('닫기',"$('#work-draft').remove()"))}</section>`)}
 /* v0.5: direct examples are a real training job, never an immediate free knowledge write. */
@@ -2607,10 +2950,10 @@ function developerKeyList(keys){
   ||emptyState('발급한 키가 없습니다.');
 }
 async function developer(){
- if(!has('external_api'))return pageTop('개발자 센터','구매한 기능을 외부 서비스에서 호출합니다.')+locked('external_api','API 키와 상담·예약·업무·교육 API를 제공합니다.');
- const x=await api('/api/developer/keys');
+ const readOnly=!has('external_api');if(readOnly&&!freeFeaturePreview())return pageTop('개발자 센터','구매한 기능을 외부 서비스에서 호출합니다.')+locked('external_api','API 키와 상담·예약·업무·교육 API를 제공합니다.');
+ const x=readOnly?{scopes:[],keys:[]}:await api('/api/developer/keys');
  const summary=developerSetupStatus(x);
- const tasks=card('API 연동 체크리스트',`<div id="developer-tasks" data-summary="${e(JSON.stringify(summary))}">${developerTaskList(summary)}</div>`+
+ const tasks=card('API 연동 체크리스트',`<div id="developer-tasks" data-summary="${e(JSON.stringify(summary))}">${readOnly?helperText('구독 후 API 권한 및 키 발급 상태를 확인할 수 있습니다.'):developerTaskList(summary)}</div>`+
   actionFooter([btn('상태 새로고침','refreshDeveloperTasks(this)','secondary ui-sm')],{divided:false}));
  const form=card('API 키 발급',`<form onsubmit="event.preventDefault();createDevKey(this)">
   ${label('키 이름',input('dev-key-name','외부 서비스'))}
@@ -2619,12 +2962,13 @@ async function developer(){
   </fieldset>
   ${actionFooter(['<button id="dev-issue-button" class="ui-button primary" type="submit">API 키 발급</button>'],{divided:false})}
  </form>`);
- return pageTop('개발자 센터','서버 전용 API 키 · 기존 상담량 및 교육 크레딧 사용')+
+ return (readOnly?previewNotice('external_api','API 연동 화면 체험'):'')+pageTop('개발자 센터','서버 전용 API 키 · 기존 상담량 및 교육 크레딧 사용')+
   splitContent(tasks,form,{balanced:true})+
   card('API 키 관리',`<div id="developer-key-list">${developerKeyList(x.keys)}</div>`)+
   card('개발 문서','<p>Authorization: Bearer YOUR_KEY</p><p>POST /v1/chat/sessions → POST /v1/chat</p><p>구매 기능에 따라 예약, 업무, 교육, 통계 API를 사용할 수 있습니다.</p><a href="/api/docs" target="_blank" rel="noopener noreferrer">API 문서 열기</a><p class="muted">키는 서버 환경변수에 보관하고 브라우저 코드에 노출하지 마세요.</p>');
 }
 async function refreshDeveloperTasks(button){
+ if(!requirePreviewAccess('external_api'))return;
  const panel=$('#developer-tasks'),issue=$('#dev-issue-button');
  if(button.disabled||issue.disabled)return;
  button.disabled=true;button.setAttribute('aria-busy','true');
@@ -2639,6 +2983,7 @@ async function refreshDeveloperTasks(button){
  finally{button.disabled=false;button.removeAttribute('aria-busy');}
 }
 async function createDevKey(form){
+ if(!requirePreviewAccess('external_api'))return;
  const button=form.querySelector('[type="submit"]');
  const panel=$('#developer-tasks');
  if(button.disabled||!panel)return;
@@ -2666,16 +3011,16 @@ let crmAgent='';
 function workPath(id=''){return '/api/work'+(id?'/'+enc(id):'')+'?agent='+enc(crmAgent)}
 function leadPath(id=''){return '/api/leads'+(id?'/'+enc(id):'')+'?agent='+enc(crmAgent)}
 function crmPath(id=''){return '/api/crm/contacts'+(id?'/'+enc(id):'')+'?agent='+enc(crmAgent)}
-async function crmPanel(){let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];if(crmAgent&&!brands.some(x=>x.id===crmAgent))crmAgent='';let contacts=await api(crmPath());let archived=brands.some(x=>x.id===crmAgent&&x.archived);return card('고객 CRM','<p class="muted">고객 정보와 업무는 선택 브랜드에만 표시됩니다.</p>'+(archived?'<p>보관된 브랜드 · 조회 및 삭제만 가능</p>':btn('고객 등록','crmEdit()','primary'))+contacts.map(x=>`<div class="line"><b>${e(x.name)}</b><p>${e([x.email,x.phone].filter(Boolean).join(' · '))}</p><p>${e(x.notes)}</p>${x.threads.map(t=>btn('상담 이력',`inboxAgent=crmAgent;threadId='${t.thread}';go('inbox')`)).join('')}${actionGroup({keepSize:true},archived?'':btn('수정',`crmEdit('${x.id}')`),btn('삭제',`crmDelete('${x.id}',this)`))}</div>`).join(''))}
-async function crmEdit(id=''){await act(async()=>{let items=await api(crmPath()),x=items.find(z=>z.id===id)||{},threads=(await api('/api/inbox?agent='+enc(crmAgent))).filter(t=>t.kind!=='test'&&!t.sample);if(id&&!x.id)throw Error('고객 정보 없음');modal(id?'고객 정보 수정':'고객 등록',label('이름',input('crm-name',x.name||''))+label('이메일',input('crm-email',x.email||'','email'))+label('연락처',input('crm-phone',x.phone||''))+label('메모',ta('crm-notes',x.notes||''))+label('연결할 상담',select('crm-thread',[['','선택 안 함'],...threads.map(t=>[t.id,(t.last||'고객 상담').slice(0,50)])],''))+btn('저장',`saveCrm('${id}')`,'primary'))})}
-async function saveCrm(id){await act(async()=>{await api(crmPath(id),{agent:crmAgent,name:val('crm-name'),email:val('crm-email'),phone:val('crm-phone'),notes:val('crm-notes'),thread:val('crm-thread')},id?'PATCH':'POST');$('.modal').remove();render()})}
-async function crmDelete(id,button){if(confirm('고객 정보만 삭제하고 상담 내역은 유지할까요?'))await deleteVisibleRow(crmPath(id),button);}
-async function leadPanel(archived=false){let xs=await api(leadPath()),labels={inquiry:'일반 문의',interested:'관심 고객',ready:'구매·예약 의사'};return card('잠재 고객 자동 분류',`<p class="muted">실제 상담의 구매 의사에 따라 분류하며, 담당자가 수정할 수 있습니다.</p>`+xs.map(x=>`<div class="line"><b>${e(labels[x.stage]||x.stage)}</b><p class="muted">${e(x.source==='ai'?'AI 분류':x.source==='staff'?'담당자 분류':'규칙 기반 분류')}</p>${archived?'':select('lead-'+x.thread,Object.entries(labels),x.stage)+btn('분류 저장',`saveLead('${x.thread}')`)}${btn('상담 열기',`inboxAgent=crmAgent;threadId='${x.thread}';go('inbox')`)}</div>`).join(''))}
+async function crmPanel(){let brands=has('extra_agent')?(await api('/api/agents/list')).agents.filter(x=>x.available):[];if(crmAgent&&!brands.some(x=>x.id===crmAgent))crmAgent='';let contacts=has('crm')?await api(crmPath()):previewData().contacts;if(has('crm')&&me.sample_tools&&sharedPreviewEnabled()&&!crmAgent)contacts=contacts.concat(previewData().contacts);let archived=brands.some(x=>x.id===crmAgent&&x.archived);return card('고객 CRM','<p class="muted">고객 정보와 업무는 선택 브랜드에만 표시됩니다.</p>'+(archived?'<p>보관된 브랜드 · 조회 및 삭제만 가능</p>':btn('고객 등록','crmEdit()','primary'))+contacts.map(x=>`<div class="line${sampleRecord(x)?' sample-record':''}"><b>${e(sampleTitle(x.name,sampleRecord(x)))}</b><p>${e([x.email,x.phone].filter(Boolean).join(' · '))}</p><p>${e(x.notes)}</p>${x.threads.map(t=>btn('상담 이력',`inboxAgent=crmAgent;threadId='${t.thread}';go('inbox')`)).join('')}${actionGroup({keepSize:true},archived?'':btn('수정',`crmEdit('${x.id}')`),btn('삭제',`crmDelete('${x.id}',this)`))}</div>`).join(''))}
+async function crmEdit(id=''){if((!has('crm')&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){const x=previewData().contacts.find(z=>z.id===id)||{};modal('샘플 고객 등록·수정',helperText('실제 개인정보를 입력하지 마세요.')+label('이름',input('crm-name',x.name||''))+label('메모',ta('crm-notes',x.notes||''))+btn('저장',`saveCrm('${id}')`,'primary'));return;}if(!requirePreviewAccess('crm'))return;await act(async()=>{let items=await api(crmPath()),x=items.find(z=>z.id===id)||{},threads=(await api('/api/inbox?agent='+enc(crmAgent))).filter(t=>t.kind!=='test'&&!t.sample);if(id&&!x.id)throw Error('고객 정보 없음');modal(id?'고객 정보 수정':'고객 등록',label('이름',input('crm-name',x.name||''))+label('이메일',input('crm-email',x.email||'','email'))+label('연락처',input('crm-phone',x.phone||''))+label('메모',ta('crm-notes',x.notes||''))+label('연결할 상담',select('crm-thread',[['','선택 안 함'],...threads.map(t=>[t.id,(t.last||'고객 상담').slice(0,50)])],''))+btn('저장',`saveCrm('${id}')`,'primary'))})}
+async function saveCrm(id){if((!has('crm')&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){if(!val('crm-name').trim())return toast('이름을 입력하세요.');previewUpsert(previewData().contacts,id,{name:'샘플 · '+val('crm-name').replace(/^샘플 · /,''),notes:val('crm-notes'),email:'',phone:'',threads:[]});$('.modal')?.remove();render();return;}if(!requirePreviewAccess('crm'))return;await act(async()=>{await api(crmPath(id),{agent:crmAgent,name:val('crm-name'),email:val('crm-email'),phone:val('crm-phone'),notes:val('crm-notes'),thread:val('crm-thread')},id?'PATCH':'POST');$('.modal').remove();render()})}
+async function crmDelete(id,button){if((!has('crm')&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){const data=previewData();data.contacts=data.contacts.filter(x=>x.id!==id);render();return;}if(confirm('고객 정보만 삭제하고 상담 내역은 유지할까요?'))await deleteVisibleRow(crmPath(id),button);}
+async function leadPanel(archived=false){let xs=has('leads')?await api(leadPath()):[],labels={inquiry:'일반 문의',interested:'관심 고객',ready:'구매·예약 의사'};return card('잠재 고객 자동 분류',`<p class="muted">실제 상담의 구매 의사에 따라 분류하며, 담당자가 수정할 수 있습니다.</p>`+xs.map(x=>`<div class="line"><b>${e(labels[x.stage]||x.stage)}</b><p class="muted">${e(x.source==='ai'?'AI 분류':x.source==='staff'?'담당자 분류':'규칙 기반 분류')}</p>${archived?'':select('lead-'+x.thread,Object.entries(labels),x.stage)+btn('분류 저장',`saveLead('${x.thread}')`)}${btn('상담 열기',`inboxAgent=crmAgent;threadId='${x.thread}';go('inbox')`)}</div>`).join(''))}
 async function saveLead(id){await act(async()=>{await api(leadPath(id),{stage:val('lead-'+id)},'PATCH');render()})}
 function quotePath(path){return '/api/quotes/'+path+'?agent='+enc(crmAgent)}
-async function quotePanel(list,archived=false){let items=await api(quotePath('items')),offers=await api(quotePath('offers'));return card('견적 상품·가격 관리',(archived?'<p>보관된 브랜드 · 조회만 가능</p>':label('상품명',input('quote-item-name'))+label('원화 단가',input('quote-item-price','','number'))+btn('상품 등록','saveQuoteItem()','primary'))+items.map(x=>`<div class="line"><b>${e(x.name)} · ${money(x.price)}</b> ${e(x.active?'판매 중':'중지')} ${archived?'':btn('수정',`quoteItemEdit('${x.id}')`)}</div>`).join(''))+card('견적서 작성 및 전송',`<p class="muted">등록된 단가로 계산합니다. 담당자 승인 전에는 고객에게 금액을 전송하지 않습니다.</p>`+list.filter(x=>x.kind==='quote'&&!x.sample).map(x=>`<div class="line"><b>${e(x.title)}</b><p>${e(x.details)}</p>${archived?'':btn('견적서 작성',`quoteCompose('${x.id}')`)}</div>`).join('')+offers.map(x=>`<div class="line"><b>${money(x.amount)}</b><p>${e(x.items.map(z=>z.name+' × '+z.quantity).join(', '))}</p><small>${x.status==='sent'?'전송 완료':'검토 대기'}</small>${!archived&&x.status==='draft'?btn('고객에게 전송',`sendQuote('${x.id}')`,'primary'):''}</div>`).join(''))}
-async function saveQuoteItem(){await act(async()=>{await api(quotePath('items'),{name:val('quote-item-name'),price:Number(val('quote-item-price'))});render()})}
-async function quoteItemEdit(id){await act(async()=>{let x=(await api(quotePath('items'))).find(z=>z.id===id);modal('견적 상품 수정',label('상품명',input('qe-name',x.name))+label('단가',input('qe-price',x.price,'number'))+`<label><input class="check" type="checkbox" id="qe-active" ${x.active?'checked':''}> 판매 중</label>`+btn('저장',`act(async()=>{await api(quotePath('items'),{id:'${id}',name:val('qe-name'),price:Number(val('qe-price')),active:checked('qe-active')});$('.modal').remove();render()})`,'primary'))})}
+async function quotePanel(list,archived=false){let items=has('quote')?await api(quotePath('items')):previewData().quoteItems,offers=has('quote')?await api(quotePath('offers')):previewData().quoteOffers;if(has('quote')&&me.sample_tools&&sharedPreviewEnabled()&&!crmAgent){items=items.concat(previewData().quoteItems);offers=offers.concat(previewData().quoteOffers);}return card('견적 상품·가격 관리',(archived?'<p>보관된 브랜드 · 조회만 가능</p>':label('상품명',input('quote-item-name'))+label('원화 단가',input('quote-item-price','','number'))+btn('상품 등록','saveQuoteItem()','primary'))+items.map(x=>`<div class="line${sampleRecord(x)?' sample-record':''}"><b>${e(sampleTitle(x.name,sampleRecord(x)))} · ${money(x.price)}</b> ${e(x.active?'판매 중':'중지')} ${archived?'':btn('수정',`quoteItemEdit('${x.id}')`)}</div>`).join(''))+card('견적서 작성 및 전송',`<p class="muted">등록된 단가로 계산합니다. 담당자 승인 전에는 고객에게 금액을 전송하지 않습니다.</p>`+list.filter(x=>x.kind==='quote'&&!x.sample).map(x=>`<div class="line"><b>${e(x.title)}</b><p>${e(x.details)}</p>${archived?'':btn('견적서 작성',`quoteCompose('${x.id}')`)}</div>`).join('')+offers.map(x=>`<div class="line${sampleRecord(x)?' sample-record':''}"><b>${money(x.amount)}</b><p>${e(x.items.map(z=>z.name+' × '+z.quantity).join(', '))}</p><small>${x.status==='sent'?'전송 완료':'검토 대기'}</small>${!archived&&x.status==='draft'?btn('고객에게 전송',x.id.startsWith('preview-')?`previewSendQuote('${x.id}')`:`sendQuote('${x.id}')`,'primary'):''}</div>`).join(''))}
+async function saveQuoteItem(){if(!has('quote')&&freeFeaturePreview()){if(!val('quote-item-name').trim())return toast('상품명을 입력하세요.');previewUpsert(previewData().quoteItems,'',{name:'샘플 · '+val('quote-item-name'),price:Number(val('quote-item-price')),active:true});render();return;}if(!requirePreviewAccess('quote'))return;await act(async()=>{await api(quotePath('items'),{name:val('quote-item-name'),price:Number(val('quote-item-price'))});render()})}
+async function quoteItemEdit(id){if((!has('quote')&&freeFeaturePreview())||(me.sample_tools&&sharedPreviewEnabled()&&String(id).startsWith('preview-'))){const x=previewData().quoteItems.find(z=>z.id===id);if(!x)return;modal('샘플 견적 상품 수정',label('상품명',input('qe-name',x.name))+label('단가',input('qe-price',x.price,'number'))+btn('저장',`savePreviewQuoteItem('${id}')`,'primary'));return;}await act(async()=>{let x=(await api(quotePath('items'))).find(z=>z.id===id);modal('견적 상품 수정',label('상품명',input('qe-name',x.name))+label('단가',input('qe-price',x.price,'number'))+`<label><input class="check" type="checkbox" id="qe-active" ${x.active?'checked':''}> 판매 중</label>`+btn('저장',`act(async()=>{await api(quotePath('items'),{id:'${id}',name:val('qe-name'),price:Number(val('qe-price')),active:checked('qe-active')});$('.modal').remove();render()})`,'primary'))})}
 async function quoteCompose(id){await act(async()=>{let items=(await api(quotePath('items'))).filter(x=>x.active);if(!items.length)throw Error('견적 상품을 먼저 등록하세요.');let suggested=await api(quotePath('suggestions/'+enc(id)));modal('견적 작성','<p class="muted">상담에서 파악한 항목과 수량을 미리 입력합니다. 담당자가 반드시 검토하세요.</p>'+items.map(x=>`<div class="line"><label>${e(x.name)} · ${money(x.price)}</label><input class="quote-qty" data-id="${e(x.id)}" type="number" min="0" max="1000" value="${suggested.find(s=>s.id===x.id)?.quantity||0}"></div>`).join('')+label('추가 안내',ta('quote-note'))+btn('서버 금액 계산 및 저장',`createQuote('${id}')`,'primary'))})}
 async function createQuote(id){await act(async()=>{let items=[...document.querySelectorAll('.quote-qty')].map(x=>({id:x.dataset.id,quantity:Number(x.value)})).filter(x=>x.quantity>0);let r=await api(quotePath('offers'),{work:id,items,note:val('quote-note')});$('.modal').remove();toast('견적 '+money(r.amount)+' 저장 완료');render()})}
 async function sendQuote(id){if(!confirm('검토한 견적 금액을 고객 채팅창에 전송할까요?'))return;await act(async()=>{await api(quotePath('offers/'+enc(id)+'/send'),{confirmed:true});toast('견적 전송 완료');render()})}
@@ -2719,29 +3064,62 @@ async function analyticsPanel(){let r=await api('/api/analytics?days='+analytics
 const reportAlerts=alerts;
 alerts=async function(){
  const html=await reportAlerts();
- if(!has('report'))return html;
- const r=await api('/api/reports');
+ if(!has('report')&&!freeFeaturePreview())return html;
+ return html+await reportPanel();
+}
+async function reportPanel(){
+ const readOnly=!has('report');if(readOnly&&!freeFeaturePreview())return locked('report','일간·주간 리포트 권한이 필요합니다.');
+ const r=readOnly?previewData().report:await api('/api/reports');
  const settings=stack(label('생성 주기',select('report-frequency',[['daily','매일'],['weekly','매주']],r.settings.frequency))+
   `<label><input class="check" type="checkbox" id="report-enabled" ${r.settings.enabled?'checked':''}> 자동 생성</label>`);
  const actions=stack(helperText(`${r.worker_enabled?'자동 워커 설정됨':'자동 워커 환경 설정 필요'} · 지난 완료 기간 기준 집계`)+
   actionGroup({keepSize:true},btn('설정 저장','saveReportSettings()','primary'),btn('리포트 생성','generateReport()')),{gap:'compact'});
- const reports=r.reports.map(x=>`<div class="line"><b>${e(x.period)}</b><p>고객 상담 ${x.summary.threads}건 · 완료 ${x.summary.resolved}건 · 미학습 ${x.summary.unknown}건 · 메시지 ${x.summary.messages}개</p></div>`).join('');
- return html+card('일간·주간 상담 리포트',stack(`<div class="alert-fields">${settings}</div>`+actions+
-  (reports?divider()+section('report-history','생성 내역',reports):'')));
+ const reports=r.reports.map(x=>reportSummaryCard(x)).join('')+(!readOnly&&me.sample_tools&&sharedPreviewEnabled()?previewData().report.reports.map(reportSummaryCard).join(''):'');
+ return (readOnly?previewNotice('report','상담 리포트 설정 체험'):'')+card('일간·주간 상담 리포트',helperText('기간별 상담 현황과 완료율, 미학습 질문을 확인하고 엑셀에서 열 수 있는 CSV로 저장하세요.')+stack(`<div class="alert-fields">${settings}</div>`+actions+
+  (reports?divider()+section('report-history','생성 내역',actionGroup(btn('CSV 다운로드','downloadReportCsv()'))+reports):'')));
 }
-async function saveReportSettings(){await act(async()=>{await api('/api/reports/settings',{frequency:val('report-frequency'),enabled:checked('report-enabled')});toast('설정 저장 완료');render()})}
-async function generateReport(){await act(async()=>{await api('/api/reports/generate',{});toast('리포트 생성 완료');render()})}
+async function reportsPage(){return pageTop('일간·주간 리포트','상담 현황과 완료율을 확인하고 CSV로 저장하세요.')+await reportPanel();}
+async function statsPage(){
+ const top=pageTop('상담 통계','기간별 상담 현황과 채널·업무 통계를 확인하세요.');
+ if(has('stats')&&!(me.sample_tools&&sharedPreviewEnabled()))return top+await analyticsPanel();
+ if(!sharedPreviewEnabled())return top+locked('stats','고급 상담 통계 권한이 필요합니다.');
+ const values=[2,4,3,5,2,1,3],max=Math.max(...values);
+ return top+(has('stats')?await analyticsPanel():previewNotice('stats','상담 통계 체험'))+card('최근 7일 상담 통계',helperText('샘플 데이터 · 실제 고객 상담 기록이 아닙니다.')+table(['고객 상담','메시지','미학습','완료'],[[20,82,3,15]])+`<div style="display:flex;align-items:end;height:120px;gap:4px;margin:18px 0">${values.map((n,i)=>`<div title="샘플 ${i+1}일: ${n}건" style="flex:1;background:#3182f6;border-radius:3px 3px 0 0;height:${n/max*100}%"></div>`).join('')}</div>`+table(['채널','상담'],[['웹 채팅',16],['외부 채널',4]]));
+}
+async function customerChatPage(){
+ const html=await preview();
+ const brand=previewAgent?(await api('/api/agents/list')).agents.find(a=>a.id===previewAgent&&a.available):null;
+ const appearance=brand?null:await api('/api/appearance');
+ const canOpen=me.public_access&&(brand?brand.enabled:me.enabled);
+ const link='/c/'+enc(brand?.slug||(has('custom_url')&&appearance?.alias)||me.slug);
+ const localTest=!brand&&cfg.demo&&!cfg.shared_test&&me.sample_tools&&me.sandbox_allowed;
+ return pageTop('고객 채팅 페이지','고객에게 제공하는 페이지형 상담창을 확인하세요.')+card('고객 상담 페이지 열기',canOpen?`<a class="ui-button primary" href="${e(link)}" target="_blank" rel="noopener noreferrer">공개 채팅 페이지 열기</a>`:helperText('공개 채팅이 활성화되면 실제 고객 페이지를 열 수 있습니다.')+(localTest?btn('현재 계정으로 공개 링크 테스트','enableLocalPublicLinkTest()','primary'):''))+html;
+}
+function reportSummaryCard(x){
+ const v=x.summary||{},n=k=>Math.max(0,Number(v[k])||0),total=n('threads'),done=n('resolved'),unknown=n('unknown'),rate=total?Math.round(done/total*100):0,max=Math.max(1,total,done,unknown);
+ const bars=[['전체 상담',total],['완료',done],['미학습',unknown]].map(([name,value])=>`<div class="report-bar-row"><span>${name}</span><div class="report-bar-track"><span style="width:${value/max*100}%"></span></div><b>${value}건</b></div>`).join('');
+ return `<div class="line report-summary-card"><b>${e(x.period)}</b><div class="report-metric-pair"><div><small>상담 완료율</small><strong>${total?rate+'%':'집계 없음'}</strong></div><div><small>메시지</small><strong>${n('messages')}개</strong></div></div><div class="report-bars">${bars}</div><p class="muted">${unknown?'미학습 질문을 검토하고 반복 문의를 교육에 반영하세요.':total?'이번 기간 미학습 질문이 없습니다.':'집계된 상담이 없습니다.'}</p></div>`;
+}
+async function downloadReportCsv(){await act(async()=>{
+ const sample=!has('report');if(sample&&!freeFeaturePreview())return;
+ const r=sample?previewData().report:await api('/api/reports');
+ const cell=v=>{let t=String(v??'');if(/^[=+@-]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};
+ const rows=[['기간','상담 건수','완료 건수','완료율(%)','미학습 건수','메시지 수'],...r.reports.map(x=>{const v=x.summary||{};return [x.period,v.threads,v.resolved,v.threads?Math.round(v.resolved/v.threads*100):'',v.unknown,v.messages]})];
+ const blob=new Blob(['\uFEFF'+rows.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(sample?'csai-sample-report':'csai-report')+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+})}
+async function saveReportSettings(){if(!has('report')&&freeFeaturePreview()){previewData().report.settings={frequency:val('report-frequency'),enabled:checked('report-enabled')};toast('샘플 리포트 설정 저장');render();return;}if(!requirePreviewAccess('report'))return;await act(async()=>{await api('/api/reports/settings',{frequency:val('report-frequency'),enabled:checked('report-enabled')});toast('설정 저장 완료');render()})}
+async function generateReport(){if(!has('report')&&freeFeaturePreview()){previewData().report.reports.unshift({period:'샘플 · '+(previewData().report.settings.frequency==='weekly'?'주간':'일간')+' 리포트',summary:{threads:18,resolved:14,unknown:3,messages:82}});toast('샘플 리포트 생성 완료');render();return;}if(!requirePreviewAccess('report'))return;await act(async()=>{await api('/api/reports/generate',{});toast('리포트 생성 완료');render()})}
 
 const pushAlerts=alerts;
 alerts=async function(){
  const html=await pushAlerts();
- if(!has('push'))return html+locked('push','브라우저가 닫혀 있어도 지원되는 기기에서 업무 알림을 받을 수 있습니다.');
- const r=await api('/api/push'),current=localStorage.getItem('csai-push-id');
- const status=r.configured?(r.live?'실제 발송 활성화 · 기기 확인 필요':'모의 발송 모드'):'VAPID 환경변수 설정 필요';
+ const readOnly=!has('push');if(readOnly&&!freeFeaturePreview())return html+locked('push','브라우저가 닫혀 있어도 지원되는 기기에서 업무 알림을 받을 수 있습니다.');
+ const r=readOnly?previewData().push:await api('/api/push'),current=localStorage.getItem('csai-push-id');
+ const status=readOnly?'샘플 체험 · 실제 기기 등록 없음':r.configured?(r.live?'실제 발송 활성화 · 기기 확인 필요':'모의 발송 모드'):'VAPID 환경변수 설정 필요';
  const settings=stack(
   helperText(status+' · 구매한 알림 종류만 발송 · HTTPS 필요. iPhone은 홈 화면에 추가 후 실행하세요.')+
   helperText('화면이 닫혀 있을 때는 기기의 기본 알림음·진동 설정을 따릅니다. 무음 및 방해금지 설정을 강제로 해제하지 않습니다.')+
-  actionGroup({keepSize:true},btn('이 기기 알림 등록','registerPush()','primary'),btn('이 기기 알림 해제','unregisterPush()'),btn('기기 알림 테스트','testPushOnDevice()')),
+  actionGroup({keepSize:true},btn('알림 등록',readOnly?"previewPushAction('register')":'registerPush()','primary'),btn('알림 해제',readOnly?"previewPushAction('remove')":'unregisterPush()'),btn('알림 테스트',readOnly?"previewPushAction('test')":'testPushOnDevice()')).replace('ui-actions-keep-size','ui-actions-keep-size push-device-actions'),
   {gap:'compact'});
  const devices=r.devices.map(d=>`<div class="line">
   <b>${d.id===current?'현재 기기':'등록 기기'}</b><p>${e(new Date(d.created*1000).toLocaleString())}</p>
@@ -2749,19 +3127,19 @@ alerts=async function(){
    ${r.kinds.map(k=>`<label class="line"><input type="checkbox" class="check" data-push-kind="${e(k.id)}" ${d.preferences.kinds.includes(k.id)?'checked':''} ${k.available?'':'disabled'}> ${e(k.label)}${k.available?'':' · 추가 기능 필요'}</label>`).join('')}
    <label><input type="checkbox" class="check" data-push-silent ${d.preferences.silent?'checked':''}> 무음 요청</label>
    <button type="button" onclick="saveDevicePush(this,'${e(d.id)}')">설정 저장</button>
-  </details>${btn('등록 해제',`removePush('${d.id}')`)}
+  </details>${btn('등록 해제',d.id==='preview-device'?"previewPushAction('remove')":`removePush('${d.id}')`)}
  </div>`).join('');
  const sound=section('foreground-sound','화면이 열려 있을 때 추가 효과음',stack(
   helperText('이 브라우저에서 직접 켜면 화면이 열린 동안만 효과음을 재생합니다. 백그라운드 커스텀 사운드는 지원하지 않습니다.')+
-  actionGroup({keepSize:true},btn('효과음 켜기·미리 듣기','enableForegroundSound()'),btn('효과음 끄기','disableForegroundSound()')),
+  actionGroup({keepSize:true},btn('켜기·미리 듣기','enableForegroundSound()'),btn('끄기','disableForegroundSound()')).replace('ui-actions-keep-size','ui-actions-keep-size push-sound-actions'),
   {gap:'compact'}));
  const deliveries=r.deliveries.map(d=>helperText(new Date(d.created*1000).toLocaleString()+' · '+d.status)).join('');
- return html+card('모바일·PC 웹 푸시 알림',stack(settings+
+ return html+(readOnly?previewNotice('push','기기 알림 설정 체험'):'')+card('모바일·PC 웹 푸시 알림',helperText('등록한 브라우저나 홈 화면 앱에서 업무 알림을 받습니다. 지원 환경과 기기 권한이 필요합니다.')+stack(settings+
   (devices?divider()+section('push-devices','등록 기기',devices):'')+divider()+sound+
   (deliveries?divider()+section('push-deliveries','웹 푸시 발송 내역',stack(deliveries,{gap:'compact'})):'')
  ));
 };
-async function saveDevicePush(button,id){await act(async()=>{const root=button.closest('details');const kinds=[...root.querySelectorAll('[data-push-kind]:checked')].map(x=>x.dataset.pushKind);await api('/api/push/'+enc(id),{kinds,silent:root.querySelector('[data-push-silent]').checked},'PATCH');toast('기기 알림 설정 저장');render()})}
+async function saveDevicePush(button,id){if(id==='preview-device'){const d=previewData().push.devices[0];if(d)d.preferences.silent=button.closest('details').querySelector('[data-push-silent]').checked;toast('샘플 알림 설정 저장');return;}await act(async()=>{const root=button.closest('details');const kinds=[...root.querySelectorAll('[data-push-kind]:checked')].map(x=>x.dataset.pushKind);await api('/api/push/'+enc(id),{kinds,silent:root.querySelector('[data-push-silent]').checked},'PATCH');toast('기기 알림 설정 저장');render()})}
 async function testPushOnDevice(){await act(async()=>{if(!('Notification'in window)||Notification.permission!=='granted')throw Error('먼저 알림 권한을 허용하세요.');const reg=await navigator.serviceWorker.getRegistration('/');if(!reg)throw Error('먼저 이 기기를 등록하세요.');await reg.showNotification('CS AI · 기기 알림 테스트',{body:'이 알림은 기기 자체 테스트입니다. 서버 발송 검증은 별도입니다.',tag:'csai-device-test',data:{path:'/#alerts'}});toast('기기 테스트 알림 요청 완료')})}
 let foregroundAudio=null,foregroundSound=false,lastPushSound='';
 function playForegroundSound(urgent=false){if(!foregroundSound||!foregroundAudio||foregroundAudio.state!=='running'||document.hidden)return;const t=foregroundAudio.currentTime;for(const [i,hz] of (urgent?[650,850,650]:[540,720]).entries()){const osc=foregroundAudio.createOscillator(),gain=foregroundAudio.createGain(),at=t+i*.14;osc.frequency.value=hz;gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(.065,at+.025);gain.gain.exponentialRampToValueAtTime(.001,at+.12);osc.connect(gain);gain.connect(foregroundAudio.destination);osc.start(at);osc.stop(at+.14)}}
@@ -2775,8 +3153,8 @@ async function unregisterPush(){await act(async()=>{let id=localStorage.getItem(
 async function removePush(id){if(!confirm('이 기기의 푸시 등록을 해제할까요?'))return;await act(async()=>{if(localStorage.getItem('csai-push-id')===id){await unregisterPush();return}await api('/api/push/'+id,undefined,'DELETE');render()})}
 
 const domainChannels=channels;
-channels=async function(){let html=await domainChannels();if(!has('domain'))return html+locked('domain','보유한 도메인에서 고객 상담을 제공합니다.');let r=await api('/api/domains'),d=r.domain;return html+card('자체 도메인',label('고객 상담 도메인',input('domain-host',d?.hostname||'','text','chat.example.com'))+btn('등록','saveDomain()','primary')+`<p class="muted">${r.configured?'Cloudflare 확인 설정 완료':'운영자 Cloudflare for SaaS 설정 필요'}</p>`+(d?`<p>상태: ${d.active?'DNS·HTTPS 검증 완료':'확인 대기'}</p><p class="muted">아래 DNS 레코드를 추가하고 운영자가 Custom Hostname 및 TLS 인증서를 연결한 후 확인하세요.</p>`+table(['종류','이름','값'],[['TXT',d.txt_name,d.txt_value],['CNAME',d.hostname,r.target||'운영자 설정 필요']])+actionGroup({keepSize:true},btn('DNS 및 HTTPS 확인','verifyDomain()'),btn('연결 해제','removeDomain()'))+(d.active?`<p><a href="https://${e(d.hostname)}" target="_blank" rel="noopener noreferrer">고객 상담 열기</a></p>`:''):''))};
-async function saveDomain(){await act(async()=>{await api('/api/domains',{hostname:val('domain-host')});render()})}
+channels=async function(){let html=await domainChannels();const readOnly=!has('domain');if(readOnly&&!freeFeaturePreview())return html+locked('domain','보유한 도메인에서 고객 상담을 제공합니다.');let r=readOnly?{domain:null,configured:false}:await api('/api/domains'),d=r.domain;return html+(readOnly?previewNotice('domain','자체 도메인 설정 체험'):'')+card('자체 도메인',label('고객 상담 도메인',input('domain-host',d?.hostname||'','text','chat.example.com'))+btn('등록','saveDomain()','primary')+`<p class="muted">${r.configured?'Cloudflare 확인 설정 완료':'운영자 Cloudflare for SaaS 설정 필요'}</p>`+(d?`<p>상태: ${d.active?'DNS·HTTPS 검증 완료':'확인 대기'}</p><p class="muted">아래 DNS 레코드를 추가하고 운영자가 Custom Hostname 및 TLS 인증서를 연결한 후 확인하세요.</p>`+table(['종류','이름','값'],[['TXT',d.txt_name,d.txt_value],['CNAME',d.hostname,r.target||'운영자 설정 필요']])+actionGroup({keepSize:true},btn('DNS 및 HTTPS 확인','verifyDomain()'),btn('연결 해제','removeDomain()'))+(d.active?`<p><a href="https://${e(d.hostname)}" target="_blank" rel="noopener noreferrer">고객 상담 열기</a></p>`:''):''))};
+async function saveDomain(){if(!requirePreviewAccess('domain'))return;await act(async()=>{await api('/api/domains',{hostname:val('domain-host')});render()})}
 async function verifyDomain(){await act(async()=>{await api('/api/domains/verify',{});toast('DNS·HTTPS 확인 완료');render()})}
 async function removeDomain(){if(!confirm('자체 도메인 연결을 해제할까요?'))return;await act(async()=>{await api('/api/domains',undefined,'DELETE');render()})}
 
@@ -2789,15 +3167,25 @@ alerts=async function(){
    <label><input class="check" type="checkbox" id="sms-consent"> 본인 번호이며 업무 알림 수신 및 연락처 처리에 동의합니다.</label>`);
  const actions=stack(
   helperText(`${s.verified?'번호 확인 완료':'번호 확인 대기'} · ${r.live[s.kind||'SMS']?'실제 발송 활성화':cfg.demo?'모의 발송':'실제 발송 미설정'}`)+
-  actionGroup({keepSize:true},btn('저장','saveMessageNotify()','primary'),btn('알림 해제','disableMessageNotify()'),btn('메시지 충전',"go('orders')")),
+  actionGroup({keepSize:true},btn('저장','saveMessageNotify()','primary'),btn('알림 해제','disableMessageNotify()'),btn('메시지 충전','openMessageRecharge()')),
   {gap:'compact'});
- return stack(html+card('알림톡·SMS 업무 알림',stack(
+ const rechargeNotice=`<section class="card app-card paid-preview-notice" aria-label="메시지 충전"><div class="paid-preview-copy"><strong>알림톡·SMS</strong><span class="paid-preview-price">건별 충전</span></div>${actionGroup({keepSize:true},btn('충전하기','openMessageRecharge()','primary'))}</section>`;
+ return stack(html+rechargeNotice+card('알림톡·SMS 업무 알림',stack(
   stack(helperText('등록한 본인 휴대전화로 구매한 업무 알림을 받습니다. 1건당 충전 잔액 1건을 차감하며, 실제 발송에는 번호 소유권 확인이 필요합니다.')+
    `<p>SMS ${r.balance.SMS}건 · 알림톡 ${r.balance['알림톡']}건</p>`,{gap:'compact'})+
   `<div class="alert-fields">${settings}</div>`+actions+
   table(['유형','발송 상태','일시'],r.deliveries.map(x=>[x.kind,x.status,new Date(x.created*1000).toLocaleString()]))
  )),{gap:'sections'});
 };
+function openMessageRecharge(){
+ const packages=cfg.catalog.messages||[];
+ const choices=packages.map((m,i)=>`<div class="row between line"><span>${e(m.name)} ${m.quantity}건 · ${money(m.price)}</span>${me.sandbox_allowed?btn('테스트 충전',`selectMessageRecharge(${i})`,'secondary'):'<span class="muted">실결제 준비 중</span>'}</div>`).join('');
+ modal('알림톡·SMS 충전',helperText(me.sandbox_allowed?'테스트 충전입니다. 실제 청구되지 않습니다.':'실제 결제 연결 전입니다. 충전 요금을 확인할 수 있습니다.')+choices+actionGroup(btn('충전 내역 보기',"$('.modal')?.remove();go('orders')")));
+}
+async function selectMessageRecharge(i){
+ const item=cfg.catalog.messages[i];if(!me.sandbox_allowed||!item)return;
+ await act(async()=>{$('.modal')?.remove();await openCheckout({kind:'message',name:item.name,quantity:item.quantity});});
+}
 async function saveMessageNotify(){await act(async()=>{await api('/api/message-notifications',{phone:val('sms-phone'),kind:val('sms-kind'),enabled:checked('sms-enabled'),consent:checked('sms-consent')});toast('설정 저장 완료');render()})}
 async function disableMessageNotify(){await act(async()=>{await api('/api/message-notifications',undefined,'DELETE');render()})}
 const messageInvites=invites;
@@ -2805,10 +3193,10 @@ invites=async function(){let html=await messageInvites(),xs=await api('/api/oper
 async function verifyMessagePhone(ws,phone){if(!confirm('번호 소유권 및 수신 동의를 실제로 확인했습니까?'))return;await act(async()=>{await api('/api/operator/message-notifications/'+ws+'/verify',{phone,confirmed:true});render()})}
 
 const customDeveloper=developer;
-developer=async function(){let html=await customDeveloper();if(!has('custom_integration')||!has('external_api'))return html+locked('custom_integration','직접 승인한 업무를 외부 서비스의 서버 API로 실행하고 결과를 회수합니다.');let r=await api('/api/custom-workflows'),work=await api('/api/work');return html+card('맞춤 외부 업무 API',`<p class="muted">외부 시스템은 custom:jobs 권한 키로 대기 업무를 조회하고 claim → complete 순서로 실행합니다. 승인하지 않은 고객정보는 자동으로 보내지 않습니다.</p>`+label('업무 이름',input('custom-name'))+label('업무 설명',ta('custom-desc'))+btn('업무 등록','saveCustomWorkflow()','primary')+r.workflows.map(x=>`<div class="line"><b>${e(x.name)}</b><p>${e(x.description)} · ${x.active?'활성':'중지'}</p>${x.active?btn('중지',`disableCustomWorkflow('${x.id}')`):''}</div>`).join(''))+card('외부 실행 요청',label('업무 방식',select('custom-flow',r.workflows.filter(x=>x.active).map(x=>[x.id,x.name]),''))+label('연결 업무',select('custom-work',work.map(x=>[x.id,x.title]),''))+label('외부 전달 데이터 (JSON)',ta('custom-payload','{}'))+btn('내용 확인 및 실행 대기 등록','createCustomJob()','primary')+r.jobs.map(x=>`<div class="line"><b>${e(x.state)}</b><p>${e(x.result||'결과 대기')}</p>${x.state==='queued'?btn('취소',`cancelCustomJob('${x.id}')`):''}</div>`).join(''))};
-async function saveCustomWorkflow(){await act(async()=>{await api('/api/custom-workflows',{name:val('custom-name'),description:val('custom-desc')});render()})}
+developer=async function(){let html=await customDeveloper();const readOnly=!has('custom_integration')||!has('external_api');if(readOnly&&!freeFeaturePreview())return html+locked('custom_integration','직접 승인한 업무를 외부 서비스의 서버 API로 실행하고 결과를 회수합니다.');let r=readOnly?{workflows:[],jobs:[]}:await api('/api/custom-workflows'),work=readOnly?[]:await api('/api/work');return html+(readOnly?previewNotice('custom_integration','맞춤 외부 업무 설정 체험'):'')+card('맞춤 외부 업무 API',`<p class="muted">외부 시스템은 custom:jobs 권한 키로 대기 업무를 조회하고 claim → complete 순서로 실행합니다. 승인하지 않은 고객정보는 자동으로 보내지 않습니다.</p>`+label('업무 이름',input('custom-name'))+label('업무 설명',ta('custom-desc'))+btn('업무 등록','saveCustomWorkflow()','primary')+r.workflows.map(x=>`<div class="line"><b>${e(x.name)}</b><p>${e(x.description)} · ${x.active?'활성':'중지'}</p>${x.active?btn('중지',`disableCustomWorkflow('${x.id}')`):''}</div>`).join(''))+card('외부 실행 요청',label('업무 방식',select('custom-flow',r.workflows.filter(x=>x.active).map(x=>[x.id,x.name]),''))+label('연결 업무',select('custom-work',work.map(x=>[x.id,x.title]),''))+label('외부 전달 데이터 (JSON)',ta('custom-payload','{}'))+btn('내용 확인 및 실행 대기 등록','createCustomJob()','primary')+r.jobs.map(x=>`<div class="line"><b>${e(x.state)}</b><p>${e(x.result||'결과 대기')}</p>${x.state==='queued'?btn('취소',`cancelCustomJob('${x.id}')`):''}</div>`).join(''))};
+async function saveCustomWorkflow(){if(!requirePreviewAccess('custom_integration')||!requirePreviewAccess('external_api'))return;await act(async()=>{await api('/api/custom-workflows',{name:val('custom-name'),description:val('custom-desc')});render()})}
 async function disableCustomWorkflow(id){if(!confirm('업무를 중지하고 아직 실행되지 않은 요청을 취소할까요?'))return;await act(async()=>{await api('/api/custom-workflows/'+id+'/disable',{});render()})}
-async function createCustomJob(){if(!confirm('선택한 외부 시스템에 입력한 데이터가 전달될 수 있습니다. 계속할까요?'))return;await act(async()=>{await api('/api/custom-jobs',{workflow:val('custom-flow'),work:val('custom-work'),payload:JSON.parse(val('custom-payload')),confirmed:true});render()})}
+async function createCustomJob(){if(!requirePreviewAccess('custom_integration')||!requirePreviewAccess('external_api'))return;if(!confirm('선택한 외부 시스템에 입력한 데이터가 전달될 수 있습니다. 계속할까요?'))return;await act(async()=>{await api('/api/custom-jobs',{workflow:val('custom-flow'),work:val('custom-work'),payload:JSON.parse(val('custom-payload')),confirmed:true});render()})}
 async function cancelCustomJob(id){await act(async()=>{await api('/api/custom-jobs/'+id+'/cancel',{});render()})}
 
 async function sandboxFail(id){if(!confirm('테스트 주문을 결제 실패 상태로 변경할까요?'))return;await act(async()=>{await api('/api/billing/orders/'+id+'/sandbox-fail',{});await refresh();render()})}
@@ -2990,7 +3378,7 @@ async function qualityHome(){
  </dl><dl class="quality-ratings">${ratings.map(([name,rating])=>`<div><dt>${e(name)}</dt><dd>${rating.n?Number(rating.average).toFixed(1)+' / 5 · '+rating.n+'건':'평가 없음 · 0건'}</dd></div>`).join('')}</dl>
  <p class="muted">관리자 테스트와 샘플은 제외합니다. 완료 상태는 사업주가 표시한 값이며 AI 정확도를 뜻하지 않습니다.</p>`;
  const handoffActions=actionArea(btn('업무 권한·자동 전환 설정','workflowModal()','primary'),btn('승인된 교육 백업','downloadKnowledge()'),
-  btn('교육 백업 가져오기','importKnowledgeModal()'),btn('구매한 기능 설정 적용',`offerReadyDrafts('${qualityAgent}',true)`));
+  btn('교육 백업 가져오기','importKnowledgeModal()'),btn('구매한 기능 설정 적용',`offerReadyDrafts('${qualityAgent}',true)`)).replace('class="ui-actions ui-inline"','class="ui-actions ui-inline quality-handoff-actions"');
  return pageTop('시작 및 교육 개선','실제 기록을 바탕으로 필요한 작업만 확인합니다.')+brandSelect('quality-agent',brands,qualityAgent,'qualityAgent=this.value;render()')+
  `<div class="quality-overview">${card('시작 체크리스트',checklist)}${card('최근 30일 상담 개선',overview)}</div>`+
  card('업무 인수인계 및 처리할 상담','<p class="muted">30분 이상 고객 답변 대기 및 오류 신고를 확인합니다. 외부 알림은 연결 검증이 필요합니다.</p>'+
@@ -3091,7 +3479,7 @@ async function showAnswerContext(id){await act(async()=>{const r=await api('/api
 async function archiveBrand(id,archived){if(!confirm(archived?'공개 상담을 중지하고 브랜드를 보관할까요? 데이터와 구독 요금은 유지됩니다.':'보관을 해제할까요? 공개 설정은 별도로 켜야 합니다.'))return;await act(async()=>{await api('/api/workflow/archive',{agent:id,archived,confirmed:true});render()})}
 
 async function rememberChatDevice(){if(sending)return;if(!confirm('공용 기기가 아니라면 현재 상담을 이 브라우저에서 최대 24시간 이어갈 수 있습니다. 새 상담을 시작하면 기억을 지웁니다. 기억할까요?'))return;await act(async()=>{const token=await getChatSession();await api('/api/customer/resume',{slug,token,action:'remember'});toast('이 기기에서 최대 24시간 상담을 이어갈 수 있습니다.')})}
-async function newPublicChat(){if(sending)return;if(!confirm('이 기기의 상담 기억을 지우고 새 상담을 시작할까요? 업체의 기존 상담 기록은 삭제되지 않습니다.'))return;await act(async()=>{await api('/api/customer/resume',{slug,action:'forget'});sessionStorage.removeItem('csai-session-'+slug);chatSession=null;chatMessages=[];$('.modal')?.remove();$('#app').innerHTML='<div class="public">'+phone(pub)+'</div>';toast('새 상담을 시작하세요.')})}
+async function newPublicChat(){if(sending)return;if(!confirm('이 기기의 상담 기억을 지우고 새 상담을 시작할까요? 업체의 기존 상담 기록은 삭제되지 않습니다.'))return;await act(async()=>{await api('/api/customer/resume',{slug,action:'forget'});sessionStorage.removeItem('csai-session-'+slug);chatSession=null;chatMessages=[];$('.modal')?.remove();$('#app').innerHTML='<div class="'+publicChatClass()+'">'+phone(pub)+'</div>';toast('새 상담을 시작하세요.')})}
 async function prepareIssueEducation(id){await act(async()=>{if(educationBusy)return;const r=await api('/api/workflow/answer-issue/'+id+'/education');modal('정정 답변으로 교육','<p>기존 답변: '+e(r.previous)+'</p><p>신고 내용: '+e(r.note||'없음')+'</p>'+label('고객 질문',ta('issue-question',r.question))+label('정정 답변',ta('issue-answer'))+'<label><input type="checkbox" id="issue-consent"> 개인정보 및 교육 자료 사용 권한을 확인했습니다.</label>'+btn('교육 화면으로 가져오기',"loadIssueEducation("+JSON.stringify(r.agent).replaceAll('"','&quot;')+")",'primary'))})}
 function loadIssueEducation(agent){if(educationBusy)return;if(!checked('issue-consent')||!val('issue-question').trim()||!val('issue-answer').trim()){toast('질문·정정 답변과 자료 이용 동의를 확인하세요.');return;}const q=val('issue-question'),a=val('issue-answer');resetEducationDraft();educationAgent=agent;trainingChat=[];estimate=null;educationDraft={values:{'faq-q':q,'faq-a':a},dates:[],files:[],upload:[],memory:[],open:[true,true]};$('.modal')?.remove();go('education')}
 
@@ -3106,8 +3494,8 @@ async function applyReadyDraft(i){const d=readyDraftList[i],agent=readyDraftAgen
 
 function calendarBookingPath(id=''){return (calendarAgent?'/api/brand-calendar/'+enc(calendarAgent)+'/bookings':'/api/bookings')+(id?'/'+enc(id):'')}
 function switchCalendarBrand(agent){calendarAgent=agent;calendarProfile=null;calendarRange=null;calendarRangeAnchor='';selectedDate=null;render()}
-function brandCalendarSettings(){const s=calendarProfile;if(!s)return;modal('브랜드 예약 설정',label('고객 예약 모드',select('bc-booking-mode',[['off','고객 예약 끄기'],['manual','수동 승인'],['auto','자동 확정']],s.booking_mode||'off'))+'<p class="muted">자동 확정은 자동 예약 옵션 및 위험 안내 동의가 필요합니다. 외부 결제 확인이 필요한 경우 먼저 승인 대기됩니다.</p>'+label('시간대',input('bc-tz',s.timezone))+label('영업 시작',input('bc-open',s.open,'time'))+label('영업 종료',input('bc-close',s.close,'time'))+label('소요 시간(분)',input('bc-duration',s.duration,'number'))+label('예약 사이 여유(분)',input('bc-buffer',s.buffer,'number'))+'<p>휴무 요일</p><div class="row">'+['월','화','수','목','금','토','일'].map((d,i)=>'<label><input type="checkbox" class="bc-closed" value="'+i+'" '+(s.closed_days.includes(i)?'checked':'')+'> '+d+'</label>').join('')+'</div><label><input type="checkbox" id="bc-payment" '+(s.payment_required?'checked':'')+'> 외부 결제 확인 필요</label>'+(has('change_booking')?'<label><input type="checkbox" id="bc-change" '+(s.allow_customer_change?'checked':'')+'> 고객 변경·취소 요청 허용 (담당자 승인)</label>':'')+btn('저장','saveBrandCalendarSettings()','primary'))}
-async function saveBrandCalendarSettings(){await act(async()=>{await api('/api/brand-calendar/'+enc(calendarAgent)+'/settings',{booking_mode:val('bc-booking-mode'),timezone:val('bc-tz'),open:val('bc-open'),close:val('bc-close'),duration:Number(val('bc-duration')),buffer:Number(val('bc-buffer')),closed_days:[...document.querySelectorAll('.bc-closed:checked')].map(x=>Number(x.value)),payment_required:checked('bc-payment'),...($('#bc-change')?{allow_customer_change:checked('bc-change')}:{})});$('.modal')?.remove();render()})}
+function brandCalendarSettings(){const s=calendarProfile;if(!s)return;modal('브랜드 예약 설정',`<div class="booking-settings-form">${label('고객 예약 모드',select('bc-booking-mode',[['off','고객 예약 끄기'],['manual','수동 승인'],['auto','자동 확정']],s.booking_mode||'off'))}${helperText('자동 확정은 자동 예약 옵션 및 위험 안내 동의가 필요합니다.')}${bookingScheduleFields('bc',s)}<h3>예약 불가 일정</h3>${helperText('지정한 시간에는 신규 예약 및 변경이 차단됩니다.')}${bookingBlockFields('bc',s)}${checkbox('bc-payment','외부 결제 확인 필요',{checked:s.payment_required})}${has('change_booking')?checkbox('bc-change','고객 변경·취소 요청 허용 (담당자 승인)',{checked:s.allow_customer_change}):''}${actionFooter([btn('저장','saveBrandCalendarSettings()','primary')])}</div>`);}
+async function saveBrandCalendarSettings(){await act(async()=>{await api('/api/brand-calendar/'+enc(calendarAgent)+'/settings',{booking_mode:val('bc-booking-mode'),timezone:val('bc-tz'),open:val('bc-open'),close:val('bc-close'),duration:Number(val('bc-duration')),buffer:Number(val('bc-buffer')),closed_days:[...document.querySelectorAll('.bc-closed:checked')].map(x=>Number(x.value)),blocked_times:readBookingBlocks('bc'),payment_required:checked('bc-payment'),...($('#bc-change')?{allow_customer_change:checked('bc-change')}:{})});$('.modal')?.remove();render()})}
 let brandCalendarFieldsDraft=[];
 function brandCalendarFields(reset=true){if(!calendarProfile)return;if(reset)brandCalendarFieldsDraft=structuredClone(calendarProfile.fields);modal('브랜드 맞춤 일정 양식',brandCalendarFieldsDraft.map((f,i)=>'<div class="line">'+label('항목 이름',input('bc-field-'+i,f.label))+label('형식',select('bc-type-'+i,['text','phone','number','date','time','select','boolean'].map((x,j)=>[x,['텍스트','전화','숫자','날짜','시간','선택','예/아니오'][j]]),f.type))+label('선택지 (쉼표 구분)',input('bc-options-'+i,(f.options||[]).join(',')))+'<label><input type="checkbox" id="bc-required-'+i+'" '+(f.required?'checked':'')+'> 필수</label>'+btn('삭제','changeBrandCalendarFields('+i+')')+'</div>').join('')+actionGroup({keepSize:true},btn('항목 추가','changeBrandCalendarFields(-1)'),btn('양식 저장','saveBrandCalendarFields()','primary')))}
 function captureBrandCalendarFields(){brandCalendarFieldsDraft.forEach((f,i)=>{f.label=val('bc-field-'+i);f.type=val('bc-type-'+i);f.options=val('bc-options-'+i).split(',').map(x=>x.trim()).filter(Boolean);f.required=checked('bc-required-'+i)})}
@@ -3116,7 +3504,7 @@ async function saveBrandCalendarFields(){await act(async()=>{captureBrandCalenda
 
 // Focus is a local display preference, not a delivery policy.
 function focusKey(){return 'csai-focus-'+me.slug}
-function focusEvents(events){let on=false;try{on=sessionStorage.getItem(focusKey())==='1'}catch{}const held=events.filter(x=>x.kind!=='handoff_urgent'),urgent=events.filter(x=>x.kind==='handoff_urgent');const row=x=>`<div class="line focus-event">${x.sample?'<span class="sample-tag">샘플</span>':''}<b>${e(x.title)}</b><p class="muted">${e(new Date(x.created*1000).toLocaleString())} · ${x.seen?'읽음':'새 알림'}</p></div>`;return card('업무 알림 기록',`<div class="focus-bar"><div><b>화면 집중 모드</b><small>전송 설정과 읽음 상태는 변경되지 않습니다.</small></div><span class="focus-count">${held.filter(x=>!x.seen&&!x.sample).length}개</span><button class="focus-toggle" type="button" role="switch" aria-label="화면 집중 모드" aria-checked="${on}" onclick="toggleFocus(this)"><span></span></button></div><div class="focus-urgent">${urgent.map(row).join('')}</div><details class="ui-disclosure focus-held" ${on?'':'open'}><summary>일반 알림 ${held.length}개</summary><div>${held.map(row).join('')||emptyState('알림이 없습니다.')}</div></details>`+btn('모두 읽음',"act(async()=>{await api('/api/events/read',{});render()})"))}
+function focusEvents(events){const seenSamples=new Set();events=[...events].sort((a,b)=>(b.created||0)-(a.created||0)).filter(x=>{if(!x.sample)return true;const key=x.kind+'|'+sampleDisplayText(x.title,true);if(seenSamples.has(key))return false;seenSamples.add(key);return true;});let on=false;try{on=sessionStorage.getItem(focusKey())==='1'}catch{}const held=events.filter(x=>x.kind!=='handoff_urgent'),urgent=events.filter(x=>x.kind==='handoff_urgent');const row=x=>`<div class="line focus-event${x.sample?' sample-record':''}"><div class="sample-title-row"><b>${e(sampleTitle(x.title,x.sample))}</b></div><p class="muted">${e(new Date(x.created*1000).toLocaleString())} · ${x.seen?'읽음':'새 알림'}</p></div>`;return card('업무 알림 기록',`<div class="focus-bar"><div><b>화면 집중 모드</b><small>일반 알림을 접어두고 긴급 알림을 우선 확인합니다. 실제 알림 수신과 읽음 상태는 그대로 유지됩니다.</small></div><span class="focus-count">${held.filter(x=>!x.seen).length}개</span><button class="focus-toggle" type="button" role="switch" aria-label="화면 집중 모드" aria-checked="${on}" onclick="toggleFocus(this)"><span aria-hidden="true"></span></button></div><div class="focus-urgent">${urgent.map(row).join('')}</div><details class="ui-disclosure focus-held" ${on?'':'open'}><summary>일반 알림 ${held.length}개</summary><div>${held.map(row).join('')||emptyState('알림이 없습니다.')}</div></details>`+btn('모두 읽음',"act(async()=>{if(freeFeaturePreview())previewData().events.forEach(x=>x.seen=true);await api('/api/events/read',{});render()})"))}
 function toggleFocus(button){const on=button.getAttribute('aria-checked')!=='true';button.setAttribute('aria-checked',String(on));try{sessionStorage.setItem(focusKey(),on?'1':'0')}catch{}const panel=button.closest('.card').querySelector('.focus-held');if(panel)panel.open=!on;const chip=button.closest('.focus-bar').querySelector('.focus-count');if(chip&&chip.animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches)chip.animate([{transform:'scale(.85)'},{transform:'scale(1.12)'},{transform:'scale(1)'}],{duration:260});}
 
 function importKnowledgeModal(){const agent=qualityAgent;modal('교육 백업 가져오기','<p>선택한 브랜드의 검토 대기 교육으로 가져옵니다. 기존 교육은 승인 전까지 유지됩니다. 백업의 FAQ와 승인된 교육만 가져오며 이전 버전 기록과 원본 파일은 제외됩니다.</p><p class="muted">AI 호출 및 크레딧 차감 없음 · 다른 업체 자료를 가져올 권한이 있는지 확인하세요.</p>'+fileUpload('knowledge-backup-file',{accept:'.json,application/json'})+'<label class="ui-check"><input class="ui-choice" type="checkbox" id="knowledge-backup-consent"><span>교육 자료를 검토했고 가져올 권한이 있습니다.</span></label>'+actionFooter([btn('검토 대기로 가져오기',`importKnowledgeBackup('${agent}')`,'primary')]))}
@@ -3151,36 +3539,36 @@ function consultationControls(modes,brands,channelPage=false){
 async function setConsultationMode(agent,channel,manual){if(!confirm(manual?'이 범위의 새 AI 상담을 중지하고 직접 상담으로 전환할까요?':'이 범위의 직접 상담 지정을 해제할까요? 다른 범위 및 개별 상담 설정은 유지됩니다.'))return;await act(async()=>{await api('/api/consultation-mode',{agent,channel,manual,confirmed:true});toast('상담 모드를 변경했습니다.');render()})}
 
 let externalReplyBusy=false,externalReplyDraft=null;
-function externalReplyControls(t){
+function externalReplyControls(t,showComposer=true){
  const info=t.channel_reply||{},jobs=info.jobs||[],inbound=info.inbound||[];
  const statuses={queued:'발송 대기',running:'발송 중',sent:'발송 확인',failed:'발송 취소·실패',unknown:'발송 결과 미확인'};
  const history=jobs.map(x=>'<p class="muted">'+e(statuses[x.status]||x.status)+' · '+e(new Date(x.created*1000).toLocaleString('ko-KR'))+(x.error?' · '+e(x.error):'')+'</p>').join('');
  const autoHistory=inbound.map(x=>'<p class="muted">'+e(({sent:'외부 응답 전송 확인',held:'수동 상담 접수',failed:'외부 응답 실패·미확인',running:'외부 응답 처리 중',cancelled:'처리 취소'})[x.status]||x.status)+' · '+e(new Date(x.created*1000).toLocaleString('ko-KR'))+(x.error?' · '+e(x.error):'')+'</p>').join('');
  const busy=jobs.some(x=>['queued','running'].includes(x.status));
- return (['naver','telegram'].includes(t.kind)&&info.available?replyWithHistory('external-reply',inboxChannel(t)+' 직접 답변',t.messages,{maxLength:1000})+(busy?'<p class="muted">이전 답변 발송 중</p>':btn('채널로 전송','sendExternalReply()','primary')):'<p class="muted">'+(t.kind==='instagram'?'Instagram DM 답변은 Instagram에서 직접 진행하세요. CSAI는 수신 기록만 표시합니다.':t.kind==='line'?'LINE 수동 답변은 공식 계정 관리자에서 진행하세요. 이곳에서는 상담 기록을 조회합니다.':t.kind==='kakao'?'AI 상담 기록만 조회할 수 있습니다. 사람 상담 및 그 기록은 카카오 채널 관리자센터에서 확인하세요.':'네이버 직접 발송 허용 및 새 고객 메시지 수신 후 전송할 수 있습니다.')+'</p>')+(t.kind==='kakao'?'<a class="channel-action" href="https://center-pf.kakao.com/" target="_blank" rel="noopener noreferrer">카카오에서 직접 상담하기</a>':'')+history+(autoHistory?'<details class="ui-disclosure"><summary>외부 채널 처리 내역</summary>'+autoHistory+'</details>':'')+btn('발송 상태 새로고침','render()');
+ return (['naver','telegram'].includes(t.kind)&&info.available?(showComposer?replyWithHistory('external-reply',inboxChannel(t)+' 직접 답변',t.messages,{maxLength:1000})+(busy?'<p class="muted">이전 답변 발송 중</p>':btn('채널로 전송','sendExternalReply()','primary')):''):'<p class="muted">'+(t.kind==='instagram'?'Instagram DM 답변은 Instagram에서 직접 진행하세요. CSAI는 수신 기록만 표시합니다.':t.kind==='line'?'LINE 수동 답변은 공식 계정 관리자에서 진행하세요. 이곳에서는 상담 기록을 조회합니다.':t.kind==='kakao'?'AI 상담 기록만 조회할 수 있습니다. 사람 상담 및 그 기록은 카카오 채널 관리자센터에서 확인하세요.':'네이버 직접 발송 허용 및 새 고객 메시지 수신 후 전송할 수 있습니다.')+'</p>')+(t.kind==='kakao'?'<a class="channel-action" href="https://center-pf.kakao.com/" target="_blank" rel="noopener noreferrer">카카오에서 직접 상담하기</a>':'')+history+(autoHistory?'<details class="ui-disclosure"><summary>외부 채널 처리 내역</summary>'+autoHistory+'</details>':'')+btn('발송 상태 새로고침','render()');
 }
 async function sendExternalReply(){
  if(externalReplyBusy)return;
  const id=threadId,reply=val('external-reply').trim();if(!reply||reply.length>1000)return toast('답변은 1~1000자로 입력하세요.');
- if(!confirm('이 고객의 네이버 톡톡으로 직접 답변을 발송할까요? 이 상담은 담당자 모드로 전환됩니다.'))return;
+ if(!confirm('이 고객의 연결 채널로 직접 답변을 발송할까요? 이 상담은 담당자 모드로 전환됩니다.'))return;
  if(!externalReplyDraft||externalReplyDraft.id!==id||externalReplyDraft.reply!==reply)externalReplyDraft={id,reply,client:crypto.randomUUID()};
  externalReplyBusy=true;
- try{await api('/api/inbox/'+enc(id)+'/channel-reply',{reply,client:externalReplyDraft.client,confirmed:true});externalReplyDraft=null;toast('발송을 접수했습니다. 발송 상태를 확인하세요.');await render()}catch(x){toast(x.message)}finally{externalReplyBusy=false}
+ try{const t=await api('/api/inbox/'+enc(id));if(threadId!==id||!t.manual||!t.channel_reply?.available)throw Error('직접 상담 모드와 채널 연결 상태를 확인하세요.');if((t.channel_reply.jobs||[]).some(x=>['queued','running'].includes(x.status)))throw Error('이전 답변 발송 중입니다.');await api('/api/inbox/'+enc(id)+'/channel-reply',{reply,client:externalReplyDraft.client,confirmed:true});externalReplyDraft=null;toast('발송을 접수했습니다. 발송 상태를 확인하세요.');await render()}catch(x){toast(x.message)}finally{externalReplyBusy=false}
 }
 
-function renderInboxList(ts,brands){return ts.map(t=>`<button type="button" onclick="openInboxThread('${t.id}')" class="line inbox-entry ${threadId===t.id?'selected':''}"><small>${e(brands.find(a=>a.id===t.agent)?.settings.brand||(t.agent?'이전 브랜드':me.settings.brand))} · ${inboxChannelBadge(t)} · ${e(states[t.status]||t.status)}${t.manual?' · 개별 직접 상담':t.paused_by?' · '+e(pauseLabel(t.paused_by)):' · AI 허용'} · ${e(new Date((t.activity||t.created)*1000).toLocaleDateString('ko-KR'))}</small><span class="inbox-excerpt">${e(t.last||'새 상담')}</span>${t.unread?`<span class="status">새 문의 ${t.unread}건</span> `:''}${!t.sample&&t.kind!=='test'&&(t.assignment?.assignee||t.assignment?.priority==='urgent'||t.assignment?.priority==='high'||t.assignment?.due_date)?`<small>${e(t.assignment.assignee||'미배정')} · ${e(priorityNames[t.assignment.priority]||'보통')}${t.assignment.due_date?' · 기한 '+e(t.assignment.due_date):''}</small> `:''}</button>`).join('')||emptyState('조건에 맞는 상담이 없습니다.');}
-async function openInboxThread(id){threadId=id;await render()}
+function renderInboxList(ts,brands){if(inboxCenter())return renderCenterList(ts);return ts.map(t=>`<button type="button" onclick="openInboxThread('${t.id}')" class="line inbox-entry ${threadId===t.id?'selected':''}${t.sample?' sample-record':''}"><small>${e(brands.find(a=>a.id===t.agent)?.settings.brand||(t.agent?'이전 브랜드':me.settings.brand))} · ${inboxChannelBadge(t)} · ${e(states[t.status]||t.status)}${t.manual?' · 개별 직접 상담':t.paused_by?' · '+e(pauseLabel(t.paused_by)):' · AI 허용'} · ${e(new Date((t.activity||t.created)*1000).toLocaleDateString('ko-KR'))}</small><span class="inbox-excerpt">${t.consultation?.title?'<strong>'+e(consultationTitle(t))+'</strong> · ':''}${e(t.consultation?.summary||sampleTitle(t.last||'새 상담',t.sample))}</span>${t.unread?`<span class="status">새 문의 ${t.unread}건</span> `:''}${!t.sample&&t.kind!=='test'&&(t.assignment?.assignee||t.assignment?.priority==='urgent'||t.assignment?.priority==='high'||t.assignment?.due_date)?`<small>${e(t.assignment.assignee||'미배정')} · ${e(priorityNames[t.assignment.priority]||'보통')}${t.assignment.due_date?' · 기한 '+e(t.assignment.due_date):''}</small> `:''}</button>`).join('')||emptyState('조건에 맞는 상담이 없습니다.');}
+async function openInboxThread(id){if(threadId&&id!==threadId){if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 다른 상담을 열까요?'))return;await leaveTemporary();}threadId=id;await render()}
 async function markInboxRead(id,msg){await act(async()=>{await api('/api/inbox/'+enc(id)+'/read',{message:msg});toast('읽음 처리했습니다.');await pollInbox(true)})}
 async function refreshInboxNow(){if((['staff-reply','external-reply'].some(id=>$('#'+id)?.value)||$('#inbox-note')?.value!==$('#inbox-note')?.defaultValue||$('#inbox-tags')?.value!==$('#inbox-tags')?.defaultValue)&&!confirm('작성 중인 답변 또는 메모가 있습니다. 새로고침할까요?'))return;await render()}
 function inboxRefreshScope(){
- return JSON.stringify([renderId,inboxAgent,inboxKind,inboxSource,inboxQuery,inboxUnread,inboxPriority,threadId]);
+ return JSON.stringify([route,renderId,inboxAgent,inboxKind,inboxSource,inboxQuery,inboxUnread,inboxPriority,threadId]);
 }
 function pollInbox(force=false){
  const list=$('#inbox-live-list');
- if(!me||route!=='inbox'||!list||document.hidden)return Promise.resolve(false);
+ if(!me||!inboxWorkspace()||!list||document.hidden)return Promise.resolve(false);
  const scope=inboxRefreshScope();
  if(inboxPolling?.scope===scope)return inboxPolling.request;
- const isCurrent=()=>route==='inbox'&&list.isConnected&&scope===inboxRefreshScope();
+ const isCurrent=()=>inboxWorkspace()&&list.isConnected&&scope===inboxRefreshScope();
  const request=(async()=>{
   try{
    const threads=await loadInboxThreads();
@@ -3191,7 +3579,22 @@ function pollInbox(force=false){
     list.innerHTML=renderInboxList(threads,inboxBrands);
     inboxSnapshot=next;
    }
-   if(force||changed)$('#inbox-live-status').textContent='목록 갱신됨 · 선택한 상담의 상세는 새로고침으로 확인';
+   if(inboxCenter())refreshCenterAges(list);
+   if(threadId){
+    let detail=await inboxDetailFor(threadId);
+    if(!isCurrent())return false;
+    const lease=inboxTemporary(detail);
+    if(lease&&inboxReplyDraftActive()&&Date.now()/1000>lease.expires-30&&Date.now()-temporaryRenewAt>10000){temporaryRenewAt=Date.now();if(detail.sample){lease.expires=Date.now()/1000+(lease.seconds||300);}else{await api('/api/inbox/'+enc(threadId),{renew_temporary:lease.lease});detail=await api('/api/inbox/'+enc(threadId));if(!isCurrent())return false;}}
+    rememberTemporary(detail);const timer=$('[data-temporary-expires]');if(timer&&activeTemporary)timer.dataset.temporaryExpires=activeTemporary.expires;
+    const chat=$('.inbox-conversation'),signature=JSON.stringify(detail.messages),mode=inboxModeKey(detail);
+    if(chat&&signature!==inboxDetailSignature){const bottom=chat.scrollHeight-chat.scrollTop-chat.clientHeight<80;const top=chat.scrollTop;chat.innerHTML=inboxMessageMarkup(detail);chat.scrollTop=bottom?chat.scrollHeight:top;inboxDetailSignature=signature;}
+    if(mode!==inboxModeSignature){
+     if(!inboxReplyDraftActive()&&!ownerReplyBusy&&!externalReplyBusy&&!sampleInboxSending){await render();return true;}
+     const area=$('.inbox-live-mode');if(area)area.innerHTML=inboxModeBar(detail);
+     const composer=$('.owner-compose');if(composer)composer.querySelectorAll('textarea,button').forEach(x=>x.disabled=!inboxDirect(detail)||!inboxCanReply(detail));
+    }
+   }
+   if($('#inbox-live-status'))$('#inbox-live-status').textContent='상담 자동 갱신 중 · 3초 간격';
    return true;
   }catch{
    if(isCurrent())$('#inbox-live-status').textContent='목록 갱신 실패 · 새로고침을 이용하세요.';
@@ -3206,7 +3609,7 @@ function pollInbox(force=false){
 function mountInboxPullRefresh(){
  const list=$('#inbox-live-list');
  if(!list)return;
- const panel=list.closest('.inbox-pull'),indicator=panel.querySelector('[data-pull-label]');
+ const panel=list.closest('.inbox-pull');if(!panel)return;const indicator=panel.querySelector('[data-pull-label]');
  const announcement=panel.querySelector('[role=status]');
  const threshold=80;
  let gesture=null,refreshing=false,feedbackTimer=0;
@@ -3259,7 +3662,8 @@ function mountInboxPullRefresh(){
   feedbackTimer=setTimeout(()=>{if(panel.isConnected)setState('idle',0);},1200);
  },{passive:true});
 }
-setInterval(()=>pollInbox(),8000);
+setInterval(()=>pollInbox(),3000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollInbox(true)});
 const priorityNames={low:'낮음',normal:'보통',high:'높음',urgent:'긴급'};
 function inboxAssignmentHtml(a){return '<details class="ui-disclosure"><summary>담당자·처리 우선순위</summary><p class="muted">담당자 이름은 기존 내부 메모입니다. 실제 직원 계정 접근 권한은 직원 계정 배정에서 관리합니다.</p>'+label('담당자 이름',input('inbox-assignee',a.assignee))+label('우선순위',select('inbox-assignment-priority',Object.entries(priorityNames),a.priority))+label('처리 기한',input('inbox-due-date',a.due_date,'date'))+actionFooter([btn('직원 계정 배정','assignTeamMember()'),btn('배정 저장','saveInboxAssignment()','primary')])+'</details>'}
 async function saveInboxAssignment(){const tid=threadId;await act(async()=>{await api('/api/inbox/'+enc(tid)+'/assignment',{assignee:val('inbox-assignee'),priority:val('inbox-assignment-priority'),due_date:val('inbox-due-date')});toast('담당자 및 처리 우선순위를 저장했습니다.');await pollInbox(true)})}
@@ -3273,7 +3677,7 @@ function insertInboxSnippet(id){const x=inboxSnippets.find(s=>s.id===id),target=
 
 
 async function showDeliveryIssues(){await act(async()=>{const rows=await api('/api/channel-delivery-issues'),statuses={queued:'대기',running:'처리 중',failed:'실패·미확인',unknown:'발송 결과 미확인',cancelled:'취소'};modal('외부 채널 발송 관리','<p class="muted">최근 조회 가능 범위 내 최대 100건. 결과가 불명확하면 원래 채널에서 먼저 확인하세요. 자동 재전송하지 않습니다.</p>'+ (rows.map(x=>'<div class="line"><strong>'+e(channelNames[x.channel]||x.channel)+' · '+e(x.origin==='staff'?'직접 답변':'자동 처리')+'</strong><p>'+e(statuses[x.status]||x.status)+' · '+e(new Date(x.updated*1000).toLocaleString('ko-KR'))+'</p><p>'+e(x.error||'')+'</p>'+(x.thread?btn('연결 상담 열기',`openDeliveryThread('${x.thread}')`):'<small>상담 연결 전 발생</small>')+'</div>').join('')||emptyState('표시할 발송 문제가 없습니다.')))})}
-function openDeliveryThread(id){$('.modal')?.remove();threadId=id;inboxAgent='all';inboxKind='customer';inboxSource='all';inboxUnread=false;inboxQuery='';if(route==='inbox')render();else go('inbox')}
+function openDeliveryThread(id){$('.modal')?.remove();threadId=id;inboxAgent='all';inboxKind='customer';inboxSource='all';inboxUnread=false;inboxQuery='';if(inboxWorkspace())render();else go('inbox')}
 
 let replyAssistantBusy=false,replyAssistantPending=null,replyAssistantResults=[];
 const replyAssistantDescription='개인 메시지·메일·SNS의 답장 초안을 만듭니다. 답장은 자동으로 발송되지 않습니다.';
@@ -3311,7 +3715,8 @@ function replyAssistantPage(){
   </div>`)}
  </div>`;
 }
-async function showInboxBrief(){const tid=threadId;await act(async()=>{const r=await api('/api/inbox/'+enc(tid)+'/brief');if(threadId!==tid||route!=='inbox')return;modal('상담 핵심 보기','<p class="muted">최근 최대 30개 메시지에서 발화자별 마지막 2개를 발췌합니다. AI 요약이나 외부 발송 성공을 의미하지 않으며 별도 사용량 차감이 없습니다.</p><p>'+e(states[r.status]||r.status)+(r.latest_is_customer?' · 최근 고객 문의가 마지막 메시지입니다.':'')+(r.manual||r.paused_by?' · AI 응답 중지 상태':'')+'</p>'+r.recent.map(m=>'<div class="line"><strong>'+e(({user:'고객',assistant:'AI 상담사',staff:'담당자'})[m.role])+'</strong><p>'+e(m.body)+(m.truncated?' …':'')+'</p><small>'+e(new Date(m.created*1000).toLocaleString('ko-KR'))+'</small></div>').join('')+(r.note?'<div class="line"><strong>내부 메모</strong><p>'+e(r.note)+'</p></div>':'')+(r.tags.length?'<p>태그: '+e(r.tags.join(', '))+'</p>':'')+btn('원문 확인', "document.querySelector('.modal')?.remove()"))})}
+function consultationBriefHtml(p){if(!p)return '';return '<div class="line"><strong>'+e(p.title||'상담 요약')+'</strong><p>'+e(p.summary||'')+'</p><small>'+ (p.source==='ai'?'AI 요약 · 원문 확인 필요':'자동 분류 · 고객 최근 발화')+'</small>'+(p.booking?'<p>예약: '+e(states[p.booking.status]||p.booking.status)+'</p>':'')+(p.booking?.fields||p.draft_fields||[]).map(f=>'<p>'+e(f.label)+': '+e(f.value)+'</p>').join('')+(p.draft_fields?.length?'<small>고객 확인 전 입력 정보</small>':'')+'</div>';}
+async function showInboxBrief(){const tid=threadId;await act(async()=>{const r=await api('/api/inbox/'+enc(tid)+'/brief');if(threadId!==tid||!inboxWorkspace())return;modal('상담 핵심 보기','<p class="muted">최근 상담 요약과 발화자별 원문을 보여줍니다. 별도 AI 호출이나 사용량 차감이 없습니다.</p>'+consultationBriefHtml(r.consultation)+'<p>'+e(states[r.status]||r.status)+(r.latest_is_customer?' · 최근 고객 문의가 마지막 메시지입니다.':'')+(r.manual||r.paused_by?' · AI 응답 중지 상태':'')+'</p>'+r.recent.map(m=>'<div class="line"><strong>'+e(({user:'고객',assistant:'AI 상담사',staff:'담당자'})[m.role])+'</strong><p>'+e(m.body)+(m.truncated?' …':'')+'</p><small>'+e(new Date(m.created*1000).toLocaleString('ko-KR'))+'</small></div>').join('')+(r.note?'<div class="line"><strong>내부 메모</strong><p>'+e(r.note)+'</p></div>':'')+(r.tags.length?'<p>태그: '+e(r.tags.join(', '))+'</p>':'')+btn('원문 확인', "document.querySelector('.modal')?.remove()"))})}
 function openInboxDraftAssistant(){modal('AI 답장 추천',`<p class="ui-hint">${e(replyAssistantDescription)}</p>`+replyAssistantForm(threadId)+replyAssistantResultsPanel())}
 async function generateReplyAssistant(tid=''){
  if(replyAssistantBusy)return;
@@ -3393,18 +3798,22 @@ function profileLinkRow(name='',url=''){const div=document.createElement('div');
 function profileContactRow(c={kind:'phone',name:'',value:''}){const div=document.createElement('div');div.className='profile-edit-contact';div.innerHTML='<select class="profile-contact-kind" aria-label="연락처 종류"><option value="phone">전화번호</option><option value="email">이메일</option><option value="other">기타 연락처</option></select><input type="text" class="profile-contact-name" maxlength="60" placeholder="이름 (예: 고객센터)" aria-label="연락처 이름"><input type="text" class="profile-contact-value" maxlength="200" placeholder="연락처" aria-label="연락처 내용"><button type="button" onclick="this.parentElement.remove()" aria-label="연락처 삭제">삭제</button>';div.querySelector('.profile-contact-kind').value=c.kind;div.querySelector('.profile-contact-name').value=c.name;div.querySelector('.profile-contact-value').value=c.value;return div}
 function addProfileContact(){const list=$('#profile-editor-contacts');if(!list)return;if(list.children.length>=10){toast('연락처는 최대 10개입니다.');return}list.append(profileContactRow())}
 function addProfileLink(){const list=$('#profile-editor-links');if(!list)return;if(list.children.length>=10){toast('링크는 최대 10개입니다.');return}list.append(profileLinkRow())}
-function removeProfilePhoto(){profileEditorRemove=true;const f=$('#profile-photo-file');if(f)f.value='';const img=$('#profile-current-photo');if(img)img.innerHTML='<p class="muted">저장하면 사진이 삭제됩니다.</p>'}
+function removeProfilePhoto(){profileEditorRemove=true;const f=$('#profile-photo-file');if(f){f.value='';fileUploadSelected(f);}const img=$('#profile-current-photo');if(img)img.innerHTML='<p class="muted">저장하면 사진이 삭제됩니다.</p>'}
 async function openProfileEditor(agent=''){
  if(profileEditorOpening||$('#profile-editor-links'))return;
  profileEditorOpening=true;
  try{await act(async()=>{
  const p=await api('/api/chat-profile?agent='+enc(agent));
- const overlay=modal('채팅창 프로필 설정','<p class="muted">고객에게 공개되는 업체 소개입니다. 전화번호·이메일은 고객이 누르면 기기의 전화·메일 앱을 엽니다. 웹 내부 음성·영상 통화는 아직 제공하지 않습니다.</p><label><input class="check" type="checkbox" id="profile-start" '+(p.show_at_start?'checked':'')+'> 채팅 시작 시 프로필 자동 표시</label><p class="muted">끄면 자동 표시되지 않으며, 등록된 프로필은 채팅 상단 프로필 버튼으로 확인할 수 있습니다.</p>'+label('공지사항 표시 방식',select('profile-notice-mode',[['manual','직접 작성한 공지'],['profile','프로필을 공지로 표시'],['both','직접 작성 공지와 프로필 모두'],['off','공지 영역 숨기기']],p.notice_mode||'manual'))+label('직접 작성 공지',ta('profile-manual-notice',p.manual_notice||''))+'<p class="muted">공지 영역의 표시 방식과 채팅 시작 시 프로필 표시는 각각 설정됩니다.</p>'+label('프로필 제목 (선택)',input('profile-title',p.title))+label('소개 및 추가 안내 문구',ta('profile-message',p.message))+'<div id="profile-current-photo">'+(p.photo?'<img class="chat-profile-photo" alt="현재 프로필 사진" src="'+e(p.photo)+'">':'<p class="muted">등록된 사진 없음</p>')+'</div>'+fileUpload('profile-photo-file',{accept:'image/png,image/jpeg,image/webp',buttonText:'이미지 선택',description:'썸네일 사진 · 1MB 이하',onChange:'previewProfilePhoto(this)'})+btn('사진 제거','removeProfilePhoto()')+'<h3>전화번호·이메일·기타 연락처</h3><div id="profile-editor-contacts"></div>'+btn('연락처 추가','addProfileContact()')+'<h3>홈페이지·SNS·기타 링크</h3><div id="profile-editor-links"></div>'+btn('링크 추가','addProfileLink()')+'<p class="muted">최대 10개, HTTPS 링크만 가능합니다. 비공개 정보는 등록하지 마세요.</p>'+btn('프로필 저장','saveChatProfile()','primary'),{
+ const overlay=modal('채팅창 프로필 설정','<p class="muted">고객에게 공개되는 업체 소개입니다. 전화번호·이메일은 고객이 누르면 기기의 전화·메일 앱을 엽니다. 웹 내부 음성·영상 통화는 아직 제공하지 않습니다.</p><label><input class="check" type="checkbox" id="profile-start" '+(p.show_at_start?'checked':'')+'> 채팅 시작 시 프로필 자동 표시</label><p class="muted">끄면 자동 표시되지 않으며, 등록된 프로필은 채팅 상단 프로필 버튼으로 확인할 수 있습니다.</p>'+label('공지사항 표시 방식',select('profile-notice-mode',[['manual','직접 작성한 공지'],['profile','프로필을 공지로 표시'],['both','직접 작성 공지와 프로필 모두'],['off','공지 영역 숨기기']],p.notice_mode||'manual'))+label('직접 작성 공지',ta('profile-manual-notice',p.manual_notice||''))+'<p class="muted">공지 영역의 표시 방식과 채팅 시작 시 프로필 표시는 각각 설정됩니다.</p>'+label('프로필 제목 (선택)',input('profile-title',p.title))+label('소개 및 추가 안내 문구',ta('profile-message',p.message))+'<div class="profile-edit-photo"><div id="profile-current-photo">'+(p.photo?'<img class="chat-profile-photo" alt="현재 프로필 사진" src="'+e(p.photo)+'">':'<p class="muted">등록된 사진 없음</p>')+'</div>'+fileUpload('profile-photo-file',{accept:'image/png,image/jpeg,image/webp',buttonText:'이미지 선택',description:'권장 1200 × 900px (4:3) · PNG/JPG/WebP · 5MB 이하 · 자동 최적화',onChange:'previewProfilePhoto(this)'})+btn('사진 제거','removeProfilePhoto()','secondary ui-sm')+'</div><h3>전화번호·이메일·기타 연락처</h3><div id="profile-editor-contacts"></div>'+btn('연락처 추가','addProfileContact()')+'<h3>홈페이지·SNS·기타 링크</h3><div id="profile-editor-links"></div>'+btn('링크 추가','addProfileLink()')+'<p class="muted">최대 10개, HTTPS 링크만 가능합니다. 비공개 정보는 등록하지 마세요.</p>',{
+  className:'profile-editor-modal',
   dismissOnBackdrop:false,
   canClose:()=>!profileEditorBusy&&(!profileEditorDirty()||confirm('저장하지 않은 변경사항을 버리고 닫을까요?')),
   onClose:endProfileEditor,
  });
  if(!overlay)return;
+ const panel=overlay.querySelector('.ui-modal-panel'),heading=panel.querySelector('h2'),footer=panel.querySelector('.ui-modal-footer');
+ const content=document.createElement('div');content.className='profile-editor-body';while(heading.nextSibling&&heading.nextSibling!==footer)content.append(heading.nextSibling);panel.insertBefore(content,footer);
+ footer.insertAdjacentHTML('afterbegin','<p id="profile-save-error" role="alert" hidden></p>'+btn('프로필 저장','saveChatProfile()','primary'));
  profileEditorAgent=agent;profileEditorHasPhoto=!!p.photo;profileEditorRemove=false;
  for(const l of p.links||[])$('#profile-editor-links').append(profileLinkRow(l.name,l.url));
  for(const c of p.contacts||[])$('#profile-editor-contacts').append(profileContactRow(c));
@@ -3412,12 +3821,13 @@ async function openProfileEditor(agent=''){
  window.addEventListener('beforeunload',preserveProfileBeforeUnload);
  })}finally{profileEditorOpening=false;}
 }
-function previewProfilePhoto(field){const f=field.files[0];if(!f)return;if(f.size>1000000){field.value='';toast('사진은 1MB 이하로 선택하세요.');return}profileEditorRemove=false;const r=new FileReader(),target=$('#profile-current-photo');r.onload=()=>{if(target?.isConnected&&field.files[0]===f){target.innerHTML='';const img=document.createElement('img');img.className='chat-profile-photo';img.alt='프로필 사진 미리보기';img.src=r.result;target.append(img)}};r.readAsDataURL(f)}
+function previewProfilePhoto(field){const f=field.files[0];if(!f)return;if(f.size>5000000){field.value='';fileUploadSelected(field);toast('사진은 5MB 이하로 선택하세요.');return}profileEditorRemove=false;const r=new FileReader(),target=$('#profile-current-photo');r.onload=()=>{if(target?.isConnected&&field.files[0]===f){target.innerHTML='';const img=document.createElement('img');img.className='chat-profile-photo';img.alt='프로필 사진 미리보기';img.src=r.result;target.append(img)}};r.readAsDataURL(f)}
 async function saveChatProfile(){
  if(profileEditorBusy)return;
- await act(async()=>{
-  const modalNode=$('#profile-editor-links')?.closest('.modal');
-  if(!modalNode)return;
+ const modalNode=$('#profile-editor-links')?.closest('.modal');
+ if(!modalNode)return;
+ const errorNode=modalNode.querySelector('#profile-save-error');errorNode.hidden=true;errorNode.textContent='';
+ try{
   const body=profileEditorPayload(),photo=$('#profile-photo-file').files[0];
   if(body.contacts.some(c=>!c.name||!c.value))throw Error('연락처 이름과 내용을 모두 입력하세요.');
   if(body.links.some(l=>!l.name||!l.url))throw Error('링크 이름과 주소를 모두 입력하세요.');
@@ -3427,7 +3837,7 @@ async function saveChatProfile(){
   fields.forEach(field=>field.disabled=true);
   try{
    if(photo){
-    if(photo.size>1000000)throw Error('사진은 1MB 이하입니다.');
+    if(photo.size>5000000)throw Error('사진은 5MB 이하입니다.');
     body.photo=await new Promise((resolve,reject)=>{
      const reader=new FileReader();
      reader.onload=()=>resolve(String(reader.result).split(',')[1]);
@@ -3436,6 +3846,10 @@ async function saveChatProfile(){
     });
    }else if(profileEditorRemove)body.photo='';
    await api('/api/chat-profile',body);
+   const saved=await api('/api/chat-profile?agent='+enc(body.agent));
+   const matches=body.title.trim()===saved.title&&body.message.trim()===saved.message&&body.manual_notice.trim()===saved.manual_notice&&body.show_at_start===saved.show_at_start&&body.notice_mode===saved.notice_mode&&JSON.stringify(body.contacts)===JSON.stringify(saved.contacts)&&JSON.stringify(body.links)===JSON.stringify(saved.links)&&(!photo||!!saved.photo)&&(!profileEditorRemove||!!photo||!saved.photo);
+   if(!matches)throw Error('저장 결과를 확인하지 못했습니다. 입력 내용은 유지됩니다. 다시 저장해 주세요.');
+   profileEditorInitial=JSON.stringify(profileEditorPayload());
    modalNode.remove();endProfileEditor();
    toast('프로필을 저장했습니다.');
    await refresh();await render();
@@ -3443,5 +3857,5 @@ async function saveChatProfile(){
    profileEditorBusy=false;panel.removeAttribute('aria-busy');
    fields.forEach(field=>field.disabled=false);
   }
- });
+ }catch(err){if(modalNode.isConnected){errorNode.textContent=err.message||'프로필 저장 실패';errorNode.hidden=false;}else toast(err.message||'프로필 화면 갱신 실패');}
 }

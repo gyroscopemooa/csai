@@ -2,7 +2,7 @@
   "name": "CS AI 관리자",
   "short_name": "CS AI",
   "id": "/",
-  "start_url": "/#alerts",
+  "start_url": "/?desk=1#consultation-center",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -13,6 +13,20 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "상담센터",
+      "url": "/?desk=1#consultation-center"
+    },
+    {
+      "name": "관리자 대시보드",
+      "url": "/#dashboard"
+    },
+    {
+      "name": "알림",
+      "url": "/#alerts"
     }
   ]
 }

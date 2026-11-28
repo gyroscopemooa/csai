@@ -1,3 +1,30 @@
+/* Additional landing sections: audience and a note to business owners. */
+.landing-audience,.landing-owner-letter{box-sizing:border-box;color:#191f28;padding:96px 24px;text-align:left}
+.landing-audience{background:#f5f7fa}
+.landing-owner-letter{background:#fff}
+.landing-audience-inner,.landing-owner-letter-inner{max-width:1060px;margin:0 auto}
+.landing-audience .landing-benefits-kicker,.landing-owner-letter .landing-benefits-kicker{text-align:left}
+.landing-audience h2,.landing-owner-letter h2{font-size:clamp(32px,6vw,64px);font-weight:750;line-height:1.24;letter-spacing:-.05em;margin:0 0 24px;word-break:keep-all}
+.landing-audience h2 span{display:block}
+.landing-audience h2 span+span{margin-top:.18em}
+.landing-audience h2 span:last-child{color:#236fde}
+.landing-audience-copy,.landing-owner-copy{font-size:clamp(16px,2vw,19px);line-height:1.85;color:#4e5968;max-width:740px;margin:0;word-break:keep-all}
+.landing-owner-copy p{margin:0 0 16px}
+.landing-owner-letter .landing-owner-action{display:inline-flex;align-items:center;justify-content:center;min-height:48px;margin-top:18px;padding:12px 24px;border:0;border-radius:12px;background:#3182f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+.landing-owner-letter .landing-owner-action:hover{background:#2175e3}
+.landing-owner-letter .landing-owner-action:focus-visible{outline:3px solid #89baff;outline-offset:4px}
+@media(max-width:700px){
+ .landing-audience,.landing-owner-letter{padding:60px 20px}
+ .landing-audience h2,.landing-owner-letter h2{font-size:clamp(27px,7.3vw,44px)}
+ .landing-owner-letter .landing-owner-action{width:100%;box-sizing:border-box}
+}
+@media(prefers-reduced-motion:no-preference){
+ @supports(animation-timeline:view()){
+  .landing-audience h2 span{animation:landing-audience-reveal linear both;animation-timeline:view();animation-range:entry 0% entry 100%}
+ }
+}
+@keyframes landing-audience-reveal{from{opacity:.25;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+
 /* Landing only; never changes dashboard, chat or login hero. */
 .landing-benefits{background:#fff;color:#191f28;padding:100px 24px 88px;text-align:left}
 .landing-benefits-inner{max-width:1060px;margin:0 auto}
