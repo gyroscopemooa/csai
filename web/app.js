@@ -489,7 +489,7 @@ function profileMarkup(s,{page=false}={}){
  const information=(hours?`<div class="chat-profile-info-row"><dt>영업시간</dt><dd>${e(hours)}</dd></div>`:'')+profileContacts(p);
  return `<section class="chat-profile-details${page?' chat-profile-page':' chat-profile-inline'}" aria-label="업체 정보"${page?' tabindex="0"':''}>
   <header class="chat-profile-hero">
-   ${photo.startsWith('data:image/png;base64,')?`<img class="chat-profile-photo" src="${e(photo)}" alt="업체 프로필 사진">`:''}
+   ${/^data:image\/(?:png|webp);base64,/.test(photo)?`<img class="chat-profile-photo" src="${e(photo)}" alt="업체 프로필 사진">`:''}
    <h3>${e(s.brand||title)}</h3>
    ${s.brand&&title&&title!==s.brand?`<p class="chat-profile-intro-title">${e(title)}</p>`:''}
    ${message?`<p class="chat-profile-copy">${e(message)}</p>`:''}
@@ -3794,7 +3794,7 @@ async function openProfileEditor(agent=''){
  profileEditorOpening=true;
  try{await act(async()=>{
  const p=await api('/api/chat-profile?agent='+enc(agent));
- const overlay=modal('채팅창 프로필 설정','<p class="muted">고객에게 공개되는 업체 소개입니다. 전화번호·이메일은 고객이 누르면 기기의 전화·메일 앱을 엽니다. 웹 내부 음성·영상 통화는 아직 제공하지 않습니다.</p><label><input class="check" type="checkbox" id="profile-start" '+(p.show_at_start?'checked':'')+'> 채팅 시작 시 프로필 자동 표시</label><p class="muted">끄면 자동 표시되지 않으며, 등록된 프로필은 채팅 상단 프로필 버튼으로 확인할 수 있습니다.</p>'+label('공지사항 표시 방식',select('profile-notice-mode',[['manual','직접 작성한 공지'],['profile','프로필을 공지로 표시'],['both','직접 작성 공지와 프로필 모두'],['off','공지 영역 숨기기']],p.notice_mode||'manual'))+label('직접 작성 공지',ta('profile-manual-notice',p.manual_notice||''))+'<p class="muted">공지 영역의 표시 방식과 채팅 시작 시 프로필 표시는 각각 설정됩니다.</p>'+label('프로필 제목 (선택)',input('profile-title',p.title))+label('소개 및 추가 안내 문구',ta('profile-message',p.message))+'<div class="profile-edit-photo"><div id="profile-current-photo">'+(p.photo?'<img class="chat-profile-photo" alt="현재 프로필 사진" src="'+e(p.photo)+'">':'<p class="muted">등록된 사진 없음</p>')+'</div>'+fileUpload('profile-photo-file',{accept:'image/png,image/jpeg,image/webp',buttonText:'이미지 선택',description:'썸네일 사진 · 1MB 이하',onChange:'previewProfilePhoto(this)'})+btn('사진 제거','removeProfilePhoto()','secondary ui-sm')+'</div><h3>전화번호·이메일·기타 연락처</h3><div id="profile-editor-contacts"></div>'+btn('연락처 추가','addProfileContact()')+'<h3>홈페이지·SNS·기타 링크</h3><div id="profile-editor-links"></div>'+btn('링크 추가','addProfileLink()')+'<p class="muted">최대 10개, HTTPS 링크만 가능합니다. 비공개 정보는 등록하지 마세요.</p>',{
+ const overlay=modal('채팅창 프로필 설정','<p class="muted">고객에게 공개되는 업체 소개입니다. 전화번호·이메일은 고객이 누르면 기기의 전화·메일 앱을 엽니다. 웹 내부 음성·영상 통화는 아직 제공하지 않습니다.</p><label><input class="check" type="checkbox" id="profile-start" '+(p.show_at_start?'checked':'')+'> 채팅 시작 시 프로필 자동 표시</label><p class="muted">끄면 자동 표시되지 않으며, 등록된 프로필은 채팅 상단 프로필 버튼으로 확인할 수 있습니다.</p>'+label('공지사항 표시 방식',select('profile-notice-mode',[['manual','직접 작성한 공지'],['profile','프로필을 공지로 표시'],['both','직접 작성 공지와 프로필 모두'],['off','공지 영역 숨기기']],p.notice_mode||'manual'))+label('직접 작성 공지',ta('profile-manual-notice',p.manual_notice||''))+'<p class="muted">공지 영역의 표시 방식과 채팅 시작 시 프로필 표시는 각각 설정됩니다.</p>'+label('프로필 제목 (선택)',input('profile-title',p.title))+label('소개 및 추가 안내 문구',ta('profile-message',p.message))+'<div class="profile-edit-photo"><div id="profile-current-photo">'+(p.photo?'<img class="chat-profile-photo" alt="현재 프로필 사진" src="'+e(p.photo)+'">':'<p class="muted">등록된 사진 없음</p>')+'</div>'+fileUpload('profile-photo-file',{accept:'image/png,image/jpeg,image/webp',buttonText:'이미지 선택',description:'권장 1200 × 900px (4:3) · PNG/JPG/WebP · 5MB 이하 · 자동 최적화',onChange:'previewProfilePhoto(this)'})+btn('사진 제거','removeProfilePhoto()','secondary ui-sm')+'</div><h3>전화번호·이메일·기타 연락처</h3><div id="profile-editor-contacts"></div>'+btn('연락처 추가','addProfileContact()')+'<h3>홈페이지·SNS·기타 링크</h3><div id="profile-editor-links"></div>'+btn('링크 추가','addProfileLink()')+'<p class="muted">최대 10개, HTTPS 링크만 가능합니다. 비공개 정보는 등록하지 마세요.</p>',{
   className:'profile-editor-modal',
   dismissOnBackdrop:false,
   canClose:()=>!profileEditorBusy&&(!profileEditorDirty()||confirm('저장하지 않은 변경사항을 버리고 닫을까요?')),
@@ -3811,7 +3811,7 @@ async function openProfileEditor(agent=''){
  window.addEventListener('beforeunload',preserveProfileBeforeUnload);
  })}finally{profileEditorOpening=false;}
 }
-function previewProfilePhoto(field){const f=field.files[0];if(!f)return;if(f.size>1000000){field.value='';toast('사진은 1MB 이하로 선택하세요.');return}profileEditorRemove=false;const r=new FileReader(),target=$('#profile-current-photo');r.onload=()=>{if(target?.isConnected&&field.files[0]===f){target.innerHTML='';const img=document.createElement('img');img.className='chat-profile-photo';img.alt='프로필 사진 미리보기';img.src=r.result;target.append(img)}};r.readAsDataURL(f)}
+function previewProfilePhoto(field){const f=field.files[0];if(!f)return;if(f.size>5000000){field.value='';fileUploadSelected(field);toast('사진은 5MB 이하로 선택하세요.');return}profileEditorRemove=false;const r=new FileReader(),target=$('#profile-current-photo');r.onload=()=>{if(target?.isConnected&&field.files[0]===f){target.innerHTML='';const img=document.createElement('img');img.className='chat-profile-photo';img.alt='프로필 사진 미리보기';img.src=r.result;target.append(img)}};r.readAsDataURL(f)}
 async function saveChatProfile(){
  if(profileEditorBusy)return;
  const modalNode=$('#profile-editor-links')?.closest('.modal');
@@ -3827,7 +3827,7 @@ async function saveChatProfile(){
   fields.forEach(field=>field.disabled=true);
   try{
    if(photo){
-    if(photo.size>1000000)throw Error('사진은 1MB 이하입니다.');
+    if(photo.size>5000000)throw Error('사진은 5MB 이하입니다.');
     body.photo=await new Promise((resolve,reject)=>{
      const reader=new FileReader();
      reader.onload=()=>resolve(String(reader.result).split(',')[1]);
