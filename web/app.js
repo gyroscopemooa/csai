@@ -218,10 +218,10 @@ const seededLocalWorkspaces=new Set();
 async function refresh(){me=await api('/api/me');if(me.sample_tools&&!seededLocalWorkspaces.has(me.slug)){try{if(sessionStorage.getItem('csai-hide-samples:'+me.slug)!=='1')await api('/api/demo/samples',{});seededLocalWorkspaces.add(me.slug)}catch(x){console.warn('Local sample setup:',x.message)}}}
 async function switchDemoView(mode){if(educationBusy){toast('진행 중인 교육 작업을 마친 뒤 전환해 주세요.');return;}if(!['free','subscriber','subscriber_agent','developer'].includes(mode))return;await act(async()=>{await api('/api/demo/view',{mode});chatSession=null;chatMessages=[];threadId=null;previewAgent='';brandEditor='';inboxAgent='all';qualityAgent='';calendarAgent='';crmAgent='';calendarProfile=null;calendarRange=null;calendarRangeAnchor='';calendarRangeMode=false;selectedDate=null;estimate=null;educationAgent='';trainingChat=[];resetEducationDraft();$('#education-workspace')?.remove();await refresh();await render();toast('로컬 화면을 전환했습니다. 실제 결제는 없습니다.')})}
 function freeFeaturePreview(){return !!me&&!me.operator&&!me.trial;}
-function previewNotice(key,description){
+function previewNotice(key,description,{detailsOnly=false}={}){
  const action=key?`CSAISetup.add('${key}')`:"go('pricing')";
  const addon=key?cfg.catalog.addons.find(a=>a.id===key):null;
- return `<section class="card app-card paid-preview-notice" aria-label="미리보기 안내"><div class="paid-preview-copy"><strong>${e(addon?.name||description)}</strong>${addon?`<span class="paid-preview-price">월 ${money(addon.price)}</span>`:''}</div>${actionGroup({keepSize:true},key?btn('설정 체험',`featureDraft('${key}')`):'',btn(key?'구독 구성에 추가':'요금제 보기',action,'primary'))}</section>`;
+ return `<section class="card app-card paid-preview-notice" aria-label="미리보기 안내" data-paid-feature="${e(key||'')}"><div class="paid-preview-copy"><strong>${e(addon?.name||description)}</strong>${addon?`<span class="paid-preview-price">월 ${money(addon.price)}</span>`:''}</div>${actionGroup({keepSize:true},key?(detailsOnly?btn('상세 안내',`CSAISetup.preview('${key}')`):btn('설정 체험',`featureDraft('${key}')`)):'',btn(key?'구독 구성에 추가':'요금제 보기',action,'primary'))}</section>`;
 }
 function requirePreviewAccess(key){
  if(key?has(key):me.public_access)return true;
@@ -2338,13 +2338,39 @@ async function instagramModal(agent=''){await act(async()=>{const brands=has('ex
 async function connectInstagram(agent){await act(async()=>{if(!checked('ig-confirm'))throw Error('Meta 메시지 권한과 구독 확인 필요');const token=val('ig-token');$('#ig-token').value='';await api(scopedUrl('/api/instagram/connect',agent),{token,confirmed:true,subscribed:true});instagramModal(agent)})}
 async function disconnectInstagram(agent){if(!confirm('CSAI의 계정 연결을 해제할까요? Meta 웹훅 구독은 별도로 관리해야 합니다.'))return;await act(async()=>{await api(scopedUrl('/api/instagram/disconnect',agent),{confirmed:true});instagramModal(agent)})}
 
+// Catalog-backed page offers; never duplicate an existing purchase notice.
+const pagePaidFeatures={
+ calendar:['calendar','auto_booking','change_booking','google_calendar','booking_alert'],
+ 'booking-settings':['calendar','auto_booking','change_booking','google_calendar','booking_alert'],
+ customers:['crm','quote','tasks','leads','complaints','stats','export'],
+ alerts:['push','email','unknown_alert','new_alert','booking_alert','report'],
+ settings:['multilingual','design','unbrand','custom_url'],
+ inbox:['retention'],
+ 'consultation-center':['retention'],
+ preview:['design','unbrand','custom_url'],
+ 'chat-page':['design','unbrand','custom_url'],
+ stats:['stats'],
+ reports:['report'],
+ agents:['extra_agent'],
+ developer:['external_api','custom_integration'],
+};
+function ensurePagePaidNotices(main){
+ const existing=new Set([...main.querySelectorAll('.paid-preview-notice[data-paid-feature]')].map(n=>n.dataset.paidFeature));
+ if(!me||me.operator)return;
+ const catalog=new Set(cfg.catalog.addons.map(a=>a.id));
+ const missing=(pagePaidFeatures[route]||[]).filter(key=>catalog.has(key)&&!has(key)&&!existing.has(key));
+ if(missing.length)main.insertAdjacentHTML('beforeend',missing.map(key=>previewNotice(key,'',{detailsOnly:true})).join(''));
+}
 let paidPreviewHeaderObserver=null;
 function prioritizePaidPreviews(){
  paidPreviewHeaderObserver?.disconnect();paidPreviewHeaderObserver=null;
  const main=$('.layout main');if(!main)return;
  const header=$('.layout .app-sidebar');
  const setup=main.querySelector(':scope > .dashboard-setup-strip');
+ ensurePagePaidNotices(main);
  const notices=[...main.querySelectorAll('.paid-preview-notice')];
+ const seen=new Set();for(let i=0;i<notices.length;){const n=notices[i],key=n.dataset.paidFeature;if(key&&(has(key)||seen.has(key))){n.remove();notices.splice(i,1);continue;}if(key)seen.add(key);i++;}
+ const ordered=pagePaidFeatures[route]||[];const rank=n=>ordered.includes(n.dataset.paidFeature)?ordered.indexOf(n.dataset.paidFeature):ordered.length;notices.sort((a,b)=>rank(a)-rank(b));
  if(!setup&&!notices.length)return;
  const top=document.createElement('div');top.className='purchase-sticky-stack';
  const first=main.querySelector(':scope > .mobile-service-notice');if(first)first.after(top);else main.prepend(top);
