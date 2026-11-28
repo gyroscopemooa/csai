@@ -248,7 +248,7 @@
       "id": "booking_alert",
       "group": "예약·일정",
       "name": "예약 자동 알림",
-      "price": 2900,
+      "price": 9900,
       "local": false,
       "requires": [
         "calendar"
