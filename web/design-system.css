@@ -1772,3 +1772,25 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
  .layout .app-sidebar.open .sidebar-brand{position:sticky;top:0;z-index:2;background:#fff}
  .inbox-desk-links>.ui-button{min-width:0;padding:7px 4px;font-size:12px}
 }
+
+/* Messaging-style operator composer and restrained workspace controls. */
+.workspace-control-icon{display:block;width:20px;height:20px;flex:none;pointer-events:none}
+.preview-stage .preview-controls{align-items:center;gap:4px}
+.preview-stage .preview-controls .preview-expand-button,.center-open-window{display:grid;place-items:center;width:38px;height:38px;min-width:38px;min-height:38px;padding:0;background:transparent;border:0;border-radius:8px;color:#526579;box-shadow:none;line-height:1}
+.preview-stage .preview-controls .preview-expand-button:hover,.center-open-window:hover{background:#e7edf4;color:#2468bd}
+.preview-stage .preview-controls .preview-expand-button:focus-visible,.center-open-window:focus-visible{outline:2px solid #3182f6;outline-offset:2px}
+.owner-compose,.center-compose-row .owner-compose{display:flex;align-items:flex-end;gap:4px;padding:3px 4px 3px 10px;background:var(--ds-surface,#fff);border:1px solid #dce3eb;border-radius:22px;box-sizing:border-box;min-height:50px}
+.owner-compose:focus-within{border-color:#91b9f1}
+.owner-compose .owner-compose-input{flex:1;min-width:0}
+.owner-compose .owner-compose-input textarea,.center-compose-row .owner-compose-input textarea{height:42px;min-height:42px;max-height:120px;padding:10px 4px;border:0;box-shadow:none;border-radius:0;background:transparent;color:#172333;font-size:16px;line-height:22px;resize:none;overflow-y:auto;outline:none;scrollbar-width:thin}
+.owner-compose .owner-compose-input textarea:focus{outline:none;box-shadow:none}
+.owner-compose .owner-compose-input .ui-field{gap:0}
+.owner-compose .owner-compose-input .ui-field-meta,.center-compose-row .owner-compose-input .ui-field-meta{display:none}
+.owner-compose .owner-compose-input .ui-field-meta:has(.real-letter-meter:is([data-level="near"],[data-level="full"])){display:flex;margin:0 0 3px;padding:0 4px;justify-content:flex-end}
+.owner-compose .owner-send,.center-compose-row .owner-compose .owner-send{display:grid;place-items:center;align-self:flex-end;flex:0 0 36px;min-width:36px;width:36px;min-height:36px;height:36px;margin:0 1px 2px 0;padding:0;background:#3182f6;color:#fff;border-radius:50%;box-shadow:none}
+.owner-compose .owner-send .workspace-control-icon{width:19px;height:19px;stroke-width:2.2}
+.center-compose-row{align-items:flex-end;gap:6px}
+.center-attachments summary{width:42px;min-width:42px;height:42px;border-radius:50%;background:transparent;border:1px solid #dce3eb;margin-bottom:4px;font-size:24px;color:#526579}
+.center-chat-bottom .inbox-mode-bar{padding-bottom:5px}
+.center-chat-bottom .inbox-mode-bar .ui-button{min-height:30px;padding:4px 10px;font-size:12px}
+@media(max-width:700px){.center-chat-bottom{padding:6px 10px max(8px,env(safe-area-inset-bottom))}.owner-compose,.center-compose-row .owner-compose{min-height:48px}.preview-stage .preview-controls .preview-expand-button{width:36px;height:36px;min-width:36px;min-height:36px}}
