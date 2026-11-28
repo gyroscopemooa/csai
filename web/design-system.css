@@ -1817,3 +1817,11 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .takeover-actions{display:flex;flex-wrap:wrap;align-items:center;gap:5px}.takeover-actions .ui-button{font-size:12px;min-height:32px;padding:5px 9px;margin:0}
 .takeover-settings{display:flex;align-items:center;gap:6px;color:#526579;font-size:11px;flex-basis:100%;justify-content:flex-end}
 .takeover-settings select{width:auto!important;min-height:28px;height:28px;padding:3px 8px;font-size:12px;border-radius:6px}.takeover-note{flex-basis:100%;font-size:11px;color:#93601e}
+
+/* Compact shared upgrade notice; labels remain visible beside their own actions. */
+.layout main .paid-preview-top{display:grid;gap:0;padding:12px 14px;margin:0 0 16px;min-width:0}
+.paid-preview-heading{display:grid;gap:3px;padding:2px 0 9px}.paid-preview-heading strong{font-size:14px}.paid-preview-heading small{font-size:11px;color:#64748b;line-height:1.5}
+.layout main .paid-preview-top>.paid-preview-notice{display:flex;align-items:center;flex-wrap:wrap;gap:7px 10px;margin:0!important;padding:9px 0;border:0;border-top:1px solid #e8edf3;border-radius:0;box-shadow:none;background:transparent}
+.paid-preview-copy{display:flex;align-items:baseline;gap:5px 8px;flex-wrap:wrap;flex:1;min-width:120px}.paid-preview-copy strong{font-size:13px!important}.paid-preview-price{font-size:12px;color:#64748b;white-space:nowrap}
+.paid-preview-top .paid-preview-notice .ui-actions{display:flex;flex-wrap:nowrap;gap:5px;margin:0}.paid-preview-top .paid-preview-notice .ui-button{min-height:32px;padding:5px 9px;font-size:11px;white-space:nowrap}
+@media(max-width:700px){.layout main .paid-preview-top{padding:10px 12px}.paid-preview-top .paid-preview-notice .ui-actions{margin-left:auto}}
