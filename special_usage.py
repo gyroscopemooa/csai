@@ -71,3 +71,23 @@ class UsageLedger:
                 return False
             db.execute("UPDATE usage SET state='settled',charged=?,actual=? WHERE ws=? AND period=? AND job=?", (charged, actual, ws, period, job))
             return True
+
+    def snapshot(self, ws, period):
+        """Trusted operator reconciliation view; no job content or customer data."""
+        self._scope(ws, period)
+        with self._tx() as db:
+            budget = db.execute('SELECT * FROM budget WHERE ws=? AND period=?', (ws, period)).fetchone()
+            if not budget:
+                raise ValueError('budget missing')
+            reserved, settled = {}, {}
+            for row in db.execute("SELECT state, COUNT(*) AS n, SUM(CASE WHEN state='reserved' THEN credits ELSE charged END) AS c, SUM(CASE WHEN state='reserved' THEN estimate ELSE actual END) AS cost FROM usage WHERE ws=? AND period=? GROUP BY state", (ws, period)):
+                target = reserved if row['state'] == 'reserved' else settled
+                target.update(n=row['n'], credits=row['c'], cost=row['cost'])
+            used_credits = reserved.get('credits', 0) + settled.get('credits', 0)
+            used_cost = reserved.get('cost', 0) + settled.get('cost', 0)
+            return {'pending_jobs': reserved.get('n', 0), 'settled_jobs': settled.get('n', 0),
+                    'reserved_credits': reserved.get('credits', 0), 'charged_credits': settled.get('credits', 0),
+                    'reserved_cost': reserved.get('cost', 0), 'actual_cost': settled.get('cost', 0),
+                    'remaining_credits': max(0, budget['credits'] - used_credits),
+                    'remaining_cost': max(0, budget['ceiling'] - used_cost),
+                    'cost_overrun': max(0, used_cost - budget['ceiling'])}

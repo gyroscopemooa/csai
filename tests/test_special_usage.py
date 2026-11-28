@@ -62,3 +62,20 @@ class UsageTests(unittest.TestCase):
     def test_invalid_amount(self):
         with self.assertRaises(ValueError):
             self.l.reserve('w', 'p', 'a', -1, 0)
+
+    def test_snapshot_reconciliation(self):
+        self.l.reserve('w', 'p', 'a', 4, 40)
+        self.l.reserve('w', 'p', 'b', 3, 30)
+        self.l.settle('w', 'p', 'b', 2, 80)
+        self.assertEqual(self.l.snapshot('w', 'p'), {
+            'pending_jobs': 1, 'settled_jobs': 1, 'reserved_credits': 4,
+            'charged_credits': 2, 'reserved_cost': 40, 'actual_cost': 80,
+            'remaining_credits': 4, 'remaining_cost': 0, 'cost_overrun': 20})
+
+    def test_snapshot_isolation(self):
+        self.l.reserve('w', 'p', 'a', 4, 40)
+        self.l.provision('other', 'p', 10, 100)
+        self.assertEqual(self.l.snapshot('other', 'p')['pending_jobs'], 0)
+        self.assertEqual(self.l.snapshot('other', 'p')['remaining_cost'], 100)
+        with self.assertRaises(ValueError):
+            self.l.snapshot('w', 'next')
