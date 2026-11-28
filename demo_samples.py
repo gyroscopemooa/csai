@@ -171,7 +171,7 @@ def mark(c, ws, kind, item):
     c.execute('INSERT OR IGNORE INTO demo_sample_entity(ws,kind,id) VALUES(?,?,?)', (ws, kind, item))
 
 def seed_related(c, ws):
-    samples = rows(c, 'SELECT t.id,t.visitor FROM thread t JOIN demo_sample d ON d.thread=t.id WHERE t.ws=? AND d.ws=? ORDER BY t.created', (ws, ws))
+    samples = rows(c, "SELECT t.id,t.visitor FROM thread t JOIN demo_sample d ON d.thread=t.id WHERE t.ws=? AND d.ws=? AND t.id NOT LIKE 'sample-recent-%' AND t.id NOT LIKE 'sample-admin-%' ORDER BY t.created", (ws, ws))
     if len(samples) < len(SAMPLES):
         return
     if not one(c, "SELECT id FROM demo_sample_entity WHERE ws=? AND kind='unknown'", (ws,)):
@@ -217,8 +217,8 @@ def seed_related(c, ws):
 
 def seed_samples(c, ws):
     local_demo(c, ws)
-    existing = one(c, 'SELECT COUNT(*) n FROM demo_sample WHERE ws=?', (ws,))['n']
-    base = now() - 8 * 86400
+    existing = one(c, "SELECT COUNT(*) n FROM demo_sample WHERE ws=? AND thread NOT LIKE 'sample-recent-%' AND thread NOT LIKE 'sample-admin-%'", (ws,))['n']
+    base = now() - 8 * 86400 - 3600
     for index, (kind, status, manual, messages) in enumerate(SAMPLES):
         if index < existing:
             continue
