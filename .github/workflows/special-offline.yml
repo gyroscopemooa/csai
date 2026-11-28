@@ -1,0 +1,30 @@
+name: SPECIAL offline checks
+on:
+  push:
+    branches: ['feat/ai-intelligence-phase1']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      OPENAI_API_KEY: ''
+      DEMO_MODE: '1'
+      ENABLE_LIVE_EMAIL: '0'
+      ENABLE_CHANNEL_WEBHOOKS: '0'
+      ENABLE_BACKGROUND_WORKER: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run isolated unit tests
+        run: python scripts/special_offline_checks.py
+      - name: Compile Python sources
+        run: python -m compileall -q -x '/(\.git|node_modules|reference|verification)/' .
+      - name: Check browser scripts
+        run: |
+          node --check web/app.js
+          node --check web/special-preview.js

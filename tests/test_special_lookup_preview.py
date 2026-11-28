@@ -23,3 +23,9 @@ class LookupTests(unittest.TestCase):
     def test_malformed_records(self):
         r=compare_lookup({'faq':[None,{}, {'q':'배송 기간','a':'2일'}]},'배송 기간')
         self.assertEqual(r['approved_count'],1)
+
+    def test_punctuation_only(self):
+        with self.assertRaises(ValueError):
+            compare_lookup({'faq':[{'q':'???','a':'invalid'}]},'???')
+        r=compare_lookup({'faq':[{'q':'???','a':'invalid'}]},'배송')
+        self.assertEqual(r['approved_count'],0)

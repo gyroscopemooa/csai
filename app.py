@@ -1015,7 +1015,8 @@ def special_preview_lookup(req:Request,body:dict,ws=Depends(ident)):
     limit('special-lookup:'+ws,30,60)
     from special_lookup_preview import compare_lookup
     query=bounded(body.get('query'),200)
-    require(query,'검색 질문을 입력하세요.',422)
+    from knowledge_retrieval import normalize
+    require(normalize(query),'검색 질문을 입력하세요.',422)
     with db() as c:
         published=loads(getw(c,ws)['published'])
     return compare_lookup(published,query)

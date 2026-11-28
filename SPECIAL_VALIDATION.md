@@ -1,0 +1,2 @@
+# SPECIAL validation
+Branch-only standard hosted runner, no provider credentials or deployment. Tests the existing isolated modules, compiles Python and checks browser JavaScript syntax. Full app integration tests still require the local environment and dependencies. Fixed punctuation-only preview queries and invalid approved FAQ question normalization. This workflow does not certify live model quality or payment readiness.
