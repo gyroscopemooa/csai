@@ -1184,9 +1184,10 @@ function inboxChannelBadge(t){
 }
 function inboxChannel(t){return t.source==='widget'?'홈페이지 위젯':t.source==='link'?'CS AI 상담 링크':channelNames[t.kind]||t.kind;}
 async function applyInboxFilters(){if(inboxReplyDraftActive()&&!confirm('작성 중인 내용을 닫고 필터를 변경할까요?'))return;await leaveTemporary();inboxKind=val('inbox-kind');inboxSource=val('inbox-source');inboxQuery=val('inbox-q').trim();inboxUnread=!!$('#inbox-unread')?.checked;inboxPriority=val('inbox-priority');threadId=null;render()}
-function previewInboxThread(id){return freeFeaturePreview()&&previewData().sampleThreads.find(t=>t.id===id);}async function inboxDetailFor(id){const example=previewInboxThread(id);return example?structuredClone(example):api('/api/inbox/'+enc(id));}async function loadInboxThreads(){
+function inboxPreviewEnabled(){if(!me)return false;if(me.sample_tools){try{if(sessionStorage.getItem('csai-hide-samples:'+me.slug)==='1')return false;}catch{}return true;}return freeFeaturePreview();}
+function previewInboxThread(id){return inboxPreviewEnabled()&&previewData().sampleThreads.find(t=>t.id===id);}async function inboxDetailFor(id){const example=previewInboxThread(id);return example?structuredClone(example):api('/api/inbox/'+enc(id));}async function loadInboxThreads(){
  let ts=await api('/api/inbox?agent='+enc(inboxAgent)+'&kind='+enc(['all','customer'].includes(inboxKind)?'':inboxKind)+'&q='+enc(inboxQuery));
- if(freeFeaturePreview()&&(!inboxAgent||inboxAgent==='all')){const examples=previewData().sampleThreads.filter(t=>(['all','customer'].includes(inboxKind)||inboxKind===t.kind)&&(!inboxQuery||(t.name+' '+t.messages.map(m=>m.body).join(' ')).toLowerCase().includes(inboxQuery.toLowerCase())));ts=ts.concat(examples.map(t=>({...t,manual:inboxDirect(t)}))).sort((a,b)=>(b.activity||b.created)-(a.activity||a.created));}if(inboxKind==='customer')ts=ts.filter(t=>t.kind!=='test');
+ if(inboxPreviewEnabled()&&(!inboxAgent||inboxAgent==='all')){const examples=previewData().sampleThreads.filter(t=>(['all','customer'].includes(inboxKind)||inboxKind===t.kind)&&(!inboxQuery||(t.name+' '+t.messages.map(m=>m.body).join(' ')).toLowerCase().includes(inboxQuery.toLowerCase())));ts=ts.concat(examples.map(t=>({...t,manual:inboxDirect(t)}))).sort((a,b)=>(b.activity||b.created)-(a.activity||a.created));}if(inboxKind==='customer')ts=ts.filter(t=>t.kind!=='test');
  if(inboxSource==='manual')ts=ts.filter(t=>t.manual||t.paused_by);
  if(inboxSource==='widget'||inboxSource==='link')ts=ts.filter(t=>t.source===inboxSource);
  if(inboxUnread)ts=ts.filter(t=>t.unread>0);
@@ -1289,11 +1290,12 @@ function replySuggestionKey(event){
 }
 
 const sampleManualThreads=new Set(),sampleTemporaryThreads=new Map();
+const sampleModeKey=id=>(me?.slug||'guest')+':'+id;
 let activeTemporary=null,temporaryRenewAt=0;
-function inboxTemporary(t){if(t.sample){const lease=sampleTemporaryThreads.get(t.id);if(lease&&lease.expires<=Date.now()/1000){sampleTemporaryThreads.delete(t.id);sampleManualThreads.delete(t.id);return null;}return lease||null;}return t.temporary||null;}
+function inboxTemporary(t){if(t.sample){const lease=sampleTemporaryThreads.get(sampleModeKey(t.id));if(lease&&lease.expires<=Date.now()/1000){sampleTemporaryThreads.delete(sampleModeKey(t.id));sampleManualThreads.delete(sampleModeKey(t.id));return null;}return lease||null;}return t.temporary||null;}
 function temporaryClock(expires){const left=Math.max(0,Math.ceil(expires-Date.now()/1000));return String(Math.floor(left/60)).padStart(2,'0')+':'+String(left%60).padStart(2,'0');}
 function rememberTemporary(t){const lease=t&&inboxTemporary(t);activeTemporary=lease?{...lease,id:t.id,sample:!!t.sample}:null;}
-async function leaveTemporary(){const lease=activeTemporary;activeTemporary=null;if(!lease)return;if(lease.sample){sampleTemporaryThreads.delete(lease.id);sampleManualThreads.delete(lease.id);return;}try{await api('/api/inbox/'+enc(lease.id),{release_temporary:lease.lease});}catch(x){toast('자동 복귀 요청 실패 · 설정 시간이 지나면 복귀합니다.');}}
+async function leaveTemporary(){const lease=activeTemporary;activeTemporary=null;if(!lease)return;if(lease.sample){sampleTemporaryThreads.delete(sampleModeKey(lease.id));sampleManualThreads.delete(sampleModeKey(lease.id));return;}try{await api('/api/inbox/'+enc(lease.id),{release_temporary:lease.lease});}catch(x){toast('자동 복귀 요청 실패 · 설정 시간이 지나면 복귀합니다.');}}
 window.addEventListener('pagehide',()=>{const lease=activeTemporary;if(lease&&!lease.sample&&!inboxReplyDraftActive()){fetch('/api/inbox/'+enc(lease.id),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({release_temporary:lease.lease}),keepalive:true}).catch(()=>{});}});
 function refreshTemporaryClock(){document.querySelectorAll('[data-temporary-expires]').forEach(el=>{el.textContent=temporaryClock(Number(el.dataset.temporaryExpires));});}
 setInterval(refreshTemporaryClock,1000);
@@ -1301,7 +1303,7 @@ let inboxDetailSignature='',inboxModeSignature='';
 const inboxDesk=()=>new URLSearchParams(location.search).get('desk')==='1';
 const inboxCenter=()=>route==='consultation-center';
 const inboxWorkspace=()=>route==='inbox'||inboxCenter();
-const inboxDirect=t=>{if(t.sample)inboxTemporary(t);return t.sample?sampleManualThreads.has(t.id):!!t.manual;};
+const inboxDirect=t=>{if(t.sample)inboxTemporary(t);return t.sample?sampleManualThreads.has(sampleModeKey(t.id)):!!t.manual;};
 const inboxCanReply=t=>['public','test'].includes(t.kind)||(['naver','telegram'].includes(t.kind)&&(t.sample||t.channel_reply?.available));
 const inboxModeKey=t=>JSON.stringify([t.id,inboxDirect(t),inboxTemporary(t)?.lease||'',t.paused_by||'',t.status,inboxCanReply(t)]);
 function sampleDisplayText(value,isSample){return isSample?String(value??'').replace(/^샘플\s*·\s*/,''):value;}
@@ -1323,7 +1325,7 @@ async function switchInboxMode(manual,seconds=null){
  if(!manual&&inboxReplyDraftActive()&&!confirm('작성 중인 답변을 닫고 AI로 복귀할까요?'))return;
  if(manual&&seconds===null&&!confirm('AI가 자동으로 복귀하지 않는 수동 상담으로 전환할까요?'))return;
  await act(async()=>{const t=await inboxDetailFor(id);if(threadId!==id)return;
- if(t.sample){if(manual){sampleManualThreads.add(id);if(seconds!==null)sampleTemporaryThreads.set(id,{lease:crypto.randomUUID(),seconds,expires:Date.now()/1000+(seconds||300)});else sampleTemporaryThreads.delete(id);}else{sampleManualThreads.delete(id);sampleTemporaryThreads.delete(id);}}
+ if(t.sample){if(manual){sampleManualThreads.add(sampleModeKey(id));if(seconds!==null)sampleTemporaryThreads.set(sampleModeKey(id),{lease:crypto.randomUUID(),seconds,expires:Date.now()/1000+(seconds||300)});else sampleTemporaryThreads.delete(sampleModeKey(id));}else{sampleManualThreads.delete(sampleModeKey(id));sampleTemporaryThreads.delete(sampleModeKey(id));}}
  else{await api('/api/inbox/'+enc(id),manual&&seconds!==null?{manual:true,auto_resume_seconds:seconds}:{manual});}
  if(threadId===id){await render();}
  });
@@ -1344,11 +1346,11 @@ function sampleInboxReply(detail){if(!inboxCanReply(detail))return externalReply
 let sampleInboxSending=false;
 async function sendSampleInboxMessage(role){
  if(sampleInboxSending)return;
- if(role==='staff'&&!sampleManualThreads.has(threadId))return toast('직접 상담 모드로 전환하세요.');
+ if(role==='staff'&&!sampleManualThreads.has(sampleModeKey(threadId)))return toast('직접 상담 모드로 전환하세요.');
  const id=threadId,field=role==='staff'?'staff-reply':'sample-customer-reply',value=val(field).trim();
  if(!value)return toast('메시지를 입력하세요.');
  sampleInboxSending=true;
- try{const example=previewInboxThread(id);if(example){const stamp=Math.floor(Date.now()/1000);example.messages.push({id:crypto.randomUUID(),role,body:value,created:stamp});example.activity=stamp;example.last=value;example.unread=role==='staff'?0:example.unread+1;if(role==='user'&&!sampleManualThreads.has(id)){const answer='샘플 AI 답변 · 문의 내용을 접수했습니다. 업체에 등록된 정보에 따라 안내합니다.';example.messages.push({id:crypto.randomUUID(),role:'assistant',body:answer,created:stamp});example.last=answer;}}else await api('/api/demo/samples/'+enc(id)+'/message',{role,message:value});if(role==='staff'){const lease=sampleTemporaryThreads.get(id);if(lease){if(lease.seconds===0){sampleTemporaryThreads.delete(id);sampleManualThreads.delete(id);}else lease.expires=Date.now()/1000+lease.seconds;}}if(inboxWorkspace()&&threadId===id){await render();const chat=$('.inbox-conversation');if(chat)chat.scrollTop=chat.scrollHeight;}}catch(err){toast(err.message);}finally{sampleInboxSending=false;}
+ try{const example=previewInboxThread(id);if(example){const stamp=Math.floor(Date.now()/1000);example.messages.push({id:crypto.randomUUID(),role,body:value,created:stamp});example.activity=stamp;example.last=value;example.unread=role==='staff'?0:example.unread+1;if(role==='user'&&!sampleManualThreads.has(sampleModeKey(id))){const answer='샘플 AI 답변 · 문의 내용을 접수했습니다. 업체에 등록된 정보에 따라 안내합니다.';example.messages.push({id:crypto.randomUUID(),role:'assistant',body:answer,created:stamp});example.last=answer;}}else await api('/api/demo/samples/'+enc(id)+'/message',{role,message:value});if(role==='staff'){const lease=sampleTemporaryThreads.get(sampleModeKey(id));if(lease){if(lease.seconds===0){sampleTemporaryThreads.delete(sampleModeKey(id));sampleManualThreads.delete(sampleModeKey(id));}else lease.expires=Date.now()/1000+lease.seconds;}}if(inboxWorkspace()&&threadId===id){await render();const chat=$('.inbox-conversation');if(chat)chat.scrollTop=chat.scrollHeight;}}catch(err){toast(err.message);}finally{sampleInboxSending=false;}
 }
 
 function centerActivityLabel(stamp,now=Date.now()){
@@ -1586,7 +1588,13 @@ function previewData(){
  const questions=[{id:'preview-question-1',sample:true,preview:true,status:'open',q:'샘플 · 주말 방문 시 주차가 가능한가요?'},{id:'preview-question-2',sample:true,preview:true,status:'open',q:'샘플 · 예약 날짜 변경은 언제까지 가능한가요?'}];
  const events=[['new','새로운 고객 상담 접수'],['handoff_urgent','긴급 담당자 확인 요청'],['booking','예약 확정 안내'],['unknown','미학습 질문 접수']].map(([kind,title],i)=>({id:'preview-event-'+i,sample:true,preview:true,kind,title:'샘플 · '+title,created:stamp-i*180,seen:false}));
  const work=[['tasks','예약 일정 확인','pending'],['complaints','배송 지연 문의','open'],['quote','행사 촬영 견적 요청','pending'],['leads','가족 촬영 구매 문의','resolved'],['crm','고객 연락 요청','open']].map(([kind,title,status],i)=>({id:'preview-work-'+i,sample:true,preview:true,kind,title:'샘플 · '+title,status,details:'담당자 검토 및 처리 흐름 체험'}));
- const sampleThreads=[['가족 촬영','public','주말에 가족사진 예약 가능한가요?',2],['상품 교환','naver','상품 사이즈를 교환하고 싶습니다.',12],['가격 안내','public','프로필 촬영 가격이 궁금합니다.',38]].map(([name,kind,body,age],i)=>{const created=stamp-age*60;return {id:'preview-thread-'+i,name,kind,source:'link',sample:true,preview:true,manual:false,status:'open',unread:1,created,activity:created,last:body,agent:'',paused_by:'',messages:[{id:'preview-message-'+i,role:'user',body,created}]};});
+ const sampleThreads=[
+  ['가족 촬영','public',2,false,[['user','주말에 가족사진 예약 가능한가요?']]],
+  ['상품 교환','naver',12,false,[['user','상품 사이즈를 교환하고 싶습니다.']]],
+  ['가격 안내','public',38,false,[['user','프로필 촬영 가격이 궁금합니다.']]],
+  ['AI 상담 후 직접 개입','public',5,true,[['user','예약 시간을 변경하고 싶어요.'],['assistant','변경 가능한 시간을 담당자가 확인하겠습니다.'],['staff','안녕하세요. 담당자입니다. 원하시는 시간을 알려주세요.'],['user','토요일 오후 3시 가능한가요?']]],
+  ['담당자 직접 상담','public',9,true,[['user','기업 행사 촬영 견적을 요청합니다.'],['staff','안녕하세요. 행사 일정과 예상 인원을 알려주시면 확인하겠습니다.'],['user','다음 주 금요일, 30명입니다.']]]
+ ].map(([name,kind,age,manual,history],i)=>{const activity=stamp-age*60,created=activity-(history.length-1)*60,id='preview-thread-'+i;const messages=history.map(([role,body],j)=>({id:'preview-message-'+i+'-'+j,role,body,created:created+j*60}));if(manual)sampleManualThreads.add(sampleModeKey(id));return {id,name,kind,source:'link',sample:true,preview:true,manual,status:'open',unread:1,created,activity,last:messages.at(-1).body,agent:'',paused_by:'',messages};});
  const state={sampleThreads,bookings,questions,events,work,contacts:[{id:'preview-crm-1',name:'샘플 · 김고객',email:'',phone:'',notes:'가족 촬영 문의 · 담당자 확인 대기',threads:[]},{id:'preview-crm-2',name:'샘플 · 이고객',email:'',phone:'',notes:'프로필 촬영 예약 완료',threads:[]}],quoteItems:[{id:'preview-quote-1',name:'샘플 · 행사 촬영',price:350000,active:true}],quoteOffers:[{id:'preview-offer-1',amount:350000,items:[{name:'샘플 · 행사 촬영',quantity:1}],status:'draft'}],commerce:{enabled:true,products:[{id:'preview-product-1',sku:'DEMO-001',name:'샘플 · 프로필 촬영',variant:'기본',price:90000,stock:12,published:true,url:'',description:'촬영 상품 예시'}],orders:[{id:'preview-order-1',channel:'smartstore',reference:'DEMO-1001',product:'샘플 · 프로필 촬영',quantity:1,amount:90000,state:'preparing',carrier:'',tracking:''}],requests:[{id:'preview-request-1',kind:'exchange',channel:'smartstore',reference:'DEMO-1001',details:'샘플 · 상품 옵션 변경 요청',state:'pending',thread:''}]},email:{settings:{email:'',enabled:true},deliveries:[{status:'샘플 · 발송 완료',error:''},{status:'샘플 · 발송 대기',error:''}],live_enabled:false,auto_enabled:false},report:{settings:{frequency:'daily',enabled:true},worker_enabled:false,reports:[{period:'샘플 · 전일 상담 리포트',summary:{threads:12,resolved:8,unknown:2,messages:54}}]},push:{configured:false,live:false,devices:[],kinds:[],deliveries:[{created:stamp,status:'샘플 · 기기 알림 발송 완료'}]}};
  previewStateByAccount.set(key,state);return state;
 }
