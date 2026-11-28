@@ -426,6 +426,7 @@ def customer_handoff(body:dict):
         t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(w['id'],token))
         require(t,'상담 없음',404)
         require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(w['id'],t['id'])),'응답 완료 후 다시 요청하세요.',409)
+        clear_temporary_takeover(c,w['id'],t['id'])
         c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(w['id'],t['id']))
         if not t['manual'] or not one(c,"SELECT id FROM event_log WHERE ws=? AND kind='handoff' AND ref=?",(w['id'],t['id'])):
             ops.event(c,w['id'],'handoff','고객의 담당자 연결 요청',t['id'])
@@ -462,7 +463,7 @@ def abort_chat_request(key,period,kind):
 def chat(body:dict):
     token=bounded(body.get('token',''),100);client=bounded(body.get('clientMessageId',''),100);msg=bounded(body.get('message',''),2000);require(msg and client,'메시지 필요',422)
     with db(True) as c:
-        v=visitor(c,token);ws=v['ws'];w=getw(c,ws);t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(ws,token));tid=t['id'];s,agent=branding.merged(c,w,v);p=usage_period(w);key=(ws,tid,client)
+        v=visitor(c,token);ws=v['ws'];w=getw(c,ws);t=one(c,'SELECT * FROM thread WHERE ws=? AND visitor=?',(ws,token));tid=t['id'];expire_temporary_takeovers(c,ws,tid);t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,tid));s,agent=branding.merged(c,w,v);p=usage_period(w);key=(ws,tid,client)
         prior=one(c,'SELECT * FROM request WHERE ws=? AND thread=? AND client=?',key)
         if prior:
             if prior['state']=='done':return loads(prior['result'])
@@ -568,7 +569,8 @@ def chat(body:dict):
 def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
     require(kind in ('','public','test','naver','kakao','telegram','line','instagram'),'채널 필터 오류',422)
     q=bounded(q,100).lower()
-    with db() as c:
+    with db(True) as c:
+        expire_temporary_takeovers(c,ws)
         w=getw(c,ws);cutoff=history_cutoff(w)
         sql="SELECT COALESCE((SELECT v.agent FROM visitor v WHERE v.token=thread_outer.visitor AND v.ws=thread_outer.ws),'') AS agent,id,kind,status,manual,created,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread_outer.ws AND cs.thread=thread_outer.id),'') AS source,(SELECT COUNT(*) FROM demo_sample d WHERE d.ws=thread_outer.ws AND d.thread=thread_outer.id) AS sample,(SELECT body FROM message WHERE ws=thread_outer.ws AND thread=thread_outer.id AND created>=? ORDER BY rowid DESC LIMIT 1) AS last FROM thread AS thread_outer WHERE ws=? AND (created>=? OR EXISTS(SELECT 1 FROM message m WHERE m.ws=thread_outer.ws AND m.thread=thread_outer.id AND m.created>=?))"
         args=[cutoff,ws,cutoff,cutoff]
@@ -586,6 +588,7 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
         for r in items:
             m=one(c,"SELECT COUNT(*) AS n,COALESCE(MAX(m.rowid),0) AS last_customer FROM message m WHERE m.ws=? AND m.thread=? AND m.role='user' AND m.created>=? AND m.rowid>COALESCE((SELECT seen FROM inbox_read WHERE ws=? AND thread=?),0)",(ws,r['id'],cutoff,ws,r['id']))
             last=one(c,'SELECT created AS activity,rowid AS seq FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid DESC LIMIT 1',(ws,r['id'],cutoff))
+            r['temporary']=temporary_takeover(c,ws,r['id']) if r['manual'] else None
             r['assignment']=one(c,'SELECT assignee,priority,due_date FROM inbox_assignment WHERE ws=? AND thread=?',(ws,r['id'])) or {'assignee':'','priority':'normal','due_date':''}
             r.update(unread=0 if r['sample'] or r['kind']=='test' else m['n'],activity=last['activity'] if last else r['created'],activity_seq=last['seq'] if last else 0,paused_by=workflow_controls.paused_by(scopes,r['agent'],r['kind']))
         return sorted(items,key=lambda r:(r['activity'],r['activity_seq'],r['id']),reverse=True)
@@ -767,8 +770,9 @@ def history_policy(ws=Depends(ident)):
         return {'base_days':BASE_HISTORY_DAYS,'extended_days':EXTENDED_HISTORY_DAYS,'accessible_days':history_days(w),'older_threads':hidden,'deletion_enabled':False,'policy':'provisional_access_window'}
 @app.get('/api/inbox/{i}')
 def thread_detail(i:str,ws=Depends(ident)):
-    with db() as c:
-        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'files':chat_attachments.files_enabled(c,ws,t['agent']),'web_calls':web_calls.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w))}
+    with db(True) as c:
+        expire_temporary_takeovers(c,ws,i)
+        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'temporary':temporary_takeover(c,ws,i) if t['manual'] else None,'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'files':chat_attachments.files_enabled(c,ws,t['agent']),'web_calls':web_calls.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w))}
 @app.get('/api/inbox/{i}/related')
 def related_threads(i:str,ws=Depends(ident)):
     with db() as c:
@@ -832,13 +836,33 @@ def delete_test_thread(i:str,ws=Depends(ident)):
 @app.post('/api/inbox/{i}')
 def thread_update(i:str,body:dict,ws=Depends(ident)):
     with db(True) as c:
+        expire_temporary_takeovers(c,ws,i)
         t=one(c,'SELECT * FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,getw(c,ws),i),'상담 없음 또는 보관 조회 범위 초과',404)
         require(not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)),'샘플 상담은 읽기 전용입니다.',409)
+        temporary=temporary_takeover(c,ws,i)
+        if 'release_temporary' in body or 'renew_temporary' in body:
+            require(len(body)==1,'일시 개입 요청 형식 오류',422)
+            release='release_temporary' in body
+            lease=body.get('release_temporary' if release else 'renew_temporary')
+            if temporary and lease==temporary['lease'] and t['manual']:
+                if release:
+                    c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
+                    clear_temporary_takeover(c,ws,i)
+                else:
+                    c.execute('UPDATE temporary_takeover SET expires=? WHERE ws=? AND thread=?',(now()+(temporary['seconds'] or 300),ws,i))
+            return {'ok':True}
+        if 'auto_resume_seconds' in body:
+            seconds=body['auto_resume_seconds']
+            require(body.get('manual') is True and not body.get('reply') and type(seconds) is int and seconds in (0,60,180,300,600,1800,3600),'자동 복귀 설정 오류',422)
+            require(t['kind'] in ('public','test'),'이 채널에서는 지속 수동 상담만 지원합니다.',409)
+        if 'expected_lease' in body:
+            require(bool(body.get('reply')) and 'manual' not in body and bool(t['manual']) and (temporary or {}).get('lease','')==body['expected_lease'],'상담 모드가 변경되었습니다. 다시 개입해 주세요.',409)
         if body.get('resume_on_close') is True:
             require(body.get('status')=='resolved' and not body.get('reply') and 'manual' not in body,'완료 후 AI 복귀 요청 형식 오류',422)
             require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
             c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
+            clear_temporary_takeover(c,ws,i)
         if 'manual' in body:
             require(not channel_live.staff_pending(c,ws,i),'외부 답변 발송 완료 후 변경하세요.',409)
             require(type(body['manual']) is bool,'상담 방식 오류',422)
@@ -847,12 +871,21 @@ def thread_update(i:str,body:dict,ws=Depends(ident)):
             else:
                 require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 변경하세요.',409)
             c.execute('UPDATE thread SET manual=? WHERE ws=? AND id=?',(int(body['manual']),ws,i))
+            clear_temporary_takeover(c,ws,i)
+            if 'auto_resume_seconds' in body:
+                c.execute('INSERT INTO temporary_takeover(ws,thread,lease,seconds,expires) VALUES(?,?,?,?,?)',(ws,i,uid(),seconds,now()+(seconds or 300)))
         if body.get('status') in ['open','pending','resolved']:c.execute('UPDATE thread SET status=? WHERE id=?',(body['status'],i))
         if body.get('reply'):
             require(t['kind'] in ('public','test'),'외부 채널 직접 답변은 연결 승인 및 발송 검증 후 이용할 수 있습니다.',409)
             require(not one(c,"SELECT client FROM request WHERE ws=? AND thread=? AND state='running'",(ws,i)),'AI 응답 완료 후 답변하세요.',409)
             c.execute("UPDATE thread SET manual=1,status='open' WHERE ws=? AND id=?",(ws,i))
             c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,i,'staff',bounded(body['reply']),now()))
+            temporary=temporary_takeover(c,ws,i)
+            if temporary:
+                if temporary['seconds']==0:
+                    c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,i))
+                    clear_temporary_takeover(c,ws,i)
+                else:c.execute('UPDATE temporary_takeover SET expires=? WHERE ws=? AND thread=?',(now()+temporary['seconds'],ws,i))
     return {'ok':True}
 @app.get('/api/unknown')
 def unknown(ws=Depends(ident)):
