@@ -1733,3 +1733,10 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
  .preview-stage .phone .chat-bottom{padding:7px 10px}
  .preview-stage .phone .phone-foot{padding-top:4px;font-size:10px}
 }
+
+
+.center-list-head>div:first-child{flex:1;min-width:0}
+.center-open-window{display:grid;place-items:center;width:36px;height:36px;flex:none;border-radius:8px;text-decoration:none;color:#334155;background:#f0f3f7;font-size:20px}
+.center-workspace .center-global-tools .center-popover{width:min(270px,calc(100vw - 42px))}
+.center-list-pane .center-list-head{overflow:visible}
+@media(max-width:700px){.preview-stage:not(.preview-expanded).preview-mode-page .phone,.preview-stage:not(.preview-expanded).preview-mode-widget .phone{height:clamp(340px,var(--preview-fit-height,calc(100dvh - 202px)),620px)}}
