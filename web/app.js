@@ -3215,7 +3215,7 @@ async function qualityHome(){
  </dl><dl class="quality-ratings">${ratings.map(([name,rating])=>`<div><dt>${e(name)}</dt><dd>${rating.n?Number(rating.average).toFixed(1)+' / 5 · '+rating.n+'건':'평가 없음 · 0건'}</dd></div>`).join('')}</dl>
  <p class="muted">관리자 테스트와 샘플은 제외합니다. 완료 상태는 사업주가 표시한 값이며 AI 정확도를 뜻하지 않습니다.</p>`;
  const handoffActions=actionArea(btn('업무 권한·자동 전환 설정','workflowModal()','primary'),btn('승인된 교육 백업','downloadKnowledge()'),
-  btn('교육 백업 가져오기','importKnowledgeModal()'),btn('구매한 기능 설정 적용',`offerReadyDrafts('${qualityAgent}',true)`));
+  btn('교육 백업 가져오기','importKnowledgeModal()'),btn('구매한 기능 설정 적용',`offerReadyDrafts('${qualityAgent}',true)`)).replace('class="ui-actions ui-inline"','class="ui-actions ui-inline quality-handoff-actions"');
  return pageTop('시작 및 교육 개선','실제 기록을 바탕으로 필요한 작업만 확인합니다.')+brandSelect('quality-agent',brands,qualityAgent,'qualityAgent=this.value;render()')+
  `<div class="quality-overview">${card('시작 체크리스트',checklist)}${card('최근 30일 상담 개선',overview)}</div>`+
  card('업무 인수인계 및 처리할 상담','<p class="muted">30분 이상 고객 답변 대기 및 오류 신고를 확인합니다. 외부 알림은 연결 검증이 필요합니다.</p>'+
