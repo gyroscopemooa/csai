@@ -1,0 +1,2 @@
+# Simulation and learning review pilot
+Curated simulation cases, bounded offline runner, prompt/version fingerprint, evidence/unknown checks and owner-review suggestions for complete runs only. Default off. No generated scenarios, actual model calls, production integration, data persistence or automatic education updates. The trusted server must isolate evaluation from side effects, validate evidence, reserve and settle actual usage costs, and authorize workspace/revision before any live connection. Test: python -m unittest discover -s tests -p test_learning_simulation.py.
