@@ -692,7 +692,8 @@ async function preview(test=false){
  const brand=brands.find(item=>item.id===previewAgent);
  if(!brand)previewAgent='';
  const appearance=brand?null:await api('/api/appearance');
- const settings=brand?brand.settings:{...me.settings,...appearance};
+ const profile=await api('/api/chat-profile?agent='+enc(brand?.id||''));
+ const settings={...(brand?brand.settings:{...me.settings,...appearance}),chat_profile:profile,notice:profile.manual_notice};
  const enabled=brand?brand.enabled:me.enabled;
  const status=enabled?'공개 중':'비공개';
  const link=location.origin+'/c/'+(brand?.slug||me.slug);
@@ -3787,18 +3788,22 @@ function profileLinkRow(name='',url=''){const div=document.createElement('div');
 function profileContactRow(c={kind:'phone',name:'',value:''}){const div=document.createElement('div');div.className='profile-edit-contact';div.innerHTML='<select class="profile-contact-kind" aria-label="연락처 종류"><option value="phone">전화번호</option><option value="email">이메일</option><option value="other">기타 연락처</option></select><input type="text" class="profile-contact-name" maxlength="60" placeholder="이름 (예: 고객센터)" aria-label="연락처 이름"><input type="text" class="profile-contact-value" maxlength="200" placeholder="연락처" aria-label="연락처 내용"><button type="button" onclick="this.parentElement.remove()" aria-label="연락처 삭제">삭제</button>';div.querySelector('.profile-contact-kind').value=c.kind;div.querySelector('.profile-contact-name').value=c.name;div.querySelector('.profile-contact-value').value=c.value;return div}
 function addProfileContact(){const list=$('#profile-editor-contacts');if(!list)return;if(list.children.length>=10){toast('연락처는 최대 10개입니다.');return}list.append(profileContactRow())}
 function addProfileLink(){const list=$('#profile-editor-links');if(!list)return;if(list.children.length>=10){toast('링크는 최대 10개입니다.');return}list.append(profileLinkRow())}
-function removeProfilePhoto(){profileEditorRemove=true;const f=$('#profile-photo-file');if(f)f.value='';const img=$('#profile-current-photo');if(img)img.innerHTML='<p class="muted">저장하면 사진이 삭제됩니다.</p>'}
+function removeProfilePhoto(){profileEditorRemove=true;const f=$('#profile-photo-file');if(f){f.value='';fileUploadSelected(f);}const img=$('#profile-current-photo');if(img)img.innerHTML='<p class="muted">저장하면 사진이 삭제됩니다.</p>'}
 async function openProfileEditor(agent=''){
  if(profileEditorOpening||$('#profile-editor-links'))return;
  profileEditorOpening=true;
  try{await act(async()=>{
  const p=await api('/api/chat-profile?agent='+enc(agent));
- const overlay=modal('채팅창 프로필 설정','<p class="muted">고객에게 공개되는 업체 소개입니다. 전화번호·이메일은 고객이 누르면 기기의 전화·메일 앱을 엽니다. 웹 내부 음성·영상 통화는 아직 제공하지 않습니다.</p><label><input class="check" type="checkbox" id="profile-start" '+(p.show_at_start?'checked':'')+'> 채팅 시작 시 프로필 자동 표시</label><p class="muted">끄면 자동 표시되지 않으며, 등록된 프로필은 채팅 상단 프로필 버튼으로 확인할 수 있습니다.</p>'+label('공지사항 표시 방식',select('profile-notice-mode',[['manual','직접 작성한 공지'],['profile','프로필을 공지로 표시'],['both','직접 작성 공지와 프로필 모두'],['off','공지 영역 숨기기']],p.notice_mode||'manual'))+label('직접 작성 공지',ta('profile-manual-notice',p.manual_notice||''))+'<p class="muted">공지 영역의 표시 방식과 채팅 시작 시 프로필 표시는 각각 설정됩니다.</p>'+label('프로필 제목 (선택)',input('profile-title',p.title))+label('소개 및 추가 안내 문구',ta('profile-message',p.message))+'<div id="profile-current-photo">'+(p.photo?'<img class="chat-profile-photo" alt="현재 프로필 사진" src="'+e(p.photo)+'">':'<p class="muted">등록된 사진 없음</p>')+'</div>'+fileUpload('profile-photo-file',{accept:'image/png,image/jpeg,image/webp',buttonText:'이미지 선택',description:'썸네일 사진 · 1MB 이하',onChange:'previewProfilePhoto(this)'})+btn('사진 제거','removeProfilePhoto()')+'<h3>전화번호·이메일·기타 연락처</h3><div id="profile-editor-contacts"></div>'+btn('연락처 추가','addProfileContact()')+'<h3>홈페이지·SNS·기타 링크</h3><div id="profile-editor-links"></div>'+btn('링크 추가','addProfileLink()')+'<p class="muted">최대 10개, HTTPS 링크만 가능합니다. 비공개 정보는 등록하지 마세요.</p>'+btn('프로필 저장','saveChatProfile()','primary'),{
+ const overlay=modal('채팅창 프로필 설정','<p class="muted">고객에게 공개되는 업체 소개입니다. 전화번호·이메일은 고객이 누르면 기기의 전화·메일 앱을 엽니다. 웹 내부 음성·영상 통화는 아직 제공하지 않습니다.</p><label><input class="check" type="checkbox" id="profile-start" '+(p.show_at_start?'checked':'')+'> 채팅 시작 시 프로필 자동 표시</label><p class="muted">끄면 자동 표시되지 않으며, 등록된 프로필은 채팅 상단 프로필 버튼으로 확인할 수 있습니다.</p>'+label('공지사항 표시 방식',select('profile-notice-mode',[['manual','직접 작성한 공지'],['profile','프로필을 공지로 표시'],['both','직접 작성 공지와 프로필 모두'],['off','공지 영역 숨기기']],p.notice_mode||'manual'))+label('직접 작성 공지',ta('profile-manual-notice',p.manual_notice||''))+'<p class="muted">공지 영역의 표시 방식과 채팅 시작 시 프로필 표시는 각각 설정됩니다.</p>'+label('프로필 제목 (선택)',input('profile-title',p.title))+label('소개 및 추가 안내 문구',ta('profile-message',p.message))+'<div class="profile-edit-photo"><div id="profile-current-photo">'+(p.photo?'<img class="chat-profile-photo" alt="현재 프로필 사진" src="'+e(p.photo)+'">':'<p class="muted">등록된 사진 없음</p>')+'</div>'+fileUpload('profile-photo-file',{accept:'image/png,image/jpeg,image/webp',buttonText:'이미지 선택',description:'썸네일 사진 · 1MB 이하',onChange:'previewProfilePhoto(this)'})+btn('사진 제거','removeProfilePhoto()','secondary ui-sm')+'</div><h3>전화번호·이메일·기타 연락처</h3><div id="profile-editor-contacts"></div>'+btn('연락처 추가','addProfileContact()')+'<h3>홈페이지·SNS·기타 링크</h3><div id="profile-editor-links"></div>'+btn('링크 추가','addProfileLink()')+'<p class="muted">최대 10개, HTTPS 링크만 가능합니다. 비공개 정보는 등록하지 마세요.</p>',{
+  className:'profile-editor-modal',
   dismissOnBackdrop:false,
   canClose:()=>!profileEditorBusy&&(!profileEditorDirty()||confirm('저장하지 않은 변경사항을 버리고 닫을까요?')),
   onClose:endProfileEditor,
  });
  if(!overlay)return;
+ const panel=overlay.querySelector('.ui-modal-panel'),heading=panel.querySelector('h2'),footer=panel.querySelector('.ui-modal-footer');
+ const content=document.createElement('div');content.className='profile-editor-body';while(heading.nextSibling&&heading.nextSibling!==footer)content.append(heading.nextSibling);panel.insertBefore(content,footer);
+ footer.insertAdjacentHTML('afterbegin','<p id="profile-save-error" role="alert" hidden></p>'+btn('프로필 저장','saveChatProfile()','primary'));
  profileEditorAgent=agent;profileEditorHasPhoto=!!p.photo;profileEditorRemove=false;
  for(const l of p.links||[])$('#profile-editor-links').append(profileLinkRow(l.name,l.url));
  for(const c of p.contacts||[])$('#profile-editor-contacts').append(profileContactRow(c));
@@ -3809,9 +3814,10 @@ async function openProfileEditor(agent=''){
 function previewProfilePhoto(field){const f=field.files[0];if(!f)return;if(f.size>1000000){field.value='';toast('사진은 1MB 이하로 선택하세요.');return}profileEditorRemove=false;const r=new FileReader(),target=$('#profile-current-photo');r.onload=()=>{if(target?.isConnected&&field.files[0]===f){target.innerHTML='';const img=document.createElement('img');img.className='chat-profile-photo';img.alt='프로필 사진 미리보기';img.src=r.result;target.append(img)}};r.readAsDataURL(f)}
 async function saveChatProfile(){
  if(profileEditorBusy)return;
- await act(async()=>{
-  const modalNode=$('#profile-editor-links')?.closest('.modal');
-  if(!modalNode)return;
+ const modalNode=$('#profile-editor-links')?.closest('.modal');
+ if(!modalNode)return;
+ const errorNode=modalNode.querySelector('#profile-save-error');errorNode.hidden=true;errorNode.textContent='';
+ try{
   const body=profileEditorPayload(),photo=$('#profile-photo-file').files[0];
   if(body.contacts.some(c=>!c.name||!c.value))throw Error('연락처 이름과 내용을 모두 입력하세요.');
   if(body.links.some(l=>!l.name||!l.url))throw Error('링크 이름과 주소를 모두 입력하세요.');
@@ -3830,6 +3836,10 @@ async function saveChatProfile(){
     });
    }else if(profileEditorRemove)body.photo='';
    await api('/api/chat-profile',body);
+   const saved=await api('/api/chat-profile?agent='+enc(body.agent));
+   const matches=body.title.trim()===saved.title&&body.message.trim()===saved.message&&body.manual_notice.trim()===saved.manual_notice&&body.show_at_start===saved.show_at_start&&body.notice_mode===saved.notice_mode&&JSON.stringify(body.contacts)===JSON.stringify(saved.contacts)&&JSON.stringify(body.links)===JSON.stringify(saved.links)&&(!photo||!!saved.photo)&&(!profileEditorRemove||!!photo||!saved.photo);
+   if(!matches)throw Error('저장 결과를 확인하지 못했습니다. 입력 내용은 유지됩니다. 다시 저장해 주세요.');
+   profileEditorInitial=JSON.stringify(profileEditorPayload());
    modalNode.remove();endProfileEditor();
    toast('프로필을 저장했습니다.');
    await refresh();await render();
@@ -3837,5 +3847,5 @@ async function saveChatProfile(){
    profileEditorBusy=false;panel.removeAttribute('aria-busy');
    fields.forEach(field=>field.disabled=false);
   }
- });
+ }catch(err){if(modalNode.isConnected){errorNode.textContent=err.message||'프로필 저장 실패';errorNode.hidden=false;}else toast(err.message||'프로필 화면 갱신 실패');}
 }
