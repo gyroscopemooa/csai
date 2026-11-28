@@ -1867,3 +1867,4 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .paid-preview-always .paid-preview-list{padding:0;max-height:40dvh;overflow-y:auto;overscroll-behavior:contain}
 .layout main .paid-preview-always .paid-preview-list>.paid-preview-notice{padding:7px 0}
 @media(max-width:700px){.layout main > .purchase-sticky-stack{top:var(--paid-sticky-offset,60px)}.layout main .paid-preview-always{padding:8px 10px}.paid-preview-always .paid-preview-copy{min-width:90px}.paid-preview-always .paid-preview-notice .ui-actions{margin-left:auto}}
+.layout main .paid-preview-always .paid-preview-list>.paid-preview-notice:first-child{border-top:0}
