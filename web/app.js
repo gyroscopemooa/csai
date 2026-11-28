@@ -2361,9 +2361,10 @@ function ensurePagePaidNotices(main){
  const missing=(pagePaidFeatures[route]||[]).filter(key=>catalog.has(key)&&!has(key)&&!existing.has(key));
  if(missing.length)main.insertAdjacentHTML('beforeend',missing.map(key=>previewNotice(key,'',{detailsOnly:true})).join(''));
 }
-let paidPreviewHeaderObserver=null,paidPreviewRoute='',paidPreviewExpanded=true;
+let paidPreviewHeaderObserver=null,paidPreviewScrollCleanup=null,paidPreviewRoute='',paidPreviewExpanded=true;
 function prioritizePaidPreviews(){
  paidPreviewHeaderObserver?.disconnect();paidPreviewHeaderObserver=null;
+ paidPreviewScrollCleanup?.();paidPreviewScrollCleanup=null;
  if(paidPreviewRoute!==route){paidPreviewRoute=route;paidPreviewExpanded=true;}
  const main=$('.layout main');if(!main)return;
  const header=$('.layout .app-sidebar');
@@ -2381,7 +2382,15 @@ function prioritizePaidPreviews(){
   const body=document.createElement('div');body.className='paid-preview-list';body.id='page-paid-preview-list';notices.forEach(n=>body.append(n));
   const toggle=document.createElement('button');toggle.type='button';toggle.className='paid-preview-toggle';toggle.setAttribute('aria-controls',body.id);toggle.innerHTML=uiIcon('chevron-down');
   const sync=()=>{body.hidden=!paidPreviewExpanded;toggle.setAttribute('aria-expanded',String(paidPreviewExpanded));toggle.setAttribute('aria-label',paidPreviewExpanded?'구독 기능 가격표 접기':'구독 기능 가격표 펼치기');toggle.title=toggle.getAttribute('aria-label');};
-  toggle.addEventListener('click',()=>{paidPreviewExpanded=!paidPreviewExpanded;sync();});sync();group.append(body,toggle);top.append(group);
+  // Reopen on a return to the page top, not merely when the user collapses there.
+  const pageScrollTop=()=>{const root=document.scrollingElement;let y=root?.scrollTop||0;for(let node=main;node&&node!==document.body&&node!==root;node=node.parentElement){y+=Math.max(0,node.scrollTop||0);}return Math.max(0,y);};
+  let previousScroll=pageScrollTop(),leftTop=previousScroll>16;
+  const restoreAtTop=()=>{const y=pageScrollTop();if(y===previousScroll)return;if(y>16)leftTop=true;if(!paidPreviewExpanded&&leftTop&&y<=4&&y<previousScroll){paidPreviewExpanded=true;sync();leftTop=false;}previousScroll=y;};
+  toggle.addEventListener('click',()=>{paidPreviewExpanded=!paidPreviewExpanded;sync();previousScroll=pageScrollTop();leftTop=previousScroll>16;});
+  sync();group.append(body,toggle);top.append(group);
+  document.addEventListener('scroll',restoreAtTop,{capture:true,passive:true});
+  window.addEventListener('scroll',restoreAtTop,{passive:true});
+  paidPreviewScrollCleanup=()=>{document.removeEventListener('scroll',restoreAtTop,true);window.removeEventListener('scroll',restoreAtTop);};
  }
  const update=()=>{if(!matchMedia('(max-width:700px)').matches){top.style.removeProperty('--paid-sticky-offset');return;}if(header&&!header.classList.contains('open'))top.style.setProperty('--paid-sticky-offset',Math.ceil(header.getBoundingClientRect().height)+'px');};
  update();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(update);paidPreviewHeaderObserver.observe(header);}
