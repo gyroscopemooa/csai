@@ -171,8 +171,6 @@ def mark(c, ws, kind, item):
     c.execute('INSERT OR IGNORE INTO demo_sample_entity(ws,kind,id) VALUES(?,?,?)', (ws, kind, item))
 
 def seed_related(c, ws):
-    if 'calendar' not in entitlements(getw(c, ws)):
-        return
     samples = rows(c, 'SELECT t.id,t.visitor FROM thread t JOIN demo_sample d ON d.thread=t.id WHERE t.ws=? AND d.ws=? ORDER BY t.created', (ws, ws))
     if len(samples) < len(SAMPLES):
         return
@@ -180,6 +178,21 @@ def seed_related(c, ws):
         unknown_id=uid()
         c.execute('INSERT INTO unknown VALUES(?,?,?,?,?,?)',(unknown_id,ws,samples[4]['id'],'샘플 · 해외 배송 가능 국가와 운임은 어떻게 되나요?','open',now()))
         mark(c,ws,'unknown',unknown_id)
+    # Alerts and learning examples are available even in the free local demo.
+    for index, (kind, title, sample_index) in enumerate([
+        ('new','샘플 · 새로운 촬영 문의 접수',0),
+        ('manual_message','샘플 · 직접 상담 중 새 고객 메시지',1),
+        ('handoff_urgent','샘플 · 긴급 담당자 확인 요청',7),
+        ('unknown','샘플 · 미학습 배송 질문 접수',4),
+        ('booking','샘플 · 예약 확정 안내',8),
+        ('handoff','샘플 · 환불 조건 검토 요청',2),
+    ]):
+        event_id='demo-alert-'+ws+'-'+str(index)
+        if not one(c,'SELECT id FROM event_log WHERE ws=? AND id=?',(ws,event_id)):
+            c.execute('INSERT INTO event_log VALUES(?,?,?,?,?,0,?)',(event_id,ws,kind,title,samples[sample_index]['id'],now()-index*180))
+            mark(c,ws,'event',event_id)
+    if 'calendar' not in entitlements(getw(c, ws)):
+        return
     if one(c, "SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking'", (ws,)):
         return
     settings = loads(getw(c, ws)['settings'])
@@ -215,6 +228,16 @@ def seed_samples(c, ws):
         c.execute('INSERT INTO demo_sample(thread,ws) VALUES(?,?)', (thread, ws))
         for pos, (role, body) in enumerate(messages):
             c.execute('INSERT INTO message(id,ws,thread,role,body,created) VALUES(?,?,?,?,?,?)', (uid(), ws, thread, role, body, created + pos * 120))
+    # A recent, independent sample makes relative time and live inbox visible.
+    for index, age in enumerate((2,12,38)):
+        key='sample-recent-'+ws+'-'+str(index)
+        if one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,key)):
+            continue
+        visitor=uid(); stamp=now()-age*60
+        c.execute('INSERT INTO visitor(token,ws,expires,kind) VALUES(?,?,?,?)',(visitor,ws,now()+2592000,'test'))
+        c.execute('INSERT INTO thread(id,ws,visitor,kind,status,manual,created) VALUES(?,?,?,?,?,?,?)',(key,ws,visitor,'public','open',0,stamp))
+        c.execute('INSERT INTO demo_sample(thread,ws) VALUES(?,?)',(key,ws))
+        c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(uid(),ws,key,'user','샘플 · '+CASES[index][2],stamp))
     seed_related(c, ws)
     w = getw(c, ws)
     if is_operator(w) or w['owner'].endswith(':developer'):
