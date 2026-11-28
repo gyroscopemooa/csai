@@ -1,0 +1,2 @@
+# SPECIAL UI preview
+Local developer demo only, server-guarded GET endpoint. Displays server-authoritative proposed prices and explicitly unmeasured results. No purchase action, paid API, production DB, real entitlement or reporting store connected. Existing all-in-one product unchanged. Run local app and select developer demo; navigate to #special-preview. Verify non-local and non-developer access denied, responsive layout and existing routes. JS syntax checked; browser and Python integration tests not executed here.

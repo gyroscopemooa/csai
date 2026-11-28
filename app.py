@@ -986,6 +986,16 @@ def index(slug:str=''):return FileResponse(ROOT/'web/index.html')
 
 # Operational endpoints are registered after the original routes.
 import ops
+
+@app.get('/api/special/preview')
+def special_preview(req:Request,ws=Depends(ident)):
+    require(DEMO and not SHARED_TEST and urlsplit(APP_URL).hostname in ('localhost','127.0.0.1') and req.url.hostname in ('localhost','127.0.0.1'),'로컬 개발 환경에서만 확인할 수 있습니다.',403)
+    with db() as c:
+        w=getw(c,ws)
+        require(w and re.fullmatch(r'demo:[A-Za-z0-9_-]+:developer',w['owner']),'개발 검수 계정만 확인할 수 있습니다.',403)
+    from special_entitlements import PRICES, quote
+    return {'packages':dict(PRICES),'individual_total':quote(['special_intelligence','special_learning','special_automation'])['monthly_krw'],'available_for_purchase':False,'report':{'status':'not_connected','latest':None,'trend':[]}}
+
 import billing
 import polar_sandbox
 import google_calendar
