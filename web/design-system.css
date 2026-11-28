@@ -1919,3 +1919,11 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
  :is(.layout,.inbox-desk-shell) .center-chat-bottom{padding-bottom:8px}
  .layout .ui-modal,.inbox-desk-shell .ui-modal,.ui-modal{z-index:60}
 }
+
+/* Remove the redundant white strip between the mobile center filter and list. */
+@media(max-width:800px){
+ .center-workspace .center-list-pane>.center-filters:not([open]){padding-block:4px 0;border-bottom:0}
+ .center-workspace .center-list-pane>.center-filters:not([open])>summary{padding-block:5px 2px}
+ .center-workspace .center-list-pane>.center-filters:not([open])+.center-list{margin-block-start:4px}
+ .center-workspace .center-list-pane>.center-list{padding-block:0}
+}
