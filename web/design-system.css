@@ -1843,3 +1843,11 @@ button.inbox-entry:focus-visible { outline:2px solid var(--ds-accent, #3182f6); 
 .layout main .paid-preview-sticky{position:sticky;top:12px;z-index:7;display:block;padding:0;margin:0 0 12px;background:#fff;border:1px solid #dce3eb;box-shadow:0 2px 8px #1f293708;overflow:visible}
 .paid-preview-summary{display:flex;align-items:center;gap:8px;padding:10px 12px;min-height:42px;cursor:pointer;list-style:none}.paid-preview-summary::-webkit-details-marker{display:none}.paid-preview-summary-label{font-size:12px;font-weight:700;white-space:nowrap;color:#236fde}.paid-preview-summary-names{font-size:12px;color:#4b5563;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.paid-preview-summary-arrow{flex:none;font-size:20px;line-height:1;color:#64748b}.paid-preview-sticky[open] .paid-preview-summary-arrow{transform:rotate(90deg)}.paid-preview-list{padding:0 12px 8px;max-height:38dvh;overflow:auto}.paid-preview-hint{font-size:11px;color:#64748b;margin:0 0 6px}.layout main .paid-preview-top .paid-preview-list>.paid-preview-notice{display:flex;align-items:center;flex-wrap:wrap;gap:7px 10px;margin:0!important;padding:9px 0;border:0;border-top:1px solid #e8edf3;border-radius:0;box-shadow:none;background:transparent}
 @media(max-width:700px){.layout main .paid-preview-sticky{top:var(--paid-sticky-offset,60px)}.paid-preview-summary{padding:8px 10px}.layout .question-row{gap:7px}.question-action .ui-button{padding:5px 8px;font-size:11px}}
+
+/* Stable preview dimensions; only full-screen mode follows the viewport height. */
+.preview-stage:not(.preview-expanded).preview-mode-page .phone {
+ height:680px; min-height:680px; max-height:680px; resize:none;
+}
+.preview-stage:not(.preview-expanded).preview-mode-widget .phone {
+ height:600px; min-height:600px; max-height:600px; resize:none;
+}
