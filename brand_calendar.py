@@ -132,7 +132,9 @@ def register(app,ident):
     @app.get('/api/brand-calendar/{agent}')
     def get(agent:str,ws=Depends(ident)):
         with db() as c:
-            access(c,ws,agent);return {'settings':config(c,ws,agent),'bookings':[view(b) for b in rows(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,agent))]}
+            w=access(c,ws,agent)
+            from app import booking_consultation_thread
+            return {'settings':config(c,ws,agent),'bookings':[view(b)|{'consultation_thread':booking_consultation_thread(c,w,(one(c,'SELECT visitor FROM brand_booking_customer WHERE ws=? AND agent=? AND booking=?',(ws,agent,b['id'])) or {}).get('visitor',''))} for b in rows(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,agent))]}
     @app.post('/api/brand-calendar/{agent}/settings')
     def save(agent:str,body:dict,ws=Depends(ident)):
         with db(True) as c:

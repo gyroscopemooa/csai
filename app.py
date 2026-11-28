@@ -565,6 +565,46 @@ def chat(body:dict):
         if replay is not None:return replay
         fail(502,'상담 저장 실패. 사용량은 복구되었습니다.')
     return r
+def consultation_profile(c,w,tid,agent='',include_details=False):
+    ws=w['id'];cutoff=history_cutoff(w)
+    messages=rows(c,"SELECT body,rowid AS seq FROM message WHERE ws=? AND thread=? AND role='user' AND created>=? ORDER BY rowid DESC LIMIT 6",(ws,tid,cutoff))
+    recent=[m['body'] for m in messages]
+    latest=recent[0] if recent else ''
+    text=' '.join(recent)
+    rules=[('예약 변경·취소',r'예약.{0,12}(변경|취소)|(변경|취소).{0,12}예약'),('상품 교환',r'교환|사이즈 변경'),('환불 문의',r'환불|반품'),('배송 문의',r'배송|택배|운송장'),('예약 문의',r'예약|일정|촬영.{0,12}가능'),('가격 문의',r'가격|금액|얼마|비용|견적'),('결제 문의',r'결제|입금|카드'),('영업·위치 문의',r'영업시간|위치|주소|주차'),('불편·문의',r'불만|민원|오류|고장')]
+    category=next((name for name,pattern in rules if re.search(pattern,latest)),None) or next((name for name,pattern in rules if re.search(pattern,text)),'일반 상담')
+    profile={'title':category,'summary':ai.clean(' '.join(latest.split()))[:80],'source':'rule'}
+    # Use only a model briefing for the current customer turn, not a stale earlier answer.
+    context=one(c,"SELECT a.context FROM answer_context a JOIN message m ON m.ws=a.ws AND m.id=a.message WHERE m.ws=? AND m.thread=? AND m.created>=? AND m.rowid>? ORDER BY m.rowid DESC LIMIT 1",(ws,tid,cutoff,messages[0]['seq'])) if messages else None
+    if context:
+        try:meta=loads(context['context']).get('consultation',{})
+        except (ValueError,TypeError,AttributeError):meta={}
+        if isinstance(meta,dict) and meta.get('title'):
+            profile.update(title=ai.clean(str(meta['title']))[:24],summary=ai.clean(str(meta.get('summary') or profile['summary']))[:80],source='ai')
+    if 'calendar' not in entitlements(w):return profile
+    t=one(c,'SELECT visitor,booking_context FROM thread WHERE ws=? AND id=?',(ws,tid))
+    if not t:return profile
+    if agent:
+        b=one(c,"SELECT b.id,b.start,b.status,b.payload,b.fields FROM brand_booking b JOIN brand_booking_customer x ON x.ws=b.ws AND x.agent=b.agent AND x.booking=b.id WHERE b.ws=? AND b.agent=? AND x.visitor=? AND b.customer_ok=1 ORDER BY b.created DESC LIMIT 1",(ws,agent,t['visitor']))
+    else:
+        b=one(c,"SELECT id,start,status,payload,fields FROM booking WHERE ws=? AND visitor=? AND customer_ok=1 ORDER BY created DESC LIMIT 1",(ws,t['visitor']))
+    if b:
+        data=loads(b['payload']);fields=loads(b['fields'])
+        profile['booking']={k:b[k] for k in ('id','start','status')}
+        profile['booking']['agent']=agent
+        name=next((data.get(f['key']) for f in fields if f['key']=='name' or f['label'] in ('고객명','예약자명','예약자 이름','이름') and f['type']=='text'),None)
+        if name:profile['customer_name']=str(name)[:80]
+        if include_details:profile['booking']['fields']=[{'label':f['label'],'value':data[f['key']]} for f in fields if data.get(f['key'])]
+    elif include_details:
+        draft=loads(t['booking_context'] or '{}')
+        if isinstance(draft,dict) and draft.get('payload'):
+            profile['draft_fields']=[{'label':k,'value':str(v)[:500]} for k,v in draft['payload'].items() if v]
+    return profile
+
+def booking_consultation_thread(c,w,visitor):
+    t=one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(w['id'],visitor))
+    return t['id'] if t and thread_accessible(c,w,t['id']) else None
+
 @app.get('/api/inbox')
 def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
     require(kind in ('','public','test','naver','kakao','telegram','line','instagram'),'채널 필터 오류',422)
@@ -588,6 +628,7 @@ def inbox(kind:str='',q:str='',agent:str='all',ws=Depends(ident)):
         for r in items:
             m=one(c,"SELECT COUNT(*) AS n,COALESCE(MAX(m.rowid),0) AS last_customer FROM message m WHERE m.ws=? AND m.thread=? AND m.role='user' AND m.created>=? AND m.rowid>COALESCE((SELECT seen FROM inbox_read WHERE ws=? AND thread=?),0)",(ws,r['id'],cutoff,ws,r['id']))
             last=one(c,'SELECT created AS activity,rowid AS seq FROM message WHERE ws=? AND thread=? AND created>=? ORDER BY rowid DESC LIMIT 1',(ws,r['id'],cutoff))
+            if not r['sample'] and r['kind']!='test':r['consultation']=consultation_profile(c,w,r['id'],r['agent'])
             r['temporary']=temporary_takeover(c,ws,r['id']) if r['manual'] else None
             r['assignment']=one(c,'SELECT assignee,priority,due_date FROM inbox_assignment WHERE ws=? AND thread=?',(ws,r['id'])) or {'assignee':'','priority':'normal','due_date':''}
             r.update(unread=0 if r['sample'] or r['kind']=='test' else m['n'],activity=last['activity'] if last else r['created'],activity_seq=last['seq'] if last else 0,paused_by=workflow_controls.paused_by(scopes,r['agent'],r['kind']))
@@ -760,7 +801,7 @@ def inbox_brief(i:str,ws=Depends(ident)):
                 recent.append({'role':m['role'],'body':m['body'][:500],'created':m['created'],'truncated':len(m['body'])>500})
         recent.reverse()
         pending=bool(messages and messages[0]['role']=='user')
-        return {'thread':i,'kind':t['kind'],'status':t['status'],'manual':bool(t['manual']),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'latest_is_customer':pending,'recent':recent,'note':note['note'] if note else '','tags':loads(note['tags']) if note else [],'mode':'extractive','limit':30}
+        return {'thread':i,'kind':t['kind'],'status':t['status'],'manual':bool(t['manual']),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'latest_is_customer':pending,'recent':recent,'note':note['note'] if note else '','tags':loads(note['tags']) if note else [],'mode':'extractive','limit':30,'consultation':consultation_profile(c,w,i,t['agent'],True)}
 
 @app.get('/api/history-policy')
 def history_policy(ws=Depends(ident)):
@@ -772,7 +813,7 @@ def history_policy(ws=Depends(ident)):
 def thread_detail(i:str,ws=Depends(ident)):
     with db(True) as c:
         expire_temporary_takeovers(c,ws,i)
-        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'temporary':temporary_takeover(c,ws,i) if t['manual'] else None,'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'files':chat_attachments.files_enabled(c,ws,t['agent']),'web_calls':web_calls.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w))}
+        w=getw(c,ws);t=one(c,'SELECT id,visitor,kind,status,manual,COALESCE((SELECT source FROM consultation_source cs WHERE cs.ws=thread.ws AND cs.thread=thread.id),\'\') AS source,COALESCE((SELECT agent FROM visitor WHERE token=thread.visitor AND ws=thread.ws),\'\') AS agent FROM thread WHERE ws=? AND id=?',(ws,i));require(t and thread_accessible(c,w,i),'상담 없음 또는 보관 조회 범위 초과',404);return {k:v for k,v in t.items() if k!='visitor'}|{'temporary':temporary_takeover(c,ws,i) if t['manual'] else None,'channel_reply':channel_live.staff_info(c,ws,t),'paused_by':workflow_controls.paused_by(workflow_controls.pause_scopes(c,ws),t['agent'],t['kind']),'sample':bool(one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i))),'photos':chat_attachments.enabled(c,ws,t['agent']),'files':chat_attachments.files_enabled(c,ws,t['agent']),'web_calls':web_calls.enabled(c,ws,t['agent']),'messages':chat_attachments.messages(c,ws,i,history_cutoff(w)),'consultation':consultation_profile(c,w,i,t['agent']) if t['kind']!='test' and not one(c,'SELECT thread FROM demo_sample WHERE ws=? AND thread=?',(ws,i)) else {}}
 @app.get('/api/inbox/{i}/related')
 def related_threads(i:str,ws=Depends(ident)):
     with db() as c:
@@ -1014,7 +1055,7 @@ def confirm(i:str,body:dict):
 @app.get('/api/bookings')
 def bookings(ws=Depends(ident)):
     with db() as c:
-        w=getw(c,ws);require('calendar' in entitlements(w));return [booking_view(b)|{'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id']))),'sample_thread':(one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(ws,b['visitor'])) or {}).get('id') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id'])) else None} for b in rows(c,'SELECT * FROM booking WHERE ws=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,))]
+        w=getw(c,ws);require('calendar' in entitlements(w));return [booking_view(b)|{'consultation_thread':booking_consultation_thread(c,w,b['visitor']),'sample':bool(one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id']))),'sample_thread':(one(c,'SELECT id FROM thread WHERE ws=? AND visitor=?',(ws,b['visitor'])) or {}).get('id') if one(c,"SELECT id FROM demo_sample_entity WHERE ws=? AND kind='booking' AND id=?",(ws,b['id'])) else None} for b in rows(c,'SELECT * FROM booking WHERE ws=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,))]
 @app.post('/api/bookings')
 def manual_booking(body:dict,ws=Depends(ident)):
     with db(True) as c:
