@@ -1,0 +1,2 @@
+# SPECIAL dashboard projection
+Projects verified, scoped evaluation records into actual check counts, comparable growth history and regression/improvement counts. Empty data stays empty; no simulated scores, provider details, costs or raw prompts exposed. Only same-suite, same-evaluator, same-case comparisons are supported. No HTTP routes, persistence, live data collection or UI in this increment; authenticated server record loading and full app integration remain necessary. Run python -m unittest discover -s tests -p test_special_dashboard.py.
