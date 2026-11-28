@@ -57,3 +57,21 @@ class SimulationTests(unittest.TestCase):
     def test_invalid_result(self):
         self.mock.return_value = {'unknown': 'false'}
         self.assertFalse(run_simulation([self.s], **self.args)['complete'])
+
+    def test_forbidden_evidence_fails_even_with_required_evidence(self):
+        scenario = replace(self.s, forbidden_evidence=('unrelated',))
+        self.mock.return_value = {'unknown': False, 'evidence': ['faq1', 'unrelated']}
+        report = run_simulation([scenario], **self.args)
+        self.assertTrue(report['complete'])
+        self.assertEqual(report['passed'], 0)
+
+    def test_conflicting_expectations_rejected_before_execution(self):
+        with self.assertRaises(ValueError):
+            run_simulation([replace(self.s, forbidden_evidence=('faq1',))], **self.args)
+        self.mock.assert_not_called()
+
+    def test_forbidden_evidence_versions_suite(self):
+        a = run_simulation([self.s], **self.args)
+        b = run_simulation([replace(self.s, forbidden_evidence=('other',))], **self.args)
+        self.assertEqual(b['passed'], 1)
+        self.assertNotEqual(a['suite'], b['suite'])
