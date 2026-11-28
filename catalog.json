@@ -12,61 +12,61 @@
       "id": "mini",
       "name": "MINI",
       "quantity": 100,
-      "price": 4900
+      "price": 8900
     },
     {
       "id": "lite",
       "name": "LITE",
       "quantity": 300,
-      "price": 9900
+      "price": 24900
     },
     {
       "id": "basic",
       "name": "BASIC",
       "quantity": 500,
-      "price": 14900
+      "price": 41900
     },
     {
       "id": "standard",
       "name": "STANDARD",
       "quantity": 1000,
-      "price": 19900
+      "price": 82900
     },
     {
       "id": "plus",
       "name": "PLUS",
       "quantity": 2000,
-      "price": 29900
+      "price": 165000
     },
     {
       "id": "pro",
       "name": "PRO",
       "quantity": 3000,
-      "price": 39900
+      "price": 249000
     },
     {
       "id": "pro_max",
       "name": "PRO MAX",
       "quantity": 5000,
-      "price": 59900
+      "price": 499000
     },
     {
       "id": "business",
       "name": "BUSINESS",
       "quantity": 10000,
-      "price": 99000
+      "price": 899000
     },
     {
       "id": "business_plus",
       "name": "BUSINESS PLUS",
       "quantity": 30000,
-      "price": 249000
+      "price": 2490000
     },
     {
       "id": "enterprise",
       "name": "ENTERPRISE",
       "quantity": 100000,
-      "price": 699000
+      "price": 8990000
     }
   ],
   "education": [
@@ -218,7 +218,7 @@
       "id": "auto_booking",
       "group": "예약·일정",
       "name": "AI 자동 예약",
-      "price": 4900,
+      "price": 14900,
       "local": true,
       "requires": [
         "calendar"
@@ -248,7 +248,7 @@
       "id": "booking_alert",
       "group": "예약·일정",
       "name": "예약 자동 알림",
-      "price": 2900,
+      "price": 9900,
       "local": false,
       "requires": [
         "calendar"
@@ -258,7 +258,7 @@
       "id": "crm",
       "group": "고객·업무",
       "name": "고객 CRM",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -266,7 +266,7 @@
       "id": "quote",
       "group": "고객·업무",
       "name": "AI 견적 요청",
-      "price": 4900,
+      "price": 14900,
       "local": true,
       "requires": []
     },
@@ -274,7 +274,7 @@
       "id": "tasks",
       "group": "고객·업무",
       "name": "AI 업무·할 일",
-      "price": 4900,
+      "price": 14900,
       "local": true,
       "requires": []
     },
@@ -298,7 +298,7 @@
       "id": "stats",
       "group": "고객·업무",
       "name": "고급 통계",
-      "price": 4900,
+      "price": 9900,
       "local": true,
       "requires": []
     },
@@ -322,7 +322,7 @@
       "id": "external_api",
       "group": "고객·업무",
       "name": "외부 API 이용권",
-      "price": 9900,
+      "price": 29900,
       "local": true,
       "requires": []
     },
@@ -370,7 +370,7 @@
       "id": "custom_integration",
       "group": "고객·업무",
       "name": "맞춤 외부 업무 연동",
-      "price": 9900,
+      "price": 39900,
       "local": false,
       "requires": [
         "external_api"
@@ -391,7 +391,7 @@
     {
       "id": "booking_pack",
       "name": "예약 관리",
-      "price": 12900,
+      "price": 19900,
       "includes": [
         "calendar",
         "auto_booking",
@@ -403,7 +403,7 @@
     {
       "id": "customer_pack",
       "name": "고객 관리",
-      "price": 9900,
+      "price": 15900,
       "includes": [
         "crm",
         "leads",
@@ -413,7 +413,7 @@
     {
       "id": "work_pack",
       "name": "업무 자동화",
-      "price": 14900,
+      "price": 39900,
       "includes": [
         "quote",
         "tasks",
@@ -446,7 +446,7 @@
     {
       "id": "all",
       "name": "ALL-IN-ONE",
-      "price": 39900,
+      "price": 99000,
       "includes": [
         "widget",
         "naver",

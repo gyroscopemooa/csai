@@ -25,6 +25,8 @@ def access(c,ws,agent):
     from branding import owned_agent
     w=getw(c,ws);require(bool(agent),'추가 브랜드를 선택하세요.',422);owned_agent(c,w,agent);require('calendar' in entitlements(w),'일정표 구매 필요',403);return w
 def available(c,ws,agent,start,end,buffer,resource,exclude=''):
+    from app import blocked_conflict
+    if blocked_conflict(config(c,ws,agent),start,end,buffer):return False
     t0=(datetime.fromisoformat(start)-timedelta(minutes=buffer)).isoformat();t1=(datetime.fromisoformat(end)+timedelta(minutes=buffer)).isoformat()
     return not one(c,"SELECT id FROM brand_booking WHERE ws=? AND agent=? AND resource=? AND status='confirmed' AND start<? AND end>? AND id<>?",(ws,agent,resource,t1,t0,exclude))
 def view(b):
@@ -130,7 +132,9 @@ def register(app,ident):
     @app.get('/api/brand-calendar/{agent}')
     def get(agent:str,ws=Depends(ident)):
         with db() as c:
-            access(c,ws,agent);return {'settings':config(c,ws,agent),'bookings':[view(b) for b in rows(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,agent))]}
+            w=access(c,ws,agent)
+            from app import booking_consultation_thread
+            return {'settings':config(c,ws,agent),'bookings':[view(b)|{'consultation_thread':booking_consultation_thread(c,w,(one(c,'SELECT visitor FROM brand_booking_customer WHERE ws=? AND agent=? AND booking=?',(ws,agent,b['id'])) or {}).get('visitor',''))} for b in rows(c,'SELECT * FROM brand_booking WHERE ws=? AND agent=? AND status NOT IN (\'draft\',\'superseded\') ORDER BY start',(ws,agent))]}
     @app.post('/api/brand-calendar/{agent}/settings')
     def save(agent:str,body:dict,ws=Depends(ident)):
         with db(True) as c:
@@ -148,6 +152,9 @@ def register(app,ident):
                 s['timezone']=body['timezone']
             if 'closed_days' in body:
                 d=body['closed_days'];require(isinstance(d,list) and all(type(x) is int and 0<=x<=6 for x in d),'휴무 요일 오류',422);s['closed_days']=sorted(set(d))
+            if 'blocked_times' in body:
+                from app import validate_blocked_times
+                s['blocked_times']=validate_blocked_times(body['blocked_times'])
             if 'booking_mode' in body:
                 import policies
                 mode=body['booking_mode'];require(isinstance(mode,str) and mode in ('off','manual','auto'),'예약 모드 오류',422)

@@ -11,6 +11,61 @@ const DBMotion=(()=>{
   function tick(now){raf=0;if(!root.isConnected)return;const dt=Math.min((now-last)/1000,1/30);last=now;for(let i=0;i<4;i++)frame(dt/4);paint();if(active())raf=requestAnimationFrame(tick);}
   return ()=>{if(!raf&&root.isConnected){last=performance.now();raf=requestAnimationFrame(tick);}};
  }
+ // Weight Wave by DesignBookmark. The demo defines these spring values in wave.js.
+ const waveMotion=matchMedia('(prefers-reduced-motion: reduce)');
+ let updateWaveMotion;
+ waveMotion.addEventListener?.('change',()=>updateWaveMotion?.());
+
+ function mountWeightWave(wordmark){
+  // Keep the emphasis overlapping on the four-letter wordmark.
+  const light=350, bold=820, spread=.24;
+  const startTime=.66;
+  const sweep=time=>-.06+1.12*(.5-.5*Math.cos(time*Math.PI*2/4.6));
+  const focus=S(sweep(startTime),150,22);
+  const letters=[...wordmark.querySelectorAll('i')].map(el=>({el,weight:S(light,260,22)}));
+  const hero=wordmark.closest('.hero');
+  let pointing=false, elapsed=startTime;
+
+  const weightAt=center=>light+(bold-light)*Math.exp(-(((center-focus.x)/spread)**2));
+  const width=wordmark.offsetWidth || 1;
+  letters.forEach(({el,weight})=>{weight.x=weight.t=weightAt((el.offsetLeft+el.offsetWidth/2)/width);});
+
+  const wake=engine(wordmark,dt=>{
+   if(waveMotion.matches)return;
+   if(!pointing){
+    elapsed+=dt;
+    focus.t=sweep(elapsed);
+   }
+   step(focus,dt);
+   letters.forEach(({weight})=>step(weight,dt));
+  },()=>{
+   if(waveMotion.matches)return;
+   const width=wordmark.getBoundingClientRect().width || 1;
+   const centers=letters.map(({el})=>(el.offsetLeft+el.offsetWidth/2)/width);
+   letters.forEach(({el,weight},index)=>{
+    weight.t=weightAt(centers[index]);
+    el.style.fontWeight=clamp(weight.x,100,900).toFixed(1);
+    el.style.opacity=(.50+.50*clamp((weight.x-light)/(bold-light),0,1)).toFixed(3);
+   });
+  },()=>!waveMotion.matches);
+
+  hero.addEventListener('pointermove',event=>{
+   if(event.pointerType==='touch')return;
+   const bounds=wordmark.getBoundingClientRect();
+   pointing=true;
+   focus.t=(event.clientX-bounds.left)/bounds.width;
+  });
+  hero.addEventListener('pointerleave',()=>{pointing=false;elapsed=0;});
+  updateWaveMotion=()=>{
+   if(!wordmark.isConnected){updateWaveMotion=undefined;return;}
+   if(!waveMotion.matches){wake();return;}
+   letters.forEach(({el})=>{
+    el.style.removeProperty('font-weight');
+    el.style.removeProperty('opacity');
+   });
+  };
+  updateWaveMotion();
+ }
  const starPath='M12 3.2l2.6 5.5 6 .8-4.4 4.1 1.1 5.9L12 16.6l-5.3 2.9 1.1-5.9-4.4-4.1 6-.8z';
  const labels=['별점을 선택하세요','매우 불만족','불만족','보통','만족','매우 만족'];
  const ratings=new WeakMap();
@@ -76,7 +131,7 @@ const DBMotion=(()=>{
   const wake=engine(root,dt=>{clock+=dt;step(H,dt);tr.step(dt);sr.step(dt);cr.step(dt);for(const o of live){step(o.X,dt);step(o.A,dt);}for(let i=live.length-1;i>=0;i--)if(live[i].leaving&&!moving(live[i].A)&&!moving(live[i].X)){live[i].el.remove();live.splice(i,1);}for(let i=bands.length-1;i>=0;i--)if(!bands[i].live&&!unfinished(bands[i].f))bands.splice(i,1);for(let i=dots.length-1;i>=0;i--)if(!dots[i].role&&!unfinished(dots[i].f))dots.splice(i,1);},paint,()=>moving(H)||tr.active()||sr.active()||cr.active()||unfinished(CHIP)||live.some(o=>moving(o.X)||moving(o.A))||bands.some(x=>unfinished(x.f))||dots.some(x=>unfinished(x.f)));
   function emit(){onChange({year:M.year,month:M.month,start:a===null?null:dateStr(a),end:b===null?null:dateStr(b),anchor,day:a===null?dateStr(M.first):dateStr(b??a)});}
   function update(notify=true){marks();text();paint();wake();if(notify)emit();}
-  function pick(d){if(!options.range){a=b=d;anchor=false;}else if(a===d){a=b=null;anchor=false;}else if(anchor){const lo=Math.min(a,d);b=Math.max(a,d);a=lo;anchor=false;}else{a=d;b=null;anchor=true;}hover=null;update();}
+  function pick(d){if(!options.range){a=b=d;anchor=false;}else if(a===d){if(options.directRange){a=b=d;anchor=false;}else{a=b=null;anchor=false;}}else if(anchor){const lo=Math.min(a,d);b=Math.max(a,d);a=lo;anchor=false;}else{a=d;b=null;anchor=true;}hover=null;update();}
   function preview(d){if(!options.range||!anchor||a===null||hover===d)return;hover=d;if(d===null||d===a){killBand();}else setBand(Math.min(a,d),Math.max(a,d),true);paint();wake();}
   function goMonth(y,m,{notify=true,keyboard=false}={}){
    const next=monthInfo(y,m),dir=next.first>M.first?1:-1;
@@ -143,5 +198,5 @@ const DBMotion=(()=>{
    destroy(){observer.disconnect();listeners.abort();}
   };
  }
- return {mountRatings,mountRating,calendar,starPath,labels,S,step,monthInfo,dateNum,dateStr};
+ return {mountWeightWave,mountRatings,mountRating,calendar,starPath,labels,S,step,monthInfo,dateNum,dateStr};
 })();

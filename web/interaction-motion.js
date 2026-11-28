@@ -21,6 +21,15 @@
  }
  document.addEventListener('animationend',clearWordmarkMorph);
  document.addEventListener('animationcancel',clearWordmarkMorph);
+ // On touch devices, introduce the existing wordmark motion once on first mount.
+ let mobileWordmarkIntroduced=false;
+ function introduceMobileWordmark(){
+  if(mobileWordmarkIntroduced||reduce()||!matchMedia('(max-width: 700px) and (pointer: coarse)').matches)return;
+  const logo=document.querySelector(wordmarkSelector);if(!logo)return;
+  mobileWordmarkIntroduced=true;
+  requestAnimationFrame(()=>morphWordmark(logo));
+ }
+
 
  const mounted=new WeakMap();
  function sync(field){
@@ -47,12 +56,12 @@
   root.querySelectorAll('textarea[maxlength][id]').forEach(sync);
  }
  let queued=false;
- function schedule(){if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;scan()})}
+ function schedule(){if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;scan();introduceMobileWordmark()})}
  document.addEventListener('input',event=>{if(event.target.matches('textarea[maxlength][id]'))sync(event.target)});
  document.addEventListener('compositionend',event=>{if(event.target.matches('textarea[maxlength][id]'))sync(event.target)});
  document.addEventListener('click',schedule);document.addEventListener('submit',schedule);
  const root=document.body;
  // Ignore counter's own mutations; observe only element insertions/removals.
  new MutationObserver(records=>{if(records.some(r=>[...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1&&!n.classList.contains('real-letter-meter'))))schedule()}).observe(root,{childList:true,subtree:true});
- scan();
+ scan();introduceMobileWordmark();
 })();

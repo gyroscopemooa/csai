@@ -54,6 +54,8 @@ def init():
         CREATE TABLE IF NOT EXISTS inbox_assignment(ws TEXT NOT NULL,thread TEXT NOT NULL,assignee TEXT NOT NULL,priority TEXT NOT NULL,due_date TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(ws,thread));
         CREATE TABLE IF NOT EXISTS inbox_snippet(id TEXT PRIMARY KEY,ws TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS thread(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),visitor TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'open',manual INTEGER NOT NULL DEFAULT 0,created INTEGER NOT NULL, UNIQUE(ws,visitor));
+        CREATE TABLE IF NOT EXISTS temporary_takeover(ws TEXT NOT NULL,thread TEXT PRIMARY KEY REFERENCES thread(id) ON DELETE CASCADE,lease TEXT NOT NULL,seconds INTEGER NOT NULL,expires INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS temporary_takeover_expiry ON temporary_takeover(ws,expires);
         CREATE TABLE IF NOT EXISTS message(id TEXT PRIMARY KEY,ws TEXT NOT NULL REFERENCES workspace(id),thread TEXT NOT NULL REFERENCES thread(id),role TEXT NOT NULL,body TEXT NOT NULL,created INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS demo_sample(thread TEXT PRIMARY KEY REFERENCES thread(id),ws TEXT NOT NULL REFERENCES workspace(id));
         CREATE TABLE IF NOT EXISTS demo_sample_entity(ws TEXT NOT NULL REFERENCES workspace(id),kind TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(ws,kind,id));
@@ -81,6 +83,20 @@ def init():
         if 'booking_context' not in [r[1] for r in c.execute('PRAGMA table_info(thread)')]:c.execute("ALTER TABLE thread ADD COLUMN booking_context TEXT NOT NULL DEFAULT '{}'")
         if 'days' not in [r[1] for r in c.execute('PRAGMA table_info(trial_invite)')]:c.execute('ALTER TABLE trial_invite ADD COLUMN days INTEGER NOT NULL DEFAULT 14')
         if 'owner_email' not in [r[1] for r in c.execute('PRAGMA table_info(workspace)')]:c.execute('ALTER TABLE workspace ADD COLUMN owner_email TEXT')
+def clear_temporary_takeover(c,ws,tid):
+    c.execute('DELETE FROM temporary_takeover WHERE ws=? AND thread=?',(ws,tid))
+
+def temporary_takeover(c,ws,tid):
+    return one(c,'SELECT lease,seconds,expires FROM temporary_takeover WHERE ws=? AND thread=?',(ws,tid))
+
+def expire_temporary_takeovers(c,ws,tid=None):
+    q='SELECT thread FROM temporary_takeover WHERE ws=? AND expires<=?'
+    args=(ws,now())
+    if tid is not None:q+=' AND thread=?';args+=(tid,)
+    for entry in rows(c,q,args):
+        c.execute('UPDATE thread SET manual=0 WHERE ws=? AND id=?',(ws,entry['thread']))
+        clear_temporary_takeover(c,ws,entry['thread'])
+
 def workspace(c,owner):
     w=one(c,'SELECT * FROM workspace WHERE owner=?',(owner,))
     if not w:

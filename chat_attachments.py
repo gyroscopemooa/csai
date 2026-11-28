@@ -106,6 +106,7 @@ def save(c,w,tid,agent,role,actor,body):
     require(used+n<=MAX_TOTAL,'업체 첨부 저장 한도에 도달했습니다.',409)
     i,m=uid(),uid();c.execute('INSERT INTO message VALUES(?,?,?,?,?,?)',(m,ws,tid,role,'[사진 첨부 · 담당자 확인]' if kind=='photo' else '[파일 첨부 · 담당자 확인]',now()))
     c.execute('INSERT INTO chat_photo(id,ws,thread,message,sender,actor,client,data,bytes,created,mime,filename) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',(i,ws,tid,m,role,actor,client,data,n,now(),mime,name))
+    clear_temporary_takeover(c,ws,tid)
     if role=='user':
         c.execute("UPDATE thread SET manual=1,status='pending' WHERE ws=? AND id=?",(ws,tid))
         ops.event(c,ws,'handoff','고객 첨부 · 담당자 확인 필요',tid)

@@ -5,7 +5,7 @@ from fastapi import Depends,HTTPException
 from app import app,ident,require,bounded
 from store import *
 import re,base64,io
-from PIL import Image
+from PIL import Image, ImageOps
 
 def init_branding():
     with db(True) as c:
@@ -123,16 +123,24 @@ def save_chat_profile(body:dict,ws=Depends(ident)):
                 out.append({'kind':kind,'name':name.strip(),'value':value})
             p['contacts']=out
         if 'photo' in body:
-            data=body['photo'];require(isinstance(data,str) and len(data)<=1400000,'이미지는 1MB 이하여야 합니다.',422)
+            data=body['photo'];require(isinstance(data,str) and len(data)<=6666668,'이미지는 5MB 이하여야 합니다.',422)
             if data:
                 try:
                     raw=base64.b64decode(data,validate=True)
-                    require(len(raw)<=1000000,'이미지 용량 초과',422)
+                    require(len(raw)<=5000000,'이미지 용량 초과',422)
                     with Image.open(io.BytesIO(raw)) as im:
                         require(im.format in ('PNG','JPEG','WEBP') and im.width*im.height<=16000000,'지원하지 않는 이미지입니다.',422)
-                        im.thumbnail((320,320));o=io.BytesIO();im.convert('RGBA').save(o,format='PNG',optimize=True)
-                        p['photo']='data:image/png;base64,'+base64.b64encode(o.getvalue()).decode()
-                except Exception:raise HTTPException(422,'1MB 이하 PNG·JPEG·WebP 이미지를 선택하세요.')
+                        cover=ImageOps.exif_transpose(im).convert('RGBA' if 'A' in im.getbands() or 'transparency' in im.info else 'RGB')
+                        cover.thumbnail((1200,1200),Image.Resampling.LANCZOS)
+                        for quality in (84,76,68,60):
+                            o=io.BytesIO();cover.save(o,format='WEBP',quality=quality,method=4)
+                            if o.tell()<=400000:break
+                        while o.tell()>400000 and max(cover.size)>320:
+                            cover.thumbnail(tuple(max(1,int(n*0.8)) for n in cover.size),Image.Resampling.LANCZOS)
+                            o=io.BytesIO();cover.save(o,format='WEBP',quality=68,method=4)
+                        require(o.tell()<=400000,'이미지 최적화 용량 초과',422)
+                        p['photo']='data:image/webp;base64,'+base64.b64encode(o.getvalue()).decode()
+                except Exception:raise HTTPException(422,'5MB 이하 PNG·JPEG·WebP 이미지를 선택하세요.')
             else:p['photo']=''
         s['chat_profile']={k:v for k,v in p.items() if k!='manual_notice'}
         if a:c.execute('UPDATE agent_profile SET settings=? WHERE ws=? AND id=?',(dump(s),ws,a['id']))
