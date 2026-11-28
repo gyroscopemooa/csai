@@ -2291,10 +2291,7 @@ function prioritizePaidPreviews(){
  if(setup)top.append(setup);
  if(notices.length){
   const group=document.createElement('section');group.className='card app-card paid-preview-top paid-preview-always';group.setAttribute('aria-label','구독 및 결제 안내');
-  const heading=document.createElement('div');heading.className='paid-preview-heading';
-  const label=document.createElement('strong');label.textContent='구독 기능 '+notices.length+'개';
-  const hint=document.createElement('small');hint.textContent='샘플 체험 가능 · 실제 활성화는 구독 후';heading.append(label,hint);
-  const body=document.createElement('div');body.className='paid-preview-list';notices.forEach(n=>body.append(n));group.append(heading,body);top.append(group);
+  const body=document.createElement('div');body.className='paid-preview-list';notices.forEach(n=>body.append(n));group.append(body);top.append(group);
  }
  const update=()=>{if(!matchMedia('(max-width:700px)').matches){top.style.removeProperty('--paid-sticky-offset');return;}if(header&&!header.classList.contains('open'))top.style.setProperty('--paid-sticky-offset',Math.ceil(header.getBoundingClientRect().height)+'px');};
  update();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(update);paidPreviewHeaderObserver.observe(header);}
