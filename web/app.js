@@ -695,14 +695,19 @@ async function preview(test=false){
  const profile=await api('/api/chat-profile?agent='+enc(brand?.id||''));
  const settings={...(brand?brand.settings:{...me.settings,...appearance}),chat_profile:profile,notice:profile.manual_notice};
  const enabled=brand?brand.enabled:me.enabled;
- const status=enabled?'공개 중':'비공개';
- const link=location.origin+'/c/'+(brand?.slug||me.slug);
+ const canOpen=!!(me.public_access&&enabled);
+ const status=canOpen?'공개 중':'비공개';
+ const link=location.origin+'/c/'+(brand?.slug||(has('custom_url')&&appearance?.alias)||me.slug);
+ const localLinkTest=!!(!brand&&cfg.demo&&!cfg.shared_test&&me.sample_tools&&me.sandbox_allowed);
  const publicNotice=brand?'비공개 상태에서도 관리자 테스트를 할 수 있습니다.':
   !me.public_access?'유료 구독 후 공개 채팅 및 QR을 사용할 수 있습니다.':
   enabled?'고객은 전용 링크와 QR코드로 상담할 수 있습니다.':'공개로 전환하면 고객이 전용 링크와 QR코드로 상담할 수 있습니다.';
- const publicAction=brand?btn('브랜드 설정',`brandEditor='${brand.id}';go('agents')`):
-  btn(enabled?'비공개로 전환':'공개로 전환',"act(async()=>{await api('/api/settings',{enabled:!me.enabled},'PATCH');await refresh();render()})",'primary');
- const qr=!brand&&me.public_access?`<div class="preview-qr">
+ const publicAction=brand?btn('브랜드 설정',`brandEditor='${brand.id}';go('agents')`):me.public_access?
+  btn(enabled?'비공개로 전환':'공개로 전환',"act(async()=>{await api('/api/settings',{enabled:!me.enabled},'PATCH');await refresh();render()})",'primary'):
+  btn('요금제 보기',"go('pricing')");
+ const openAction=canOpen?`<a class="ui-button primary" href="${e(link)}" target="_blank" rel="noopener noreferrer">고객 채팅창 열기</a>`:'';
+ const localAction=localLinkTest&&(!canOpen||!has('custom_url'))?btn('현재 계정으로 공개 링크 테스트','enableLocalPublicLinkTest()','secondary'):'';
+ const qr=!brand&&canOpen?`<div class="preview-qr">
   <button class="qr-ticket" type="button" aria-label="상담 QR코드 보기" aria-pressed="false" onclick="flipQrTicket(this)" onpointermove="tiltQrTicket(this,event)" onpointerleave="this.style.removeProperty('--qr-x');this.style.removeProperty('--qr-y')">
    <span class="qr-ticket-body"><span class="qr-ticket-front" aria-hidden="true"><strong>${e(me.settings.brand||'CS AI')}</strong><span>상담 QR코드 보기</span></span><span class="qr-ticket-back" aria-hidden="true"><img src="/api/qr" width="144" height="144" alt=""></span></span>
   </button>
@@ -710,8 +715,8 @@ async function preview(test=false){
  </div>`:'';
  const linkControls=`<div class="ui-section ui-stack">
   <div class="preview-heading"><h3>${brand?'브랜드 전용 상담 링크':'전용 상담 링크'}</h3>${statusBadge(status,enabled?'success':'neutral')}</div>
-  <div class="preview-link"><input id="public-link" aria-label="전용 상담 링크" readonly value="${e(link)}">${copyButton('링크 복사','public-link')}</div>
-  ${splitContent(stack(helperText(publicNotice)+actionGroup(publicAction)),qr)}
+  <div class="preview-link"><input id="public-link" aria-label="전용 상담 링크" readonly value="${e(link)}">${canOpen?copyButton('링크 복사','public-link'):''}</div>
+  ${splitContent(stack(helperText(publicNotice)+actionGroup(publicAction,openAction,localAction)+(localAction?helperText('로컬 전용 · 현재 프로필 유지 · 모의 구독 및 지정 URL 권한 적용 · 실제 결제 없음'):'')),qr)}
  </div>`;
  const localTest=!brand&&cfg.demo&&!cfg.shared_test&&me.sandbox_allowed&&!me.operator&&me.plan==='free';
  const previewLinks=[
@@ -746,6 +751,7 @@ function workspaceControlIcon(kind){
 function togglePreviewFull(){const stage=$('.preview-stage');if(stage){const full=stage.classList.toggle('preview-expanded');const b=stage.querySelector('.preview-expand-button');if(b){b.setAttribute('aria-expanded',String(full));b.setAttribute('aria-label',full?'전체 화면 닫기':'전체 화면 미리보기');b.title=full?'전체 화면 닫기':'전체 화면 미리보기';b.innerHTML=workspaceControlIcon(full?'collapse':'expand');}if(!full)requestAnimationFrame(fitPreviewToScreen);}}
 function brandSelect(id,brands,value,handler,includeAll=false){return brands.length?label('관리 브랜드',select(id,[...(includeAll?[['all','전체 브랜드']]:[]),['',me.settings.brand+' · 기본'],...brands.map(a=>[a.id,a.settings.brand])],value).replace('<select','<select onchange="'+handler+'"')):''}
 function choosePreviewBrand(id){if(sending){toast('답변 완료 후 브랜드를 변경해 주세요.');return;}previewAgent=id;chatSession=null;chatMessages=[];render()}
+async function enableLocalPublicLinkTest(){if(!cfg.demo||cfg.shared_test||!me.sample_tools||!me.sandbox_allowed)return;if(!confirm('현재 로컬 계정의 프로필을 유지하고 공개 상담 및 지정 URL을 모의 활성화할까요? 실제 결제는 없습니다. 무료 가입 화면으로 다시 전환하면 권한이 초기화됩니다.'))return;await act(async()=>{await api('/api/demo/billing',{plan:me.plan==='free'?'lite':me.plan,addons:[...new Set([...(me.addons||[]),'custom_url'])]});await api('/api/settings',{enabled:true},'PATCH');await refresh();await render();toast('로컬 공개 상담 및 지정 URL 테스트가 활성화되었습니다.');});}
 async function enableLocalChatTesting(){await act(async()=>{if(me.demo_view==='free')await api('/api/demo/view',{mode:'subscriber'});else await api('/api/demo/billing',{plan:'lite',addons:[]});chatSession=null;chatMessages=[];await refresh();await render();toast('유료 구독 예시로 전환했습니다. 실제 결제는 없습니다.')})}
 let memoryTransfer=null;let educationAgent='',trainingChat=[],educationMethod='direct',educationDraft=null,educationBusy=false;
 const educationMethods=[['direct','직접 교육','대화·업무 지침 입력','messages-square'],['file','파일 교육','PDF·문서·이미지','list'],['website','웹사이트 교육','공개 홈페이지 URL','external-link'],['memory','외부 AI 기억 이전','ChatGPT 대화 이전','receipt']];
@@ -2652,7 +2658,7 @@ function settingsAppearance(r){
   label('지정 상담 주소 (영문 소문자/숫자)',input('alias',r.alias))+
   actionFooter([btn('주소 저장',"act(async()=>{await api('/api/appearance',{alias:val('alias')});render()})")],{divided:false})+
   (r.alias?`<p><a href="/c/${e(r.alias)}" target="_blank" rel="noopener noreferrer">/c/${e(r.alias)}</a></p>`:''):
-  locked('custom_url','원하는 상담 주소 설정');
+  locked('custom_url','원하는 상담 주소 설정')+(cfg.demo&&!cfg.shared_test&&me.sample_tools&&me.sandbox_allowed?btn('지정 URL 로컬 테스트','enableLocalPublicLinkTest()'):'');
  return stack(
   section('settings-logo-heading','업체 로고',logo+upload+logoActions)+
   section('settings-design-heading','채팅 디자인',design)+
@@ -3082,8 +3088,12 @@ async function statsPage(){
 }
 async function customerChatPage(){
  const html=await preview();
- const canOpen=me.public_access&&me.enabled;
- return pageTop('고객 채팅 페이지','고객에게 제공하는 페이지형 상담창을 확인하세요.')+card('고객 상담 페이지 열기',canOpen?`<a class="ui-button primary" href="/c/${enc(me.slug)}" target="_blank" rel="noopener">공개 채팅 페이지 열기</a>`:helperText('공개 채팅이 활성화되면 실제 고객 페이지를 열 수 있습니다. 아래에서 미리 확인하세요.'))+html;
+ const brand=previewAgent?(await api('/api/agents/list')).agents.find(a=>a.id===previewAgent&&a.available):null;
+ const appearance=brand?null:await api('/api/appearance');
+ const canOpen=me.public_access&&(brand?brand.enabled:me.enabled);
+ const link='/c/'+enc(brand?.slug||(has('custom_url')&&appearance?.alias)||me.slug);
+ const localTest=!brand&&cfg.demo&&!cfg.shared_test&&me.sample_tools&&me.sandbox_allowed;
+ return pageTop('고객 채팅 페이지','고객에게 제공하는 페이지형 상담창을 확인하세요.')+card('고객 상담 페이지 열기',canOpen?`<a class="ui-button primary" href="${e(link)}" target="_blank" rel="noopener noreferrer">공개 채팅 페이지 열기</a>`:helperText('공개 채팅이 활성화되면 실제 고객 페이지를 열 수 있습니다.')+(localTest?btn('현재 계정으로 공개 링크 테스트','enableLocalPublicLinkTest()','primary'):''))+html;
 }
 function reportSummaryCard(x){
  const v=x.summary||{},n=k=>Math.max(0,Number(v[k])||0),total=n('threads'),done=n('resolved'),unknown=n('unknown'),rate=total?Math.round(done/total*100):0,max=Math.max(1,total,done,unknown);
