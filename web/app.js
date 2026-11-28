@@ -266,7 +266,7 @@ async function copyToClipboard(button){
 function sidebarGroups(){
  const groups=[
   ['사업 현황',[['dashboard','오늘의 사업 현황','list']]],
-  ['상담 관리',[['inbox','통합 상담함','messages-square'],['consultation-center','상담센터','message-circle'],['preview','채팅창 미리보기','message-circle'],['setup','시작 및 교육 개선','list'],['reply-assistant','답장 비서','message-circle'],['education','AI 교육시키기','graduation-cap'],['agents','AI 상담원 관리','bot']]],
+  ['상담 관리',[['inbox','통합 상담함','messages-square'],['consultation-center','상담센터','message-circle'],['preview','채팅창 미리보기','message-circle'],['chat-page','고객 채팅 페이지','app-window'],['setup','시작 및 교육 개선','list'],['reply-assistant','답장 비서','message-circle'],['education','AI 교육시키기','graduation-cap'],['agents','AI 상담원 관리','bot'],['stats','상담 통계','chart-no-axes-combined'],['reports','일간·주간 리포트','receipt']]],
   ['업무 관리',[['calendar','일정표 보기','calendar-days'],['customers','고객·업무 관리','users-round'],['commerce','온라인 판매 관리','receipt'],['team','직원 관리','users-round'],['staff-desk','직원 상담함','messages-square']]],
   ['서비스 관리',[['channels','외부 채널 연동','plug'],['developer','개발자 센터','external-link'],['alerts','알림','bell'],['settings','설정','settings'],['pricing','요금제 및 결제','wallet'],['features','전체 기능','list'],['service-plan','서비스 자료실','list'],['credits','교육 크레딧','coins'],['addons','추가 기능','puzzle'],['orders','주문·구독 내역','receipt'],['allinone','올인원 패키지','puzzle']]]
  ];
@@ -370,7 +370,7 @@ function serviceNoticePage(){
  return pageTop('공지사항 및 업데이트','서비스 안내와 변경 사항을 확인하세요.')+card('서비스 소식',`<div class="ui-tabs calendar-status-filters" role="group" aria-label="소식 유형">${[['all','전체'],['notice','공지사항'],['update','업데이트'],['urgent','긴급사항']].map(([key,label])=>`<button type="button" aria-pressed="${serviceNoticeFilter===key}" onclick="filterServiceNotices('${key}')">${label}</button>`).join('')}</div><div class="service-notice-list">${items.map(n=>`<details class="service-notice-item" ${serviceNoticeOpen===n.id?'open':''}><summary><span class="service-notice-kind-label">${e(serviceNoticeLabels[n.kind])}</span><strong>${e(n.title)}</strong><time datetime="${e(n.date)}">${e(n.date)}</time></summary><p>${e(n.body)}</p></details>`).join('')||emptyState(serviceNoticeFilter==='urgent'?'등록된 긴급사항이 없습니다.':'등록된 소식이 없습니다.')}</div>`);
 }
 function quickNavOptions(){
- const short={dashboard:'홈',inbox:'상담함','consultation-center':'상담',preview:'미리보기',setup:'시작 설정','reply-assistant':'답장 비서',education:'AI 교육',agents:'상담원',calendar:'일정',customers:'고객 관리',commerce:'판매 관리',team:'직원 관리','staff-desk':'직원 상담',channels:'채널 연동',developer:'개발자',alerts:'알림',settings:'설정',pricing:'요금제',features:'전체 기능','service-plan':'자료실',credits:'크레딧',addons:'추가 기능',orders:'주문 내역',allinone:'올인원',invites:'초청 관리',costs:'원가 통계'};
+ const short={dashboard:'홈',inbox:'상담함','consultation-center':'상담',preview:'채팅 미리보기','chat-page':'채팅 페이지',stats:'상담 통계',reports:'리포트',setup:'시작 설정','reply-assistant':'답장 비서',education:'AI 교육',agents:'상담원',calendar:'일정',customers:'고객 관리',commerce:'판매 관리',team:'직원 관리','staff-desk':'직원 상담',channels:'채널 연동',developer:'개발자',alerts:'알림',settings:'설정',pricing:'요금제',features:'전체 기능','service-plan':'자료실',credits:'크레딧',addons:'추가 기능',orders:'주문 내역',allinone:'올인원',invites:'초청 관리',costs:'원가 통계'};
  return sidebarGroups().flatMap(([,items])=>items).map(([id,name,icon])=>[id,short[id]||name,icon]);
 }
 function quickNavKey(){return 'csai-mobile-quick-nav:'+me.slug;}
@@ -2342,7 +2342,7 @@ function prioritizePaidPreviews(){
  update();if(header&&typeof ResizeObserver!=='undefined'){paidPreviewHeaderObserver=new ResizeObserver(update);paidPreviewHeaderObserver.observe(header);}
 }
 
-async function render(){captureEducationDraft();let id=++renderId;const nextRoute=location.hash.slice(1)||'dashboard';if(activeTemporary&&!['inbox','consultation-center'].includes(nextRoute)){await leaveTemporary();if(id!==renderId)return;}else if(activeTemporary&&activeTemporary.id!==threadId){await leaveTemporary();if(id!==renderId)return;}route=nextRoute;if(inboxDesk()&&route==='inbox')route='consultation-center';if(!me){$('#app').innerHTML=home();return}CSAISetup.initialize();if(id!==renderId)return;let views={dashboard:businessDashboard,'service-notices':serviceNoticePage,commerce:commercePage,setup:qualityHome,education,style,preview:()=>preview(),test:()=>preview(true),inbox,'consultation-center':inbox,'reply-assistant':replyAssistantPage,alerts,settings,calendar,team:teamPage,'staff-desk':staffDesk,fields:fieldsPage,'booking-settings':bookingSettings,customers,channels,developer,pricing,features,'service-plan':servicePlanPage,credits,addons,allinone,orders,agents,invites,costs};try{let html=await (views[route]||education)();if(id!==renderId)return;captureEducationDraft();$('#app').innerHTML=inboxDesk()&&inboxCenter()?inboxDeskShell(html):shell(html);prioritizePaidPreviews();restoreEducationDraft();updatePrice();mountCalendarMotion();mountInboxPullRefresh();mountSettingsStack();const ownerChat=$('.inbox-conversation');if(ownerChat)ownerChat.scrollTop=ownerChat.scrollHeight;requestAnimationFrame(fitPreviewToScreen);}catch(x){if(id===renderId)$('#app').innerHTML=shell(card('오류',`<p class="error">${e(x.message)}</p>${btn('다시 시도','render()')}`))}}
+async function render(){captureEducationDraft();let id=++renderId;const nextRoute=location.hash.slice(1)||'dashboard';if(activeTemporary&&!['inbox','consultation-center'].includes(nextRoute)){await leaveTemporary();if(id!==renderId)return;}else if(activeTemporary&&activeTemporary.id!==threadId){await leaveTemporary();if(id!==renderId)return;}route=nextRoute;if(inboxDesk()&&route==='inbox')route='consultation-center';if(!me){$('#app').innerHTML=home();return}CSAISetup.initialize();if(id!==renderId)return;let views={dashboard:businessDashboard,'service-notices':serviceNoticePage,commerce:commercePage,setup:qualityHome,education,style,preview:()=>preview(),'chat-page':customerChatPage,stats:statsPage,reports:reportsPage,test:()=>preview(true),inbox,'consultation-center':inbox,'reply-assistant':replyAssistantPage,alerts,settings,calendar,team:teamPage,'staff-desk':staffDesk,fields:fieldsPage,'booking-settings':bookingSettings,customers,channels,developer,pricing,features,'service-plan':servicePlanPage,credits,addons,allinone,orders,agents,invites,costs};try{let html=await (views[route]||education)();if(id!==renderId)return;captureEducationDraft();$('#app').innerHTML=inboxDesk()&&inboxCenter()?inboxDeskShell(html):shell(html);prioritizePaidPreviews();restoreEducationDraft();updatePrice();mountCalendarMotion();mountInboxPullRefresh();mountSettingsStack();const ownerChat=$('.inbox-conversation');if(ownerChat)ownerChat.scrollTop=ownerChat.scrollHeight;requestAnimationFrame(fitPreviewToScreen);}catch(x){if(id===renderId)$('#app').innerHTML=shell(card('오류',`<p class="error">${e(x.message)}</p>${btn('다시 시도','render()')}`))}}
 async function init(){try{if(location.hash.startsWith('#staff-invite=')){sessionStorage.setItem('csai-staff-invite',location.hash.slice(14));history.replaceState(null,'',location.pathname+'#staff-desk')}if(location.hash.startsWith('#invite=')){sessionStorage.setItem('csai-invite',location.hash.slice(8));history.replaceState(null,'',location.pathname+'#education')}cfg=await api('/api/config');if(publicMode){$('#app-design-system').media='all';pub=await api('/api/public/'+enc(slug));let saved=sessionStorage.getItem('csai-session-'+slug);if(!saved){try{const r=await api('/api/customer/resume',{slug,action:'load'});saved=r.token||null;if(saved)sessionStorage.setItem('csai-session-'+slug,saved)}catch{}}if(saved){try{chatMessages=await api('/api/session/'+enc(saved)+'/messages');chatSession=saved}catch{sessionStorage.removeItem('csai-session-'+slug)}}$('#app').innerHTML=`<div class="${publicChatClass()}">${phone(pub)}</div>`;setInterval(async()=>{if(!chatSession||sending||$('#booking-box'))return;try{const pollingToken=chatSession;let ms=await api('/api/session/'+enc(pollingToken)+'/messages');if(pollingToken!==chatSession)return;if(ms.length!==chatMessages.length){chatMessages=ms;$('#messages').innerHTML=welcomeMarkup(pub)+ms.map(m=>photoBubble(m,'customer')).join('');$('#messages').scrollTop=$('#messages').scrollHeight}}catch{}},4000);return}try{await refresh();if(sessionStorage.getItem('csai-desk-return')&&!inboxDesk()){sessionStorage.removeItem('csai-desk-return');location.replace('/?desk=1#consultation-center');return;}if(sessionStorage.getItem('csai-staff-invite'))history.replaceState(null,'',location.pathname+'#staff-desk');selectedPlan=me.plan==='free'?'lite':me.plan;selectedAdd=new Set(me.addons);}catch(x){if(x.status!==401)throw x}await render()}catch(x){$('#app').innerHTML=`<div class="hero"><div class="hero-inner"><h1>CS AI</h1><p class="error">${e(x.message)}</p><a href="/">처음으로</a></div></div>`}}
 /* v0.2 operational UI */
 function resources(){return (route==='calendar'?calendarProfile?.resources:null)||me?.settings.resources||[{id:'default',name:'기본 담당자'}]}
@@ -2982,15 +2982,32 @@ async function analyticsPanel(){let r=await api('/api/analytics?days='+analytics
 const reportAlerts=alerts;
 alerts=async function(){
  const html=await reportAlerts();
- const readOnly=!has('report');if(readOnly&&!freeFeaturePreview())return html;
+ if(!has('report')&&!freeFeaturePreview())return html;
+ return html+await reportPanel();
+}
+async function reportPanel(){
+ const readOnly=!has('report');if(readOnly&&!freeFeaturePreview())return locked('report','일간·주간 리포트 권한이 필요합니다.');
  const r=readOnly?previewData().report:await api('/api/reports');
  const settings=stack(label('생성 주기',select('report-frequency',[['daily','매일'],['weekly','매주']],r.settings.frequency))+
   `<label><input class="check" type="checkbox" id="report-enabled" ${r.settings.enabled?'checked':''}> 자동 생성</label>`);
  const actions=stack(helperText(`${r.worker_enabled?'자동 워커 설정됨':'자동 워커 환경 설정 필요'} · 지난 완료 기간 기준 집계`)+
   actionGroup({keepSize:true},btn('설정 저장','saveReportSettings()','primary'),btn('리포트 생성','generateReport()')),{gap:'compact'});
  const reports=r.reports.map(x=>reportSummaryCard(x)).join('');
- return html+(readOnly?previewNotice('report','상담 리포트 설정 체험'):'')+card('일간·주간 상담 리포트',helperText('기간별 상담 현황과 완료율, 미학습 질문을 확인하고 엑셀에서 열 수 있는 CSV로 저장하세요.')+stack(`<div class="alert-fields">${settings}</div>`+actions+
+ return (readOnly?previewNotice('report','상담 리포트 설정 체험'):'')+card('일간·주간 상담 리포트',helperText('기간별 상담 현황과 완료율, 미학습 질문을 확인하고 엑셀에서 열 수 있는 CSV로 저장하세요.')+stack(`<div class="alert-fields">${settings}</div>`+actions+
   (reports?divider()+section('report-history','생성 내역',actionGroup(btn('CSV 다운로드','downloadReportCsv()'))+reports):'')));
+}
+async function reportsPage(){return pageTop('일간·주간 리포트','상담 현황과 완료율을 확인하고 CSV로 저장하세요.')+await reportPanel();}
+async function statsPage(){
+ const top=pageTop('상담 통계','기간별 상담 현황과 채널·업무 통계를 확인하세요.');
+ if(has('stats'))return top+await analyticsPanel();
+ if(!freeFeaturePreview())return top+locked('stats','고급 상담 통계 권한이 필요합니다.');
+ const values=[2,4,3,5,2,1,3],max=Math.max(...values);
+ return top+previewNotice('stats','상담 통계 체험')+card('최근 7일 상담 통계',helperText('샘플 데이터 · 실제 고객 상담 기록이 아닙니다.')+table(['고객 상담','메시지','미학습','완료'],[[20,82,3,15]])+`<div style="display:flex;align-items:end;height:120px;gap:4px;margin:18px 0">${values.map((n,i)=>`<div title="샘플 ${i+1}일: ${n}건" style="flex:1;background:#3182f6;border-radius:3px 3px 0 0;height:${n/max*100}%"></div>`).join('')}</div>`+table(['채널','상담'],[['웹 채팅',16],['외부 채널',4]]));
+}
+async function customerChatPage(){
+ const html=await preview();
+ const canOpen=me.public_access&&me.enabled;
+ return pageTop('고객 채팅 페이지','고객에게 제공하는 페이지형 상담창을 확인하세요.')+card('고객 상담 페이지 열기',canOpen?`<a class="ui-button primary" href="/c/${enc(me.slug)}" target="_blank" rel="noopener">공개 채팅 페이지 열기</a>`:helperText('공개 채팅이 활성화되면 실제 고객 페이지를 열 수 있습니다. 아래에서 미리 확인하세요.'))+html;
 }
 function reportSummaryCard(x){
  const v=x.summary||{},n=k=>Math.max(0,Number(v[k])||0),total=n('threads'),done=n('resolved'),unknown=n('unknown'),rate=total?Math.round(done/total*100):0,max=Math.max(1,total,done,unknown);
